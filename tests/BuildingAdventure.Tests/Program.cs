@@ -571,5 +571,157 @@ Check("Reject removing a corner if it would cut across an existing room", () =>
     Assert(original.Perimeter.SequenceEqual(rectangle));
 });
 
+Check("Split a rectangular room into two adjacent rooms", () =>
+{
+    var room = new RoomDefinition { Name = "Workshop", Type = "Workshop",
+        Outline = rectangle.ToList() };
+    var source = new BuildingDocument
+    {
+        Name = "Merchant",
+        Perimeter = rectangle.ToList(),
+        Rooms = [room]
+    };
+    Assert(InteriorEditing.TrySplitRoom(source, room.Id, new(5, 0), new(5, 8),
+        out var result, out var reason), reason);
+    Assert(source.Rooms.Count == 1, "Original floor should remain unchanged.");
+    Assert(result.Rooms.Count == 2);
+    Assert(result.Rooms[0].Id == room.Id);
+    Assert(result.Rooms[1].Id != room.Id);
+    Assert(result.Rooms[0].Name == "Workshop A");
+    Assert(result.Rooms[1].Name == "Workshop B");
+    Equal(PolygonGeometry.Area(result.Rooms[0].Outline), 40);
+    Equal(PolygonGeometry.Area(result.Rooms[1].Outline), 40);
+    Assert(result.Perimeter.Count == 6);
+    Assert(FloorGeometry.Validate(result, out reason), reason);
+    var roundTrip = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(result));
+    Assert(roundTrip.Rooms.Count == 2 && roundTrip.Perimeter.Count == 6);
+});
+
+Check("Split along an arbitrary diagonal, preserving an exterior door", () =>
+{
+    var room = new RoomDefinition { Name = "Hall", Outline = rectangle.ToList() };
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = [room],
+        Doors = [new DoorDefinition { Centre = new Point2(2, 0) }]
+    };
+    Assert(InteriorEditing.TrySplitRoom(source, room.Id, new(0, 0), new(10, 8),
+        out var result, out var reason), reason);
+    Assert(result.Rooms.Count == 2 && result.Doors.Count == 1);
+    Equal(PolygonGeometry.Area(result.Rooms[0].Outline), 40);
+    Equal(PolygonGeometry.Area(result.Rooms[1].Outline), 40);
+    Assert(FloorGeometry.Validate(result, out reason), reason);
+});
+
+Check("Reject a partition which crosses outside a concave room", () =>
+{
+    var room = new RoomDefinition { Name = "L-shaped room", Outline = concave.ToList() };
+    var source = new BuildingDocument { Perimeter = concave.ToList(), Rooms = [room] };
+    Assert(FloorGeometry.Validate(source, out var reason), reason);
+    Assert(!InteriorEditing.TrySplitRoom(source, room.Id, new(1, 5), new(6, 1),
+        out _, out reason), "Concave room split should not cross open space.");
+    Assert(source.Rooms.Count == 1);
+});
+
+Check("Reject a partition with an endpoint away from the room wall", () =>
+{
+    var room = new RoomDefinition { Outline = rectangle.ToList() };
+    var source = new BuildingDocument { Perimeter = rectangle.ToList(), Rooms = [room] };
+    Assert(!InteriorEditing.TrySplitRoom(source, room.Id, new(5, 3), new(10, 4),
+        out _, out _));
+});
+
+Check("Move shared room wall while preserving door and adjacency", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Shop",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Home",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 4) }]
+    };
+    var wall = FloorGeometry.BuildWalls(source.Perimeter, source.Rooms)
+        .Single(w => !w.IsExterior);
+    // Direction of the first room's shared edge is upwards, so negative
+    // normal displacement moves it towards the right side of the building.
+    Assert(InteriorEditing.TryMoveWall(source, wall, -1,
+        out var result, out var reason), reason);
+    Assert(FloorGeometry.Validate(result, out reason), reason);
+    Equal(PolygonGeometry.Area(result.Rooms[0].Outline), 48);
+    Equal(PolygonGeometry.Area(result.Rooms[1].Outline), 32);
+    Equal(result.Doors[0].Centre.X, 6);
+    Equal(result.Doors[0].Centre.Y, 4);
+    Equal(source.Doors[0].Centre.X, 5);
+    Assert(result.Perimeter.SequenceEqual(rectangle));
+});
+
+Check("Move a diagonal exterior wall and its door", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(8, 4), new(8, 10), new(0, 10)],
+        Doors = [new DoorDefinition { Centre = new Point2(4, 2) }]
+    };
+    var wall = FloorGeometry.BuildWalls(source.Perimeter, source.Rooms)[0];
+    Assert(InteriorEditing.TryMoveWall(source, wall, -1,
+        out var result, out var reason), reason);
+    Assert(FloorGeometry.Validate(result, out reason), reason);
+    double dx = 4 / Math.Sqrt(80);
+    double dy = -8 / Math.Sqrt(80);
+    Equal(result.Doors[0].Centre.X, 4 + dx);
+    Equal(result.Doors[0].Centre.Y, 2 + dy);
+});
+
+Check("Door on adjoining wall follows its moved endpoint", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(10, 4) }]
+    };
+    var topWall = FloorGeometry.BuildWalls(source.Perimeter, source.Rooms)[0];
+    Assert(InteriorEditing.TryMoveWall(source, topWall, 1,
+        out var result, out var reason), reason);
+    Equal(result.Doors[0].Centre.X, 10);
+    Equal(result.Doors[0].Centre.Y, 4.5);
+    Assert(FloorGeometry.Validate(result, out reason), reason);
+});
+
+Check("Reject moving a shared wall beyond exterior and preserve original", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    var wall = FloorGeometry.BuildWalls(source.Perimeter, source.Rooms)
+        .Single(w => !w.IsExterior);
+    Assert(!InteriorEditing.TryMoveWall(source, wall, -6,
+        out _, out var reason));
+    Assert(!string.IsNullOrWhiteSpace(reason));
+    Equal(source.Rooms[0].Outline[1].X, 5);
+});
+
+Check("Reject moves of stale or nonexistent wall segments", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(!InteriorEditing.TryMoveWall(source,
+        new WallSegment(new(3, 3), new(3, 7), false), 1,
+        out _, out var reason));
+    Assert(reason.Contains("no longer exists"));
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

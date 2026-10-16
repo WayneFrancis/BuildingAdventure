@@ -43,6 +43,8 @@
             <Button x:Name="SplitButton" Content="Split Perimeter" Click="SplitPerimeter_Click" Padding="9,4"/>
             <Button x:Name="RemoveCornerButton" Content="Remove Corner" Click="RemoveCornerTool_Click" Padding="9,4"/>
             <Button x:Name="RoomButton" Content="Draw Room" Click="RoomTool_Click" Padding="9,4"/>
+            <Button x:Name="SplitRoomButton" Content="Split Room" Click="SplitRoomTool_Click" Padding="9,4"/>
+            <Button x:Name="MoveWallButton" Content="Move Wall" Click="MoveWallTool_Click" Padding="9,4"/>
             <Button x:Name="DoorButton" Content="Add Door" Click="DoorTool_Click" Padding="9,4"/>
             <Button x:Name="PanButton" Content="Pan" Click="PanTool_Click" Padding="9,4"/>
             <Separator/>
@@ -117,9 +119,9 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Split Perimeter adds a corner to an exterior wall. Remove Corner merges its two adjacent wall segments. Both tools support angled walls."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Draw Room: outline each room inside the perimeter. Snap to building and other room walls. Rooms cannot overlap."/>
+                               Text="Draw Room outlines rooms inside the building. Split Room: select a room, then click two points on its boundary to divide it."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Select / Edit: select a corner and press Delete to merge its adjoining walls, or double-click a wall to split it. Add Door places a 0.9 m opening."/>
+                               Text="Move Wall: drag a wall perpendicular to itself; valid connected boundaries and doors follow. Hold Shift to turn off grid snapping while dragging. Select / Edit supports corner edits; Add Door inserts 0.9 m doors."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
                                Text="Automatic room generation, stairs, furniture and multiple stories are future milestones."/>
                 </StackPanel>

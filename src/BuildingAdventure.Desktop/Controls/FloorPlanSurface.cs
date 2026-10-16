@@ -7,7 +7,7 @@ using BuildingAdventure.Core.Geometry;
 
 namespace BuildingAdventure.Desktop.Controls;
 
-public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, AddDoor, Pan }
+public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MoveWall, AddDoor, Pan }
 
 /// <summary>Interactive metre-based editor for a single building floor.</summary>
 public sealed class FloorPlanSurface : FrameworkElement
@@ -35,6 +35,12 @@ public sealed class FloorPlanSurface : FrameworkElement
     private bool _draggingVertex;
     private EditorSnapshot? _beforeDrag;
     private Point2 _dragOriginalPoint;
+    private Point2? _partitionStart;
+    private WallSegment? _movingWall;
+    private Point2 _moveWallMouseStart;
+    private bool _movingWallNow;
+    private bool _wallMoveAccepted;
+    private string _wallMoveError = "";
 
     public event EventHandler? Changed;
     public event EventHandler? SelectionChanged;
@@ -52,8 +58,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool SnapToGrid { get; set; } = true;
     public double PixelsPerMetre => _pixelsPerMetre;
     public bool IsDrawing => _draft.Count > 0;
-    public bool CanUndo => _draft.Count > 0 || _undo.Count > 0;
-    public bool CanRedo => _redo.Count > 0 && _draft.Count == 0;
+    public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _undo.Count > 0;
+    public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
     public IReadOnlyList<Point2> GetOutline() => _outline.ToList().AsReadOnly();
     public IReadOnlyList<RoomDefinition> GetRooms() => _rooms.Select(r => r.Copy()).ToList().AsReadOnly();
@@ -77,6 +83,9 @@ public sealed class FloorPlanSurface : FrameworkElement
         _doors = document.Doors.Select(d => d.Copy()).ToList();
         _draft.Clear();
         _draftCursor = null;
+        _partitionStart = null;
+        _movingWall = null;
+        _movingWallNow = false;
         _selectedVertex = -1;
         _selectedRoomId = null;
         _selectedDoorId = null;
@@ -93,6 +102,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         {
             _draft.Clear();
             _draftCursor = null;
+            _partitionStart = null;
         }
         Tool = tool;
         Cursor = DefaultCursor();
@@ -102,6 +112,8 @@ public sealed class FloorPlanSurface : FrameworkElement
             EditorTool.SplitPerimeter => "Click any exterior wall to insert a corner. Select / Edit to drag it into a new shape.",
             EditorTool.RemoveCorner => "Click an exterior or room corner to merge its two adjoining walls.",
             EditorTool.DrawRoom => "Click room corners inside the building, then click the first or Finish.",
+            EditorTool.SplitRoom => "Select a room, then click two points on its boundary to divide it.",
+            EditorTool.MoveWall => "Drag a wall perpendicular to itself. Connected corners and doors will follow.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
             EditorTool.Select => "Click a room to select it, drag a corner, or double-click a wall to add a corner.",
             _ => "Drag to pan; use the mouse wheel to zoom."
@@ -118,9 +130,10 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     public void CancelDrawing()
     {
-        if (_draft.Count == 0) return;
+        if (_draft.Count == 0 && !_partitionStart.HasValue) return;
         _draft.Clear();
         _draftCursor = null;
+        _partitionStart = null;
         Say("Unfinished drawing cancelled; existing geometry was kept.");
         InvalidateVisual();
         Changed?.Invoke(this, EventArgs.Empty);
@@ -268,6 +281,15 @@ public sealed class FloorPlanSurface : FrameworkElement
             Say("Last unfinished corner removed.");
             return;
         }
+        if (_partitionStart.HasValue)
+        {
+            _partitionStart = null;
+            _draftCursor = null;
+            InvalidateVisual();
+            Changed?.Invoke(this, EventArgs.Empty);
+            Say("Room split starting point cancelled.");
+            return;
+        }
         if (_undo.Count == 0) return;
         _redo.Push(Snapshot());
         Restore(_undo.Pop());
@@ -378,6 +400,13 @@ public sealed class FloorPlanSurface : FrameworkElement
         }
 
         var walls = FloorGeometry.BuildWalls(_outline, _rooms);
+        if (_movingWallNow && _movingWall is not null && _beforeDrag is not null)
+        {
+            // Draw the original wall as a dashed guide under the live preview.
+            dc.DrawLine(new Pen(Brushes.DarkOrange, 1.5)
+                { DashStyle = DashStyles.Dash },
+                ToScreen(_movingWall.A), ToScreen(_movingWall.B));
+        }
         foreach (var door in _doors)
         {
             if (!FloorGeometry.TryFindDoorWall(door, walls, out var wall) || wall is null)
@@ -396,7 +425,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
         }
 
-        if (Tool is EditorTool.Select or EditorTool.SplitPerimeter or EditorTool.RemoveCorner)
+        if (Tool is EditorTool.Select or EditorTool.SplitPerimeter or EditorTool.RemoveCorner or EditorTool.MoveWall or EditorTool.SplitRoom)
         {
             DrawVertices(dc, _outline, _selectedPerimeterVertex, Brushes.SteelBlue);
             foreach (var room in _rooms)
@@ -418,6 +447,17 @@ public sealed class FloorPlanSurface : FrameworkElement
                 dc.DrawLine(new Pen(Brushes.DarkOrange, 1.5) { DashStyle = DashStyles.Dash },
                     ToScreen(_draft[^1]), ToScreen(_draftCursor.Value));
             DrawLengths(dc, _draft, false);
+        }
+
+        if (_partitionStart.HasValue)
+        {
+            var beginning = ToScreen(_partitionStart.Value);
+            dc.DrawEllipse(Brushes.White, new Pen(Brushes.DarkOrange, 2.5),
+                           beginning, 6, 6);
+            if (_draftCursor.HasValue)
+                dc.DrawLine(new Pen(Brushes.DarkOrange, 2)
+                    { DashStyle = DashStyles.Dash },
+                    beginning, ToScreen(_draftCursor.Value));
         }
 
         if (_outline.Count == 0 && _draft.Count == 0)
@@ -562,6 +602,20 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        if (Tool == EditorTool.SplitRoom)
+        {
+            HandleSplitRoomClick(position);
+            e.Handled = true;
+            return;
+        }
+
+        if (Tool == EditorTool.MoveWall)
+        {
+            StartWallDrag(position);
+            e.Handled = true;
+            return;
+        }
+
         if (Tool == EditorTool.SplitPerimeter)
         {
             TryInsertCorner(position, perimeterOnly: true);
@@ -624,6 +678,12 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        if (_movingWallNow && _movingWall is not null && _beforeDrag is not null)
+        {
+            PreviewWallDrag(position);
+            return;
+        }
+
         if (_draggingVertex && _beforeDrag is not null)
         {
             var movedPoint = SnapToGridPoint(ToWorld(position));
@@ -655,6 +715,11 @@ public sealed class FloorPlanSurface : FrameworkElement
             _draftCursor = SnapForDrawing(ToWorld(position));
             InvalidateVisual();
         }
+        else if (Tool == EditorTool.SplitRoom && _partitionStart.HasValue)
+        {
+            _draftCursor = ToWorld(position);
+            InvalidateVisual();
+        }
     }
 
     protected override void OnMouseUp(MouseButtonEventArgs e)
@@ -667,6 +732,33 @@ public sealed class FloorPlanSurface : FrameworkElement
             Cursor = DefaultCursor();
             InvalidateVisual();
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        if (_movingWallNow && e.ChangedButton == MouseButton.Left)
+        {
+            // Run one final preview at the release position before committing.
+            PreviewWallDrag(e.GetPosition(this));
+            _movingWallNow = false;
+            ReleaseMouseCapture();
+            Cursor = DefaultCursor();
+            if (_beforeDrag is not null && _wallMoveAccepted &&
+                !SnapshotMatches(_beforeDrag))
+            {
+                PushUndo(_beforeDrag);
+                RaiseChanged();
+                Say("Wall moved. Shared boundaries and doors were updated.");
+            }
+            else
+            {
+                if (_beforeDrag is not null) Restore(_beforeDrag);
+                Say(_wallMoveError.Length > 0
+                    ? $"Wall move rejected: {_wallMoveError}"
+                    : "Wall not moved.");
+                Changed?.Invoke(this, EventArgs.Empty);
+            }
+            _beforeDrag = null;
+            _movingWall = null;
+            InvalidateVisual();
         }
 
         if (_draggingVertex && e.ChangedButton == MouseButton.Left)
@@ -700,6 +792,157 @@ public sealed class FloorPlanSurface : FrameworkElement
         ZoomBy(Math.Pow(1.15, e.Delta / 120.0), e.GetPosition(this));
         e.Handled = true;
     }
+
+    private void HandleSplitRoomClick(Point position)
+    {
+        if (_outline.Count < 3 || _rooms.Count == 0)
+        {
+            Say("Draw a building and at least one room before using Split Room.");
+            return;
+        }
+
+        var selected = _rooms.FirstOrDefault(r => r.Id == _selectedRoomId);
+        // Clicking inside a room when no room is selected establishes the
+        // target. Once selected, click two positions on its outer boundary.
+        if (selected is null)
+        {
+            Point2 location = ToWorld(position);
+            var candidate = _rooms.LastOrDefault(r =>
+                PolygonGeometry.ContainsPoint(r.Outline, location));
+            if (candidate is null)
+            {
+                Say("Click inside the room you want to divide.");
+                return;
+            }
+            _selectedRoomId = candidate.Id;
+            _selectedDoorId = null;
+            _selectedVertex = -1;
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+            selected = candidate;
+        }
+
+        if (!TryFindEdge(selected.Outline, position, out _, out var boundaryPoint))
+        {
+            Say("Click directly on one of the selected room's boundary walls.");
+            return;
+        }
+
+        // Snap the endpoint precisely to the wall rather than to an
+        // independent grid point that could fall fractionally off the edge.
+        if (!_partitionStart.HasValue)
+        {
+            _partitionStart = boundaryPoint;
+            _draftCursor = boundaryPoint;
+            Say("First partition endpoint selected. Click another boundary wall to split the room.");
+            InvalidateVisual();
+            Changed?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        if (_partitionStart.Value.DistanceTo(boundaryPoint) < 0.1)
+        {
+            Say("Choose a second endpoint at least 10 cm away from the first.");
+            return;
+        }
+
+        var previous = Snapshot();
+        if (!InteriorEditing.TrySplitRoom(Document(), selected.Id,
+                _partitionStart.Value, boundaryPoint,
+                out var document, out var reason))
+        {
+            Say($"Room not split: {reason}");
+            return;
+        }
+
+        _outline = document.Perimeter;
+        _rooms = document.Rooms;
+        _doors = document.Doors;
+        _partitionStart = null;
+        _draftCursor = null;
+        _selectedVertex = -1;
+        Tool = EditorTool.Select;
+        Cursor = DefaultCursor();
+        PushUndo(previous);
+        RaiseChanged();
+        Say("Room divided into two rooms. Select either room to rename it.");
+    }
+
+    private void StartWallDrag(Point mousePosition)
+    {
+        var origin = ToWorld(mousePosition);
+        WallSegment? selected = null;
+        double bestDistance = 12;
+        foreach (var wall in FloorGeometry.BuildWalls(_outline, _rooms))
+        {
+            var nearest = PolygonGeometry.ClosestPointOnSegment(origin, wall.A, wall.B);
+            double distance = origin.DistanceTo(nearest) * _pixelsPerMetre;
+            if (distance >= bestDistance) continue;
+            bestDistance = distance;
+            selected = wall;
+        }
+
+        if (selected is null)
+        {
+            Say("Click directly on a wall, then drag it perpendicular to itself.");
+            return;
+        }
+        _beforeDrag = Snapshot();
+        _movingWall = selected;
+        _moveWallMouseStart = origin;
+        _movingWallNow = true;
+        _wallMoveAccepted = false;
+        _wallMoveError = "";
+        CaptureMouse();
+        Cursor = Cursors.SizeAll;
+        Say("Dragging wall. Release the mouse to apply a valid position.");
+    }
+
+    private void PreviewWallDrag(Point mousePosition)
+    {
+        if (_beforeDrag is null || _movingWall is null) return;
+        var current = ToWorld(mousePosition);
+        var wall = _movingWall;
+        double length = wall.Length;
+        double nx = -(wall.B.Y - wall.A.Y) / length;
+        double ny = (wall.B.X - wall.A.X) / length;
+        double amount = (current.X - _moveWallMouseStart.X) * nx +
+                        (current.Y - _moveWallMouseStart.Y) * ny;
+
+        if (SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            amount = Math.Round(amount * 2, MidpointRounding.AwayFromZero) / 2;
+
+        var original = DocumentFromSnapshot(_beforeDrag);
+        if (InteriorEditing.TryMoveWall(original, wall, amount, out var moved, out var reason))
+        {
+            _outline = moved.Perimeter;
+            _rooms = moved.Rooms;
+            _doors = moved.Doors;
+            _wallMoveAccepted = Math.Abs(amount) > 1e-7;
+            _wallMoveError = "";
+        }
+        else
+        {
+            Restore(_beforeDrag);
+            _wallMoveAccepted = false;
+            _wallMoveError = reason;
+        }
+        InvalidateVisual();
+    }
+
+    private static BuildingDocument DocumentFromSnapshot(EditorSnapshot snapshot) => new()
+    {
+        Perimeter = snapshot.Perimeter.ToList(),
+        Rooms = snapshot.Rooms.Select(r => r.Copy()).ToList(),
+        Doors = snapshot.Doors.Select(d => d.Copy()).ToList()
+    };
+
+    private bool SnapshotMatches(EditorSnapshot snapshot) =>
+        _outline.SequenceEqual(snapshot.Perimeter) &&
+        _rooms.Count == snapshot.Rooms.Count &&
+        _rooms.Zip(snapshot.Rooms).All(pair =>
+            pair.First.Outline.SequenceEqual(pair.Second.Outline)) &&
+        _doors.Zip(snapshot.Doors).All(pair =>
+            pair.First.Centre.Equals(pair.Second.Centre));
 
     private void TryAddDoor(Point position)
     {

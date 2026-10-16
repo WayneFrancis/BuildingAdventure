@@ -18,6 +18,14 @@ The editor currently supports:
   Doors on those walls follow the replacement segment where possible. Shared
   room boundary vertices are removed together when geometrically appropriate.
   A corner can also be selected and removed with Delete.
+- **Split Room** tool: select an existing room, then click two different points
+  on its boundary to divide it. The new rooms inherit its type and are named
+  with A/B suffixes so they can be renamed individually.
+- **Move Wall** tool: click and drag a wall perpendicular to its direction.
+  Coincident shared vertices and affected doors follow the edit. The entire
+  result is validated; invalid movements are rejected.
+- Room-splitting endpoints snap precisely to an existing boundary even when
+  the wall is diagonal or does not align with the measurement grid.
 - Drawing interior rooms as polygons, with grid, corner and edge snapping.
 - Selecting and naming rooms, and assigning room types (shop, workshop, kitchen,
   living room, bedroom, hall, storeroom, and others).
@@ -32,9 +40,11 @@ The editor currently supports:
 - Measuring area and exterior perimeter; saving and reopening all geometry as JSON.
 - Loading older v0.1 perimeter-only JSON documents.
 
-**Not yet implemented:** automatic room generation; free-standing, unenclosed
-partition walls; multiple floors; window placement; door width editing; hidden
-passages; furnishing; and VTT export. Doors are simple openings and are not
+**Not yet implemented:** automatic room generation; merging entire adjacent
+rooms; free-standing unenclosed partition walls; multiple floors; window
+placement; door width editing; hidden passages; furnishing; and VTT export.
+Move Wall currently moves a chosen segment perpendicular to itself, not an
+unrestricted wall rotation or a whole chain of connected non-collinear walls. Doors are simple openings and are not
 yet a complete circulation/accessibility model.
 
 ## Requirements
@@ -71,6 +81,8 @@ Run the geometry checks without third-party test packages:
 | Draw building | Draw Perimeter, click exterior corners, then Finish |
 | Add perimeter segments | Split Perimeter, click a wall, then Select / Edit and drag new corner |
 | Join two wall segments | Remove Corner, click the shared corner |
+| Split a room into two | Select a room, Split Room, click two points on its boundary |
+| Move a wall | Move Wall, drag a wall perpendicular to itself; Shift disables distance snap |
 | Split any existing wall | Double-click in Select / Edit; exterior walls take priority |
 | Draw room | Draw Room, click room corners inside the building, then Finish |
 | Rename/type room | Select/Edit, click its interior, edit details, click Apply room details |

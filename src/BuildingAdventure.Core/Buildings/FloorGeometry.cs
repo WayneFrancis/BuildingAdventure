@@ -248,7 +248,8 @@ public static class FloorGeometry
             exterior);
     }
 
-    private static bool IsWithinPolygon(IReadOnlyList<Point2> inner, IReadOnlyList<Point2> outer)
+    /// <summary>Checks a polygon including all edge spans against a containing boundary.</summary>
+    public static bool IsWithinPolygon(IReadOnlyList<Point2> inner, IReadOnlyList<Point2> outer)
     {
         foreach (Point2 point in inner)
             if (!PolygonGeometry.ContainsPoint(outer, point)) return false;

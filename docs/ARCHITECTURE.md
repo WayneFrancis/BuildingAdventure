@@ -30,6 +30,19 @@ validation. Procedural generation remains **not implemented yet**.
 - Splitting an exterior/room edge propagates the same new vertex to all
   coincident room and exterior edges. This preserves shared-edge topology and
   does not change the actual outline until the new point is dragged.
+- Splitting a room inserts the two cut endpoints along its existing wall
+  edges (including coincident boundaries), then traces both boundary arcs
+  and closes them with a straight partition. Both resulting polygons must
+  remain inside the source room and meet the minimum usable room area.
+- Moving a wall applies a signed displacement along its normal to all
+  source vertices coincident with that selected wall fragment. All polygons
+  sharing those points are updated. Door centres on the moving segment
+  translate with it; doors on adjoining segments retain their fractional
+  positions as the adjoining edges change.
+- Interactive wall dragging uses a fixed original snapshot throughout the
+  preview to avoid cumulative drift; only a valid final position enters
+  the undo stack. Exterior restrictions and room overlap validation still
+  apply to every completed edit.
 - Removing a corner joins its two incident segments. Matching shared
   room/perimeter vertices are removed together when both adjacent edges are
   coincident with the affected old edges. Door centres on those segments
