@@ -40,6 +40,10 @@ The editor currently supports:
   panel with length, width, rotation, and precise X/Y centre coordinates.
   Click Apply stair changes to resize, rotate or reposition the same flight,
   or use the ±15° rotation buttons for one-click rotation.
+  If a selected staircase's rotation, position or size fails validation,
+  the proposed change is rejected, the original values return to the
+  property fields, and the reason is displayed next to the controls.
+  Manually typing a value is only a proposal until you click Apply.
   Stairs stay vertically aligned on both floors and cannot cross
   internal partition walls.
 - **Merge Rooms** tool: select a room and click Merge Rooms, then click an

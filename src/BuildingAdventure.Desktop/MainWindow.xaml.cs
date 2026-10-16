@@ -339,6 +339,8 @@ public partial class MainWindow : Window
 
     private void UpdateSelectedStairControls()
     {
+        if (StairValidationText is not null)
+            StairValidationText.Text = "";
         if (EditorSurface is null || StairLengthBox is null ||
             StairWidthBox is null || StairRotationBox is null ||
             StairXBox is null || StairYBox is null ||
@@ -362,6 +364,20 @@ public partial class MainWindow : Window
         StairRotationBox.Text = stair.RotationDegrees.ToString("R", culture);
         StairXBox.Text = stair.Centre.X.ToString("R", culture);
         StairYBox.Text = stair.Centre.Y.ToString("R", culture);
+    }
+
+    /// <summary>
+    /// A rejected edit has not changed the underlying staircase. Restore the
+    /// controls from that authoritative model so the displayed angle, width,
+    /// length and coordinates all agree with the drawing.
+    /// </summary>
+    private void RejectStairEdit(string reason)
+    {
+        UpdateSelectedStairControls();
+        StairValidationText.Text = "Change rejected: " + reason +
+            " Previous values restored.";
+        _hint = "Staircase unchanged: " + reason;
+        Refresh();
     }
 
     private void StairSettingsChanged(object sender, TextChangedEventArgs e)
@@ -400,13 +416,13 @@ public partial class MainWindow : Window
         if (!BuildingStoreys.TryUpdateStaircase(CurrentDocument(), proposed,
                 out var updated, out var reason))
         {
-            _hint = $"Cannot change staircase: {reason}";
-            Refresh();
+            RejectStairEdit(reason);
             return;
         }
 
         _building = updated;
         EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex, proposed.Id);
+        StairValidationText.Text = "";
         _hint = "Staircase updated on both floors.";
         Refresh();
     }
@@ -423,8 +439,7 @@ public partial class MainWindow : Window
             !TryReadMetres(StairYBox.Text, out double y) ||
             !double.IsFinite(x) || !double.IsFinite(y))
         {
-            _hint = "Please enter valid numeric staircase size, rotation, X and Y values.";
-            Refresh();
+            RejectStairEdit("Enter valid numeric staircase size, rotation, X and Y values.");
             return;
         }
 
@@ -446,8 +461,13 @@ public partial class MainWindow : Window
         if (!TryReadMetres(StairRotationBox.Text, out double current) ||
             !double.IsFinite(current))
         {
-            _hint = "Enter a valid angle before rotating the staircase.";
-            Refresh();
+            if (EditorSurface.SelectedStaircaseId.HasValue)
+                RejectStairEdit("Enter a valid rotation angle.");
+            else
+            {
+                _hint = "Enter a valid angle before rotating the staircase.";
+                Refresh();
+            }
             return;
         }
 

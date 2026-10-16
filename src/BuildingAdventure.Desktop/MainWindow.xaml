@@ -109,6 +109,8 @@
                     <Button x:Name="ApplyStairsButton" Content="Apply stair changes"
                             IsEnabled="False" Click="ApplyStairs_Click" Padding="7"
                             Margin="0,0,0,8"/>
+                    <TextBlock x:Name="StairValidationText" Foreground="Firebrick"
+                               TextWrapping="Wrap" Margin="0,0,0,8"/>
                     <Button x:Name="DeleteStairsButton" Content="Remove selected staircase"
                             IsEnabled="False" Click="DeleteStairs_Click" Padding="7"
                             Margin="0,0,0,10"/>

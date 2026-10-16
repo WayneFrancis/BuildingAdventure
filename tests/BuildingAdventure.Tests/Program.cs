@@ -1215,5 +1215,42 @@ Check("Stair creation rejects duplicate identities", () =>
     Assert(building.Staircases.Count == 1);
 });
 
+Check("Rejected staircase rotation preserves last valid angle for the next edit", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var flight = new StaircaseDefinition
+    {
+        Centre = new Point2(3.5, 4), Width = 1.2, Length = 3.6,
+        RotationDegrees = 0
+    };
+    Assert(BuildingStoreys.TryAddStaircase(building, flight,
+        out var placed, out reason), reason);
+
+    var invalidRotation = flight.Copy();
+    invalidRotation.RotationDegrees = 90; // Would cross the room partition.
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, invalidRotation,
+        out _, out reason));
+    Assert(reason.Contains("interior wall"));
+    Equal(placed.Staircases[0].RotationDegrees, 0);
+
+    var nextRotation = placed.Staircases[0].Copy();
+    nextRotation.RotationDegrees = 30;
+    Assert(BuildingStoreys.TryUpdateStaircase(placed, nextRotation,
+        out var updated, out reason), reason);
+    Equal(updated.Staircases[0].RotationDegrees, 30);
+    Equal(placed.Staircases[0].RotationDegrees, 0);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
