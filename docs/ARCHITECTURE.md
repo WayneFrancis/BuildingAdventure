@@ -43,6 +43,17 @@ validation. Procedural generation remains **not implemented yet**.
   preview to avoid cumulative drift; only a valid final position enters
   the undo stack. Exterior restrictions and room overlap validation still
   apply to every completed edit.
+- Merging rooms normalizes both polygon windings, subdivides existing edges
+  at coincident endpoints, removes pairs of oppositely-directed shared wall
+  fragments, and traces the remaining directed outer boundary into one polygon.
+  A merge must preserve the combined area, produce one simple outline, and
+  pass whole-floor validation. The first room keeps its identity and metadata.
+  Doors on the deleted common partition are removed; other openings remain.
+  Partial shared walls and non-orthogonal room outlines are supported.
+- During vertex dragging, snapping prefers pre-existing non-moving corner
+  coordinates, then projected positions on non-incident edges, and finally
+  the optional world-space grid. This maintains exact shared geometry and
+  avoids snapping back onto the vertex's own original incident walls.
 - Removing a corner joins its two incident segments. Matching shared
   room/perimeter vertices are removed together when both adjacent edges are
   coincident with the affected old edges. Door centres on those segments

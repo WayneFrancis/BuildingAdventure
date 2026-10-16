@@ -7,7 +7,7 @@ using BuildingAdventure.Core.Geometry;
 
 namespace BuildingAdventure.Desktop.Controls;
 
-public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MoveWall, AddDoor, Pan }
+public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MergeRooms, MoveWall, AddDoor, Pan }
 
 /// <summary>Interactive metre-based editor for a single building floor.</summary>
 public sealed class FloorPlanSurface : FrameworkElement
@@ -36,6 +36,7 @@ public sealed class FloorPlanSurface : FrameworkElement
     private EditorSnapshot? _beforeDrag;
     private Point2 _dragOriginalPoint;
     private Point2? _partitionStart;
+    private Guid? _mergePrimaryRoomId;
     private WallSegment? _movingWall;
     private Point2 _moveWallMouseStart;
     private bool _movingWallNow;
@@ -58,8 +59,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool SnapToGrid { get; set; } = true;
     public double PixelsPerMetre => _pixelsPerMetre;
     public bool IsDrawing => _draft.Count > 0;
-    public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _undo.Count > 0;
-    public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue;
+    public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue || _undo.Count > 0;
+    public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
     public IReadOnlyList<Point2> GetOutline() => _outline.ToList().AsReadOnly();
     public IReadOnlyList<RoomDefinition> GetRooms() => _rooms.Select(r => r.Copy()).ToList().AsReadOnly();
@@ -84,6 +85,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _draft.Clear();
         _draftCursor = null;
         _partitionStart = null;
+        _mergePrimaryRoomId = null;
         _movingWall = null;
         _movingWallNow = false;
         _selectedVertex = -1;
@@ -103,8 +105,13 @@ public sealed class FloorPlanSurface : FrameworkElement
             _draft.Clear();
             _draftCursor = null;
             _partitionStart = null;
+            _mergePrimaryRoomId = null;
         }
         Tool = tool;
+        if (tool == EditorTool.MergeRooms &&
+            _selectedRoomId.HasValue &&
+            _rooms.Any(room => room.Id == _selectedRoomId.Value))
+            _mergePrimaryRoomId = _selectedRoomId;
         Cursor = DefaultCursor();
         Say(tool switch
         {
@@ -113,6 +120,9 @@ public sealed class FloorPlanSurface : FrameworkElement
             EditorTool.RemoveCorner => "Click an exterior or room corner to merge its two adjoining walls.",
             EditorTool.DrawRoom => "Click room corners inside the building, then click the first or Finish.",
             EditorTool.SplitRoom => "Select a room, then click two points on its boundary to divide it.",
+            EditorTool.MergeRooms => _mergePrimaryRoomId.HasValue
+                ? "First room selected. Click an adjoining second room to remove their common wall."
+                : "Click the first room, then an adjoining second room to merge them.",
             EditorTool.MoveWall => "Drag a wall perpendicular to itself. Connected corners and doors will follow.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
             EditorTool.Select => "Click a room to select it, drag a corner, or double-click a wall to add a corner.",
@@ -130,11 +140,12 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     public void CancelDrawing()
     {
-        if (_draft.Count == 0 && !_partitionStart.HasValue) return;
+        if (_draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue) return;
         _draft.Clear();
         _draftCursor = null;
         _partitionStart = null;
-        Say("Unfinished drawing cancelled; existing geometry was kept.");
+        _mergePrimaryRoomId = null;
+        Say("Unfinished operation cancelled; existing geometry was kept.");
         InvalidateVisual();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -290,6 +301,14 @@ public sealed class FloorPlanSurface : FrameworkElement
             Say("Room split starting point cancelled.");
             return;
         }
+        if (_mergePrimaryRoomId.HasValue)
+        {
+            _mergePrimaryRoomId = null;
+            InvalidateVisual();
+            Changed?.Invoke(this, EventArgs.Empty);
+            Say("Room merge selection cancelled.");
+            return;
+        }
         if (_undo.Count == 0) return;
         _redo.Push(Snapshot());
         Restore(_undo.Pop());
@@ -425,7 +444,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
         }
 
-        if (Tool is EditorTool.Select or EditorTool.SplitPerimeter or EditorTool.RemoveCorner or EditorTool.MoveWall or EditorTool.SplitRoom)
+        if (Tool is EditorTool.Select or EditorTool.SplitPerimeter or EditorTool.RemoveCorner or EditorTool.MoveWall or EditorTool.SplitRoom or EditorTool.MergeRooms)
         {
             DrawVertices(dc, _outline, _selectedPerimeterVertex, Brushes.SteelBlue);
             foreach (var room in _rooms)
@@ -609,6 +628,13 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        if (Tool == EditorTool.MergeRooms)
+        {
+            HandleMergeRoomsClick(position);
+            e.Handled = true;
+            return;
+        }
+
         if (Tool == EditorTool.MoveWall)
         {
             StartWallDrag(position);
@@ -686,7 +712,7 @@ public sealed class FloorPlanSurface : FrameworkElement
 
         if (_draggingVertex && _beforeDrag is not null)
         {
-            var movedPoint = SnapToGridPoint(ToWorld(position));
+            var movedPoint = SnapForMovingVertex(ToWorld(position));
             // Moving a shared junction updates every room/exterior using exactly
             // the same vertex, to avoid accidental slivers or duplicated corners.
             _outline = _beforeDrag.Perimeter.Select(p =>
@@ -791,6 +817,75 @@ public sealed class FloorPlanSurface : FrameworkElement
         base.OnMouseWheel(e);
         ZoomBy(Math.Pow(1.15, e.Delta / 120.0), e.GetPosition(this));
         e.Handled = true;
+    }
+
+    private void HandleMergeRoomsClick(Point position)
+    {
+        Point2 target = ToWorld(position);
+        var clicked = _rooms.LastOrDefault(room =>
+            PolygonGeometry.ContainsPoint(room.Outline, target));
+        if (clicked is null)
+        {
+            Say("Click inside a room to select it for merging.");
+            return;
+        }
+
+        if (!_mergePrimaryRoomId.HasValue)
+        {
+            _mergePrimaryRoomId = clicked.Id;
+            _selectedRoomId = clicked.Id;
+            _selectedDoorId = null;
+            _selectedVertex = -1;
+            RaiseChanged();
+            Say($"Selected '{clicked.Name}'. Click the adjoining room you want to combine it with.");
+            return;
+        }
+
+        if (_mergePrimaryRoomId.Value == clicked.Id)
+        {
+            Say("Select a different adjoining room as the second room.");
+            return;
+        }
+
+        var previous = Snapshot();
+        if (!RoomMerging.TryMergeRooms(Document(), _mergePrimaryRoomId.Value,
+                clicked.Id, out var combined, out var reason))
+        {
+            Say($"Cannot merge rooms: {reason}");
+            return;
+        }
+
+        string removedName = clicked.Name;
+        _outline = combined.Perimeter;
+        _rooms = combined.Rooms;
+        _doors = combined.Doors;
+        _selectedRoomId = _mergePrimaryRoomId;
+        _selectedDoorId = null;
+        _selectedVertex = -1;
+        _mergePrimaryRoomId = null;
+        Tool = EditorTool.Select;
+        Cursor = DefaultCursor();
+        PushUndo(previous);
+        RaiseChanged();
+        Say($"Rooms merged. '{removedName}' was absorbed into the selected room; rename it if needed.");
+    }
+
+    private Point2 SnapForMovingVertex(Point2 target)
+    {
+        if (_beforeDrag is null)
+            return SnapToGridPoint(target);
+
+        var outlines = new List<IReadOnlyList<Point2>>
+        {
+            _beforeDrag.Perimeter
+        };
+        outlines.AddRange(_beforeDrag.Rooms.Select(room =>
+            (IReadOnlyList<Point2>)room.Outline));
+
+        return GeometrySnap.ForMovedVertex(
+            target, _dragOriginalPoint, outlines,
+            10 / _pixelsPerMetre, SnapToGrid, 0.5,
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
     }
 
     private void HandleSplitRoomClick(Point position)
@@ -1180,6 +1275,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _selectedRoomId = null;
         _selectedDoorId = null;
         _selectedVertex = -1;
+        _mergePrimaryRoomId = null;
     }
 
     private List<Point2>? SelectedVertices()

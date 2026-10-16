@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.2 — Manual room layout and doors (development branch)
+## v0.4 — Merge Rooms and enhanced snapping (development branch)
 
 The editor currently supports:
 
@@ -24,6 +24,14 @@ The editor currently supports:
 - **Move Wall** tool: click and drag a wall perpendicular to its direction.
   Coincident shared vertices and affected doors follow the edit. The entire
   result is validated; invalid movements are rejected.
+- **Merge Rooms** tool: select a room and click Merge Rooms, then click an
+  adjoining room (or click the two rooms in succession). The shared partition
+  disappears and the first room retains its name, type, and ID. Doors on the
+  removed partition are deleted; doors on surviving walls are retained.
+  Arbitrarily angled and partially shared walls are supported.
+- **Corner-to-wall snapping**: moving an existing corner can snap to another
+  corner or a nearby angled wall, before falling back to the 0.5 m grid.
+  Hold Shift while dragging to bypass snapping.
 - Room-splitting endpoints snap precisely to an existing boundary even when
   the wall is diagonal or does not align with the measurement grid.
 - Drawing interior rooms as polygons, with grid, corner and edge snapping.
@@ -40,9 +48,9 @@ The editor currently supports:
 - Measuring area and exterior perimeter; saving and reopening all geometry as JSON.
 - Loading older v0.1 perimeter-only JSON documents.
 
-**Not yet implemented:** automatic room generation; merging entire adjacent
-rooms; free-standing unenclosed partition walls; multiple floors; window
-placement; door width editing; hidden passages; furnishing; and VTT export.
+**Not yet implemented:** automatic room generation; free-standing unenclosed
+partition walls; multiple floors; window placement; door width editing;
+hidden passages; furnishing; and VTT export.
 Move Wall currently moves a chosen segment perpendicular to itself, not an
 unrestricted wall rotation or a whole chain of connected non-collinear walls. Doors are simple openings and are not
 yet a complete circulation/accessibility model.
@@ -82,11 +90,12 @@ Run the geometry checks without third-party test packages:
 | Add perimeter segments | Split Perimeter, click a wall, then Select / Edit and drag new corner |
 | Join two wall segments | Remove Corner, click the shared corner |
 | Split a room into two | Select a room, Split Room, click two points on its boundary |
+| Merge adjacent rooms | Select a room, Merge Rooms, click the second room; or click both in Merge Rooms mode |
 | Move a wall | Move Wall, drag a wall perpendicular to itself; Shift disables distance snap |
 | Split any existing wall | Double-click in Select / Edit; exterior walls take priority |
 | Draw room | Draw Room, click room corners inside the building, then Finish |
 | Rename/type room | Select/Edit, click its interior, edit details, click Apply room details |
-| Move corner | Select/Edit, drag an existing corner |
+| Move corner | Select/Edit, drag an existing corner; it snaps to nearby corners or walls |
 | Insert corner | Double-click a wall with Select/Edit |
 | Delete corner | Select a corner and press Delete; the adjacent walls join |
 | Add door | Add Door, then click on a sufficiently long wall |
@@ -113,7 +122,9 @@ on the two affected walls move proportionally along the new straight
 segment; unrelated doors stay where they are. Invalid edits are rejected.
 
 Rooms are separate enclosed polygons inside the exterior footprint. Shared room
-edges render as one interior wall and can be snapped together. Room boundaries
+edges render as one interior wall and can be snapped together. Merge Rooms
+reconstructs a new outline for two edge-adjacent rooms, including non-rectangular
+layouts, while retaining the first room's identity. Room boundaries
 may touch one another, but their interiors cannot overlap. The current model
 does not automatically resize neighbouring entire wall edges when one room
 changes; an edit that would create overlap is rejected.

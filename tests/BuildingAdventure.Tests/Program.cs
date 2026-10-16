@@ -723,5 +723,199 @@ Check("Reject moves of stale or nonexistent wall segments", () =>
     Assert(reason.Contains("no longer exists"));
 });
 
+Check("Merge two rectangular rooms and remove the partition door", () =>
+{
+    var shop = new RoomDefinition { Name = "Shop", Type = "Shop",
+        Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] };
+    var storeroom = new RoomDefinition { Name = "Storeroom", Type = "Storeroom",
+        Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] };
+    var outsideDoor = new DoorDefinition { Centre = new Point2(2, 0) };
+    var insideDoor = new DoorDefinition { Centre = new Point2(5, 4) };
+    var source = new BuildingDocument
+    {
+        Name = "Merchant Hall",
+        Perimeter = rectangle.ToList(),
+        Rooms = [shop, storeroom],
+        Doors = [outsideDoor, insideDoor]
+    };
+    Assert(RoomMerging.TryMergeRooms(source, shop.Id, storeroom.Id,
+        out var merged, out var reason), reason);
+    Assert(merged.Rooms.Count == 1);
+    Assert(merged.Rooms[0].Id == shop.Id);
+    Assert(merged.Rooms[0].Name == "Shop");
+    Assert(merged.Rooms[0].Type == "Shop");
+    Equal(PolygonGeometry.Area(merged.Rooms[0].Outline), 80);
+    Assert(merged.Doors.Count == 1 &&
+        merged.Doors[0].Id == outsideDoor.Id);
+    Assert(source.Rooms.Count == 2 && source.Doors.Count == 2);
+    Assert(FloorGeometry.Validate(merged, out reason), reason);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(merged));
+    Assert(loaded.Rooms.Count == 1 && loaded.Doors.Count == 1);
+});
+
+Check("Merge rooms with an angled shared partition", () =>
+{
+    var a = new RoomDefinition { Name = "Diagonal A",
+        Outline = [new(0, 0), new(3, 0), new(5, 8), new(0, 8)] };
+    var b = new RoomDefinition { Name = "Diagonal B",
+        Outline = [new(3, 0), new(10, 0), new(10, 8), new(5, 8)] };
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = [a, b],
+        Doors = [new DoorDefinition { Centre = new Point2(4, 4) }]
+    };
+    Assert(FloorGeometry.Validate(source, out var reason), reason);
+    Assert(RoomMerging.TryMergeRooms(source, a.Id, b.Id,
+        out var merged, out reason), reason);
+    Assert(merged.Rooms.Count == 1 && merged.Doors.Count == 0);
+    Equal(PolygonGeometry.Area(merged.Rooms[0].Outline), 80);
+    Assert(FloorGeometry.Validate(merged, out reason), reason);
+});
+
+Check("Merge rooms with only a partial shared wall", () =>
+{
+    var exterior = new List<Point2> { new(0, 0), new(12, 0), new(12, 10), new(0, 10) };
+    var a = new RoomDefinition { Name = "Large room",
+        Outline = [new(0, 0), new(6, 0), new(6, 10), new(0, 10)] };
+    var b = new RoomDefinition { Name = "Side room",
+        Outline = [new(6, 3), new(12, 3), new(12, 8), new(6, 8)] };
+    var source = new BuildingDocument
+    {
+        Perimeter = exterior, Rooms = [a, b],
+        Doors = [new DoorDefinition { Centre = new Point2(6, 5) }]
+    };
+    Assert(FloorGeometry.Validate(source, out var reason), reason);
+    Assert(RoomMerging.TryMergeRooms(source, a.Id, b.Id,
+        out var merged, out reason), reason);
+    Assert(merged.Rooms.Count == 1 && merged.Doors.Count == 0);
+    Equal(PolygonGeometry.Area(merged.Rooms[0].Outline), 90);
+    Assert(FloorGeometry.Validate(merged, out reason), reason);
+});
+
+Check("Merge keeps doors bordering a third room", () =>
+{
+    var perimeter = new List<Point2> { new(0, 0), new(12, 0), new(12, 8), new(0, 8) };
+    var a = new RoomDefinition { Name = "A",
+        Outline = [new(0, 0), new(4, 0), new(4, 8), new(0, 8)] };
+    var b = new RoomDefinition { Name = "B",
+        Outline = [new(4, 0), new(8, 0), new(8, 8), new(4, 8)] };
+    var c = new RoomDefinition { Name = "C",
+        Outline = [new(8, 0), new(12, 0), new(12, 8), new(8, 8)] };
+    var partitionDoor = new DoorDefinition { Centre = new Point2(4, 4) };
+    var remainingDoor = new DoorDefinition { Centre = new Point2(8, 4) };
+    var doc = new BuildingDocument
+    {
+        Perimeter = perimeter, Rooms = [a, b, c],
+        Doors = [partitionDoor, remainingDoor]
+    };
+    Assert(RoomMerging.TryMergeRooms(doc, a.Id, b.Id,
+        out var merged, out var reason), reason);
+    Assert(merged.Rooms.Count == 2);
+    Assert(merged.Doors.Count == 1);
+    Assert(merged.Doors[0].Id == remainingDoor.Id);
+    Equal(PolygonGeometry.Area(merged.Rooms[0].Outline), 64);
+    Assert(FloorGeometry.Validate(merged, out reason), reason);
+});
+
+Check("Merging reversed-winding room contours is supported", () =>
+{
+    var left = new RoomDefinition { Name = "Left",
+        Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] };
+    var right = new RoomDefinition { Name = "Right",
+        Outline = [new(5, 8), new(10, 8), new(10, 0), new(5, 0)] };
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(), Rooms = [left, right]
+    };
+    Assert(RoomMerging.TryMergeRooms(source, left.Id, right.Id,
+        out var result, out var reason), reason);
+    Equal(PolygonGeometry.Area(result.Rooms[0].Outline), 80);
+});
+
+Check("Rooms touching only at a corner cannot merge", () =>
+{
+    var exterior = new List<Point2> { new(0, 0), new(8, 0), new(8, 8), new(0, 8) };
+    var a = new RoomDefinition { Outline = [new(0, 0), new(4, 0), new(4, 4), new(0, 4)] };
+    var b = new RoomDefinition { Outline = [new(4, 4), new(8, 4), new(8, 8), new(4, 8)] };
+    var source = new BuildingDocument { Perimeter = exterior, Rooms = [a, b] };
+    Assert(!RoomMerging.TryMergeRooms(source, a.Id, b.Id, out _, out var reason));
+    Assert(reason.Contains("share a wall"));
+});
+
+Check("Merge rejects non-adjacent and identical room selections", () =>
+{
+    var a = new RoomDefinition { Outline = [new(0, 0), new(2, 0), new(2, 2), new(0, 2)] };
+    var b = new RoomDefinition { Outline = [new(7, 5), new(9, 5), new(9, 7), new(7, 7)] };
+    var source = new BuildingDocument { Perimeter = rectangle.ToList(), Rooms = [a, b] };
+    Assert(!RoomMerging.TryMergeRooms(source, a.Id, b.Id, out _, out _));
+    Assert(!RoomMerging.TryMergeRooms(source, a.Id, a.Id, out _, out _));
+});
+
+Check("Moving corner snaps to existing room corner instead of rounded grid", () =>
+{
+    var polygon = new List<Point2> { new(1.1, 1.2), new(4.4, 3.1), new(7, 3.9) };
+    var result = GeometrySnap.ForMovedVertex(new(4.45, 3.12), new(1.1, 1.2),
+        [polygon], 0.2, true, 0.5);
+    Equal(result.X, 4.4);
+    Equal(result.Y, 3.1);
+});
+
+Check("Moving corner snaps exactly onto diagonal wall", () =>
+{
+    var polygon = new List<Point2>
+    {
+        new(2, 2), new(6, 6), new(7, 2)
+    };
+    var result = GeometrySnap.ForMovedVertex(new(4.1, 3.99),
+        new Point2(-1, -1), [polygon], 0.2, true);
+    Equal(result.X, 4.045);
+    Equal(result.Y, 4.045);
+});
+
+Check("Moving corner does not snap to its own incident wall", () =>
+{
+    var polygon = new List<Point2> { new(0, 0), new(10, 0), new(10, 8), new(0, 8) };
+    var result = GeometrySnap.ForMovedVertex(new(1.13, 0.03),
+        new Point2(0, 0), [polygon], 0.2, false);
+    Equal(result.X, 1.13);
+    Equal(result.Y, 0.03);
+});
+
+Check("Shift bypasses snapping for vertex movement", () =>
+{
+    var polygon = new List<Point2> { new(1, 1), new(5, 5), new(5, 1) };
+    var query = new Point2(5.01, 5.02);
+    var result = GeometrySnap.ForMovedVertex(query, new Point2(0, 0),
+        [polygon], 0.3, true, 0.5, bypass: true);
+    Equal(result.X, query.X);
+    Equal(result.Y, query.Y);
+});
+
+Check("A room can be split and immediately merged back together", () =>
+{
+    var original = new RoomDefinition
+    {
+        Name = "Inn Common Room", Type = "Common room",
+        Outline = rectangle.ToList()
+    };
+    var document = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = [original],
+        Doors = [new DoorDefinition { Centre = new Point2(3, 0) }]
+    };
+    Assert(InteriorEditing.TrySplitRoom(document, original.Id,
+        new Point2(5, 0), new Point2(5, 8), out var split, out var reason), reason);
+    Assert(split.Rooms.Count == 2);
+    Assert(RoomMerging.TryMergeRooms(split, split.Rooms[0].Id, split.Rooms[1].Id,
+        out var merged, out reason), reason);
+    Assert(merged.Rooms.Count == 1);
+    Assert(merged.Rooms[0].Id == original.Id);
+    Equal(PolygonGeometry.Area(merged.Rooms[0].Outline), 80);
+    Assert(merged.Doors.Count == 1);
+    Assert(FloorGeometry.Validate(merged, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
