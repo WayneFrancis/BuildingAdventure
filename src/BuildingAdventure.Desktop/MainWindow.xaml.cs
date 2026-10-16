@@ -1,0 +1,195 @@
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using BuildingAdventure.Core.Buildings;
+using BuildingAdventure.Core.Geometry;
+using BuildingAdventure.Desktop.Controls;
+using Microsoft.Win32;
+
+namespace BuildingAdventure.Desktop;
+
+public partial class MainWindow : Window
+{
+    private string? _filePath;
+    private string _lastSavedJson = "";
+    private bool _loading;
+    private string _hint = "Select Draw Perimeter, then click corners to begin.";
+
+    public MainWindow()
+    {
+        InitializeComponent();
+        EditorSurface.Changed += (_, _) => Refresh();
+        EditorSurface.Hint += message => { _hint = message; Refresh(); };
+        EditorSurface.SetTool(EditorTool.DrawPerimeter);
+        _lastSavedJson = CurrentJson();
+        Loaded += (_, _) => { EditorSurface.Focus(); Refresh(); };
+        Closing += (_, e) => { if (!ConfirmDiscard()) e.Cancel = true; };
+        Refresh();
+    }
+
+    private BuildingDocument CurrentDocument() => new()
+    {
+        Name = NameBox.Text,
+        Perimeter = EditorSurface.GetOutline().ToList()
+    };
+
+    private string CurrentJson() => BuildingDocumentJson.Serialize(CurrentDocument());
+
+    private bool IsDirty()
+    {
+        try { return CurrentJson() != _lastSavedJson; }
+        catch (InvalidDataException) { return true; }
+    }
+
+    private bool ConfirmDiscard() =>
+        !IsDirty() ||
+        MessageBox.Show(this, "Discard unsaved changes?", "BuildingAdventure",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+
+    private void Refresh()
+    {
+        if (_loading || EditorSurface is null || CornersText is null) return;
+        var outline = EditorSurface.GetOutline();
+        CornersText.Text = $"{outline.Count} corners";
+        AreaText.Text = outline.Count >= 3 ? $"Area: {PolygonGeometry.Area(outline):N2} m²" : "Area: —";
+        LengthText.Text = outline.Count >= 3 ? $"Exterior walls: {PolygonGeometry.Perimeter(outline):N2} m" : "Exterior walls: —";
+        UndoButton.IsEnabled = UndoMenu.IsEnabled = EditorSurface.CanUndo;
+        RedoButton.IsEnabled = RedoMenu.IsEnabled = EditorSurface.CanRedo;
+        FinishButton.IsEnabled = EditorSurface.IsDrawing;
+        SelectButton.FontWeight = EditorSurface.Tool == EditorTool.Select ? FontWeights.Bold : FontWeights.Normal;
+        DrawButton.FontWeight = EditorSurface.Tool == EditorTool.DrawPerimeter ? FontWeights.Bold : FontWeights.Normal;
+        PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
+        HintText.Text = _hint;
+        ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
+        string fileLabel = _filePath is null ? "Untitled" : Path.GetFileName(_filePath);
+        Title = $"{NameBox.Text} — {fileLabel}{(IsDirty() ? " *" : "")} — BuildingAdventure";
+    }
+
+    private void New_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmDiscard()) return;
+        _loading = true;
+        EditorSurface.LoadOutline(Array.Empty<Point2>());
+        NameBox.Text = "Untitled Building";
+        _filePath = null;
+        _loading = false;
+        EditorSurface.SetTool(EditorTool.DrawPerimeter);
+        _lastSavedJson = CurrentJson();
+        _hint = "New building. Click corners to draw the perimeter.";
+        Refresh();
+    }
+
+    private void Open_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmDiscard()) return;
+        var dialog = new OpenFileDialog
+        {
+            Filter = "BuildingAdventure JSON (*.json)|*.json|All files (*.*)|*.*",
+            Title = "Open a building"
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var document = BuildingDocumentJson.Deserialize(File.ReadAllText(dialog.FileName));
+            _loading = true;
+            EditorSurface.LoadOutline(document.Perimeter);
+            NameBox.Text = document.Name;
+            _filePath = dialog.FileName;
+            _loading = false;
+            _lastSavedJson = CurrentJson();
+            EditorSurface.SetTool(EditorTool.Select);
+            EditorSurface.FitToView();
+            _hint = "Building opened.";
+            Refresh();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
+        {
+            _loading = false;
+            MessageBox.Show(this, ex.Message, "Cannot open building", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void Save_Click(object sender, RoutedEventArgs e) => SaveFile(saveAs: false);
+    private void SaveAs_Click(object sender, RoutedEventArgs e) => SaveFile(saveAs: true);
+
+    private void SaveFile(bool saveAs)
+    {
+        string? target = saveAs ? null : _filePath;
+        if (target is null)
+        {
+            var dialog = new SaveFileDialog
+            {
+                Filter = "BuildingAdventure JSON (*.json)|*.json",
+                DefaultExt = ".json",
+                AddExtension = true,
+                FileName = _filePath is null ? "building.json" : Path.GetFileName(_filePath),
+                Title = "Save building"
+            };
+            if (dialog.ShowDialog(this) != true) return;
+            target = dialog.FileName;
+        }
+
+        try
+        {
+            var json = CurrentJson();
+            File.WriteAllText(target, json);
+            _filePath = target;
+            _lastSavedJson = json;
+            _hint = $"Saved {Path.GetFileName(target)}.";
+            Refresh();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(this, ex.Message, "Cannot save building", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+    private void Undo_Click(object sender, RoutedEventArgs e) => EditorSurface.Undo();
+    private void Redo_Click(object sender, RoutedEventArgs e) => EditorSurface.Redo();
+    private void Delete_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedVertex();
+    private void Cancel_Click(object sender, RoutedEventArgs e) => EditorSurface.CancelDrawing();
+    private void Finish_Click(object sender, RoutedEventArgs e) => EditorSurface.FinishDrawing();
+    private void SelectTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.Select);
+    private void DrawTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.DrawPerimeter);
+    private void PanTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.Pan);
+    private void Fit_Click(object sender, RoutedEventArgs e) => EditorSurface.FitToView();
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) => EditorSurface.ZoomBy(1.25);
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) => EditorSurface.ZoomBy(0.8);
+
+    private void SnapChanged(object sender, RoutedEventArgs e)
+    {
+        if (EditorSurface is not null)
+            EditorSurface.SnapToGrid = SnapCheckBox.IsChecked == true;
+    }
+
+    private void NameBox_TextChanged(object sender, TextChangedEventArgs e) => Refresh();
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+        if (e.Handled) return;
+        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        // Preserve native text editing shortcuts when renaming the building.
+        if (Keyboard.FocusedElement is TextBox &&
+            ((ctrl && (e.Key == Key.Z || e.Key == Key.Y)) || e.Key == Key.Delete))
+            return;
+
+        if (ctrl && e.Key == Key.N) New_Click(this, new RoutedEventArgs());
+        else if (ctrl && e.Key == Key.O) Open_Click(this, new RoutedEventArgs());
+        else if (ctrl && e.Key == Key.S)
+        {
+            if (shift) SaveAs_Click(this, new RoutedEventArgs());
+            else Save_Click(this, new RoutedEventArgs());
+        }
+        else if (ctrl && e.Key == Key.Z) EditorSurface.Undo();
+        else if (ctrl && e.Key == Key.Y) EditorSurface.Redo();
+        else if (ctrl && e.Key == Key.D0) EditorSurface.FitToView();
+        else if (e.Key == Key.Escape) EditorSurface.CancelDrawing();
+        else if (e.Key == Key.Delete && !NameBox.IsKeyboardFocusWithin) EditorSurface.DeleteSelectedVertex();
+        else return;
+        e.Handled = true;
+    }
+}

@@ -1,0 +1,15 @@
+# .NET / Visual Studio
+**/bin/
+**/obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.rsuser
+TestResults/
+artifacts/
+*.pdb
+*.cache
+
+# Local outputs
+*.buildingadventure.json
