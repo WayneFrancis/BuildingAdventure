@@ -262,6 +262,26 @@ centred on editable wall lines; they do not yet use explicit inner/outer
 offset polygons, structural corner mitres, load-bearing classifications,
 ceiling heights, or 3D wall meshes.
 
+## Solid corners and wall junctions (v0.9.1)
+
+- Physical wall strokes used to terminate with flat caps, leaving triangular
+  gaps on the outside of angled corners and at interior-wall T-junctions.
+- WallConstruction.JunctionPatches now detects true solid structural nodes
+  from WallConstruction.SolidPieces. It uses arm directions and their
+  independent physical half-widths to construct a bounded convex miter
+  polygon. Purely collinear split vertices do not generate a patch.
+- The WPF drawing surface renders all dark structural outlines first and
+  fills their junction patches, then paints the wall material strokes and
+  their smaller junction patches. This seals the corner gap while preserving
+  the visible border and avoiding dark seams between joined wall pieces.
+- Junction detection is performed on *solid pieces*, not raw polygon corners.
+  Door and window cut ends with only one solid arm therefore receive no
+  accidental end caps, so the openings remain clear, including openings
+  across collinear wall splits.
+- Sharp miter intersections are bounded to three times the adjoining wall
+  radius to prevent extreme protrusions at nearly parallel walls. Editing,
+  snapping, collision rules, JSON schema, and wall centre lines are unchanged.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

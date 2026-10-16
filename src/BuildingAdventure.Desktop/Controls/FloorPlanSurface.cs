@@ -593,20 +593,39 @@ public sealed class FloorPlanSurface : FrameworkElement
             DrawLengths(dc, _outline, true);
         }
 
-        // Physical walls stay centred on their editable polygon lines.
-        // Each piece excludes openings in any supporting split segment.
-        foreach (var piece in WallConstruction.SolidPieces(Document()))
+        // Render the dark border of all physical wall pieces first, then
+        // mitred junction patches, followed by material fills. A separate
+        // patch fills the empty wedge left by flat-ended strokes at corners
+        // and T-junctions; opening endpoints never receive those patches.
+        var wallPlan = Document();
+        var wallPieces = WallConstruction.SolidPieces(wallPlan);
+        double outlinePadding = 1 / _pixelsPerMetre;
+        foreach (var piece in wallPieces)
         {
             double width = (piece.IsExterior
                 ? _wallThickness.ExteriorMetres
                 : _wallThickness.InteriorMetres) * _pixelsPerMetre;
-            if (width <= 0) continue;
-            Point a = ToScreen(piece.A);
-            Point b = ToScreen(piece.B);
-            dc.DrawLine(new Pen(Brushes.DarkSlateGray, width + 2), a, b);
-            dc.DrawLine(new Pen(piece.IsExterior
-                ? Brushes.SlateGray : Brushes.LightSlateGray, width), a, b);
+            dc.DrawLine(new Pen(Brushes.DarkSlateGray, width + 2),
+                ToScreen(piece.A), ToScreen(piece.B));
         }
+        foreach (var join in WallConstruction.JunctionPatches(
+            wallPlan, outlinePadding))
+            dc.DrawGeometry(Brushes.DarkSlateGray, null,
+                BuildGeometry(join.Outline, true));
+
+        foreach (var piece in wallPieces)
+        {
+            double width = (piece.IsExterior
+                ? _wallThickness.ExteriorMetres
+                : _wallThickness.InteriorMetres) * _pixelsPerMetre;
+            dc.DrawLine(new Pen(piece.IsExterior
+                    ? Brushes.SlateGray : Brushes.LightSlateGray, width),
+                ToScreen(piece.A), ToScreen(piece.B));
+        }
+        foreach (var join in WallConstruction.JunctionPatches(wallPlan))
+            dc.DrawGeometry(join.IsExterior
+                    ? Brushes.SlateGray : Brushes.LightSlateGray, null,
+                BuildGeometry(join.Outline, true));
 
         var walls = FloorGeometry.BuildWalls(_outline, _rooms);
         if (_movingWallNow && _movingWall is not null && _beforeDrag is not null)

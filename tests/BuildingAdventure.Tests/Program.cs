@@ -2323,5 +2323,159 @@ Check("Invalid thickness is rejected without modifying the stored building", () 
     Equal(floor.WallThickness.InteriorMetres, 0.12);
 });
 
+Check("Right-angle exterior corners have solid mitred junctions", () =>
+{
+    var floor = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var joins = WallConstruction.JunctionPatches(floor);
+    Assert(joins.Count == 4);
+    var topLeft = joins.Single(j => j.Centre == new Point2(0, 0));
+    Assert(topLeft.IsExterior);
+    Assert(topLeft.Outline.Count >= 4);
+    Assert(PolygonGeometry.ContainsPoint(topLeft.Outline, new Point2(-0.1, -0.1)),
+        "The outside-corner notch must be filled.");
+    Assert(PolygonGeometry.ContainsPoint(topLeft.Outline, new Point2(0, 0)));
+    Assert(!PolygonGeometry.ContainsPoint(topLeft.Outline, new Point2(-0.25, -0.25)),
+        "A junction must not extend indefinitely beyond the wall.");
+});
+
+Check("Angled exterior corners receive filled miters without enormous spikes", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(8, 2), new(10, 8), new(2, 9)]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var joins = WallConstruction.JunctionPatches(floor);
+    Assert(joins.Count == 4);
+    foreach (var join in joins)
+    {
+        Assert(join.Outline.Count >= 3);
+        Assert(PolygonGeometry.ContainsPoint(join.Outline, join.Centre));
+        Assert(PolygonGeometry.Area(join.Outline) > 0);
+        Assert(join.Outline.All(p => p.DistanceTo(join.Centre) < 1),
+            "The miter should stay close to the true structural corner.");
+    }
+});
+
+Check("A partition T-junction with an exterior wall is sealed", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var joins = WallConstruction.JunctionPatches(floor);
+    var topT = joins.Single(j => j.Centre == new Point2(5, 0));
+    Assert(topT.IsExterior);
+    Assert(topT.Outline.Count >= 4);
+    Assert(PolygonGeometry.ContainsPoint(topT.Outline, new Point2(5, -0.09)));
+    Assert(PolygonGeometry.ContainsPoint(topT.Outline, new Point2(5.05, 0.02)));
+    Assert(joins.Any(j => j.Centre == new Point2(5, 8)));
+});
+
+Check("Collinear split vertices do not create thick square bulges", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter =
+        [
+            new(0, 0), new(5, 0), new(10, 0), new(10, 8), new(0, 8)
+        ]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var joins = WallConstruction.JunctionPatches(floor);
+    Assert(joins.Count == 4);
+    Assert(!joins.Any(j => j.Centre == new Point2(5, 0)));
+});
+
+Check("Window opening endpoints are not closed by junction patches", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(5, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var joins = WallConstruction.JunctionPatches(floor);
+    Assert(!joins.Any(j =>
+        j.Centre.DistanceTo(new Point2(4.4, 0)) < 0.01 ||
+        j.Centre.DistanceTo(new Point2(5.6, 0)) < 0.01));
+    Assert(joins.Count == 4);
+    Assert(WallConstruction.SolidPieces(floor).Count == 5);
+});
+
+Check("Interior door jambs stay open when walls meet elsewhere", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 4), Width = 0.9 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var joins = WallConstruction.JunctionPatches(floor);
+    Assert(!joins.Any(j => Math.Abs(j.Centre.X - 5) < 1e-6 &&
+        (Math.Abs(j.Centre.Y - 3.55) < 0.01 ||
+         Math.Abs(j.Centre.Y - 4.45) < 0.01)));
+    Assert(joins.Any(j => j.Centre == new Point2(5, 0)));
+    Assert(joins.Any(j => j.Centre == new Point2(5, 8)));
+    Equal(WallConstruction.SolidPieces(floor)
+        .Where(p => !p.IsExterior).Sum(p => p.Length), 8 - 0.9);
+});
+
+Check("Junction border padding expands fill without modifying wall openings", () =>
+{
+    var floor = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var inner = WallConstruction.JunctionPatches(floor);
+    var outer = WallConstruction.JunctionPatches(floor, 0.02);
+    Assert(inner.Count == outer.Count);
+    var centre = new Point2(0, 0);
+    var i = inner.Single(j => j.Centre == centre);
+    var o = outer.Single(j => j.Centre == centre);
+    Assert(PolygonGeometry.Area(o.Outline) > PolygonGeometry.Area(i.Outline));
+    var invalid = false;
+    try { WallConstruction.JunctionPatches(floor, -0.01); }
+    catch (ArgumentOutOfRangeException) { invalid = true; }
+    Assert(invalid);
+});
+
+Check("Narrow interior partition receives a smaller miter than exterior corners", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        WallThickness = new WallThicknessSettings
+        {
+            ExteriorMetres = 0.4,
+            InteriorMetres = 0.1
+        },
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var joins = WallConstruction.JunctionPatches(floor);
+    Assert(joins.Count >= 6);
+    Assert(joins.Single(j => j.Centre == new Point2(5, 0)).IsExterior);
+    Assert(joins.Single(j => j.Centre == new Point2(5, 0)).Outline.Count >= 4);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

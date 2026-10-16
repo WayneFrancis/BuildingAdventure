@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.9 — Wall thickness and physical openings (development branch)
+## v0.9.1 — Solid wall corner and T-junctions (development branch)
 
 The editor currently supports:
 
@@ -24,6 +24,13 @@ The editor currently supports:
 - **Move Wall** tool: click and drag a wall perpendicular to its direction.
   Coincident shared vertices and affected doors follow the edit. The entire
   result is validated; invalid movements are rejected.
+- **Gap-free wall joins**: solid wall junction patches close the angled
+  wedge between the separate thick wall strokes at every real corner and
+  T-junction. Join shape follows the actual interior or exterior thickness;
+  right-angle and diagonal corners receive sharp bounded miters instead
+  of an empty notch. Straight split points are not thickened, and door
+  and window gaps remain unobstructed. Structural reference lines and
+  room/perimeter editing behaviour are unchanged.
 - **Physical wall thickness**: set separate exterior and interior wall
   thicknesses in metres in the WALL CONSTRUCTION panel. Defaults are
   0.24 m exterior and 0.12 m interior. Walls render as filled,
