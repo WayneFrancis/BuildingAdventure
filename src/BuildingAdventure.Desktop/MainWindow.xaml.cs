@@ -17,11 +17,22 @@ public partial class MainWindow : Window
     private string _hint = "Select Draw Perimeter, then click corners to begin.";
     private BuildingDocument _building = new();
     private int _activeFloorIndex;
+    private readonly BuildingEditHistory _history = new();
+    private string? _nameBeforeEdit;
 
     public MainWindow()
     {
         InitializeComponent();
+        EditorSurface.UsesGlobalHistory = true;
         EditorSurface.Changed += (_, _) => Refresh();
+        EditorSurface.DocumentEditCommitted += previousFloor =>
+        {
+            if (_loading) return;
+            var before = CurrentDocument();
+            BuildingStoreys.SetFloor(before, _activeFloorIndex, previousFloor);
+            _history.RecordBefore(before, _activeFloorIndex);
+            Refresh();
+        };
         EditorSurface.SelectionChanged += (_, _) =>
         {
             UpdateSelectedRoomControls();
@@ -97,8 +108,10 @@ public partial class MainWindow : Window
         OpeningText.Text = $"{BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex).Count} opening(s) in this slab";
         AddFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
         RemoveFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) > 1;
-        UndoButton.IsEnabled = UndoMenu.IsEnabled = EditorSurface.CanUndo;
-        RedoButton.IsEnabled = RedoMenu.IsEnabled = EditorSurface.CanRedo;
+        UndoButton.IsEnabled = UndoMenu.IsEnabled =
+            EditorSurface.HasPendingStep || _history.CanUndo;
+        RedoButton.IsEnabled = RedoMenu.IsEnabled =
+            !EditorSurface.HasPendingStep && _history.CanRedo;
         FinishButton.IsEnabled = EditorSurface.IsDrawing;
         SelectButton.FontWeight = EditorSurface.Tool == EditorTool.Select ? FontWeights.Bold : FontWeights.Normal;
         DrawButton.FontWeight = EditorSurface.Tool == EditorTool.DrawPerimeter ? FontWeights.Bold : FontWeights.Normal;
@@ -123,6 +136,8 @@ public partial class MainWindow : Window
         _loading = true;
         _building = new BuildingDocument();
         _activeFloorIndex = 0;
+        _history.Clear();
+        _nameBeforeEdit = null;
         EditorSurface.LoadOutline(Array.Empty<Point2>());
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
         RebuildFloorPicker();
@@ -151,6 +166,8 @@ public partial class MainWindow : Window
             _loading = true;
             _building = BuildingStoreys.Copy(document);
             _activeFloorIndex = 0;
+            _history.Clear();
+            _nameBeforeEdit = null;
             EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
             EditorSurface.SetStairOverlay(_building.Staircases, 0);
             RebuildFloorPicker();
@@ -296,6 +313,7 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        _history.RecordBefore(CurrentDocument(), _activeFloorIndex);
         _building = added;
         _activeFloorIndex = BuildingStoreys.FloorCount(_building) - 1;
         RebuildFloorPicker();
@@ -317,6 +335,7 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        _history.RecordBefore(CurrentDocument(), _activeFloorIndex);
         _building = updated;
         _activeFloorIndex = Math.Min(_activeFloorIndex,
             BuildingStoreys.FloorCount(_building) - 1);
@@ -436,7 +455,8 @@ public partial class MainWindow : Window
             return;
         }
         stair.Centre = centre;
-        if (!BuildingStoreys.TryAddStaircase(CurrentDocument(), stair,
+        var before = CurrentDocument();
+        if (!BuildingStoreys.TryAddStaircase(before, stair,
                 out var updated, out var reason))
         {
             _hint = $"Cannot place stairs: {reason}";
@@ -444,6 +464,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        _history.RecordBefore(before, _activeFloorIndex);
         _building = updated;
         EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex, stair.Id);
         EditorSurface.SetTool(EditorTool.Select);
@@ -453,13 +474,15 @@ public partial class MainWindow : Window
 
     private void ApplyStairEdit(StaircaseDefinition proposed)
     {
-        if (!BuildingStoreys.TryUpdateStaircase(CurrentDocument(), proposed,
+        var before = CurrentDocument();
+        if (!BuildingStoreys.TryUpdateStaircase(before, proposed,
                 out var updated, out var reason))
         {
             RejectStairEdit(reason);
             return;
         }
 
+        _history.RecordBefore(before, _activeFloorIndex);
         _building = updated;
         EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex, proposed.Id);
         StairValidationText.Text = "";
@@ -528,16 +551,74 @@ public partial class MainWindow : Window
     {
         Guid? id = EditorSurface.SelectedStaircaseId;
         if (!id.HasValue) return;
-        _building = CurrentDocument();
+        var before = CurrentDocument();
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = before;
         _building.Staircases.RemoveAll(s => s.Id == id.Value);
         EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex);
         _hint = "Staircase removed from both connected floors.";
         Refresh();
     }
 
+    private void RestoreHistory(BuildingHistoryState state, string message)
+    {
+        _loading = true;
+        _building = BuildingStoreys.Copy(state.Building);
+        _activeFloorIndex = state.FloorIndex;
+        _nameBeforeEdit = null;
+        NameBox.Text = _building.Name;
+        RebuildFloorPicker();
+        EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, _activeFloorIndex));
+        EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex);
+        UpdateAlignmentReferences();
+        EditorSurface.SetTool(EditorTool.Select);
+        _loading = false;
+        _hint = $"{message} — {BuildingStoreys.FloorLabel(_activeFloorIndex)}.";
+        Refresh();
+    }
+
+    private void UndoDocument()
+    {
+        if (EditorSurface.HasPendingStep)
+        {
+            EditorSurface.Undo();
+            Refresh();
+            return;
+        }
+
+        if (_history.TryUndo(CurrentDocument(), _activeFloorIndex, out var target))
+            RestoreHistory(target, "Undo");
+    }
+
+    private void RedoDocument()
+    {
+        if (EditorSurface.HasPendingStep) return;
+        if (_history.TryRedo(CurrentDocument(), _activeFloorIndex, out var target))
+            RestoreHistory(target, "Redo");
+    }
+
+    private void NameBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!_loading)
+            _nameBeforeEdit = NameBox.Text;
+    }
+
+    private void NameBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        string? previousName = _nameBeforeEdit;
+        _nameBeforeEdit = null;
+        if (_loading || previousName is null || previousName == NameBox.Text)
+            return;
+
+        var before = CurrentDocument();
+        before.Name = previousName;
+        _history.RecordBefore(before, _activeFloorIndex);
+        Refresh();
+    }
+
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
-    private void Undo_Click(object sender, RoutedEventArgs e) => EditorSurface.Undo();
-    private void Redo_Click(object sender, RoutedEventArgs e) => EditorSurface.Redo();
+    private void Undo_Click(object sender, RoutedEventArgs e) => UndoDocument();
+    private void Redo_Click(object sender, RoutedEventArgs e) => RedoDocument();
     private void Delete_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedVertex();
     private void Cancel_Click(object sender, RoutedEventArgs e) => EditorSurface.CancelDrawing();
     private void Finish_Click(object sender, RoutedEventArgs e) => EditorSurface.FinishDrawing();
@@ -581,8 +662,8 @@ public partial class MainWindow : Window
             if (shift) SaveAs_Click(this, new RoutedEventArgs());
             else Save_Click(this, new RoutedEventArgs());
         }
-        else if (ctrl && e.Key == Key.Z) EditorSurface.Undo();
-        else if (ctrl && e.Key == Key.Y) EditorSurface.Redo();
+        else if (ctrl && e.Key == Key.Z) UndoDocument();
+        else if (ctrl && e.Key == Key.Y) RedoDocument();
         else if (ctrl && e.Key == Key.D0) EditorSurface.FitToView();
         else if (e.Key == Key.Escape) EditorSurface.CancelDrawing();
         else if (e.Key == Key.Delete && !NameBox.IsKeyboardFocusWithin && !RoomNameBox.IsKeyboardFocusWithin)

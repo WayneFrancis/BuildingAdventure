@@ -63,6 +63,12 @@ public sealed class FloorPlanSurface : FrameworkElement
     public event Action<Point2>? StairPlacementRequested;
     public event Action<StaircaseDefinition>? StairEditRequested;
 
+    /// <summary>
+    /// Fired once after a successful floor-geometry commit, carrying the
+    /// immediately preceding floor state for document-wide history.
+    /// </summary>
+    public event Action<BuildingDocument>? DocumentEditCommitted;
+
     /// <summary>Returns proposed dimensions and floor connection for new stairs.</summary>
     public Func<StaircaseDefinition?>? StairTemplateProvider { get; set; }
 
@@ -85,8 +91,16 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     public EditorTool Tool { get; private set; }
     public bool SnapToGrid { get; set; } = true;
+
+    /// <summary>
+    /// When the host maintains a building-wide history, do not also retain
+    /// an accumulating second local floor-undo stack.
+    /// </summary>
+    public bool UsesGlobalHistory { get; set; }
     public double PixelsPerMetre => _pixelsPerMetre;
     public bool IsDrawing => _draft.Count > 0;
+    public bool HasPendingStep =>
+        _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue;
     public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue || _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
@@ -1793,8 +1807,12 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private void PushUndo(EditorSnapshot previous)
     {
-        _undo.Push(previous);
+        if (!UsesGlobalHistory)
+            _undo.Push(previous);
+        else
+            _undo.Clear();
         _redo.Clear();
+        DocumentEditCommitted?.Invoke(DocumentFromSnapshot(previous));
     }
 
     private void ClearSelection()

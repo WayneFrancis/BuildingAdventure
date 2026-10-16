@@ -1535,5 +1535,190 @@ Check("Invalid negative stairwell clearance cannot be saved", () =>
     Assert(reason.Contains("Invalid staircase"));
 });
 
+Check("Global undo and redo restore complete room edits and their floor", () =>
+{
+    var history = new BuildingEditHistory();
+    var original = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var building = BuildingStoreys.Copy(original);
+    var room = new RoomDefinition { Name = "Office", Type = "Office",
+        Outline = rectangle.ToList() };
+    history.RecordBefore(building, 0);
+    building.Rooms.Add(room);
+    Assert(history.CanUndo && !history.CanRedo && history.UndoCount == 1);
+
+    Assert(history.TryUndo(building, 0, out var before));
+    Assert(before.FloorIndex == 0 && before.Building.Rooms.Count == 0);
+    Assert(history.CanRedo && history.RedoCount == 1);
+    Assert(history.TryRedo(before.Building, before.FloorIndex, out var restored));
+    Assert(restored.FloorIndex == 0 && restored.Building.Rooms.Count == 1);
+    Assert(restored.Building.Rooms[0].Id == room.Id);
+    Assert(history.CanUndo && !history.CanRedo);
+});
+
+Check("Global history can undo an upstairs edit after user switches downstairs", () =>
+{
+    var history = new BuildingEditHistory();
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var before = BuildingStoreys.Copy(two);
+    var newRoom = new RoomDefinition { Name = "Bedroom",
+        Outline = rectangle.ToList() };
+    var edited = BuildingStoreys.GetFloor(two, 1);
+    edited.Rooms.Add(newRoom);
+    history.RecordBefore(before, 1);
+    BuildingStoreys.SetFloor(two, 1, edited);
+
+    // Changing the selected floor is just a view action; no history entry.
+    Assert(history.UndoCount == 1);
+    Assert(history.TryUndo(two, 0, out var undone));
+    Assert(undone.FloorIndex == 1);
+    Assert(undone.Building.UpperFloors[0].Rooms.Count == 0);
+    Assert(undone.Building.Perimeter.SequenceEqual(rectangle));
+    Assert(history.TryRedo(undone.Building, undone.FloorIndex, out var redone));
+    Assert(redone.FloorIndex == 0);
+    Assert(redone.Building.UpperFloors[0].Rooms.Single().Name == "Bedroom");
+});
+
+Check("Global history includes staircase movement and opening size", () =>
+{
+    var history = new BuildingEditHistory();
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var stairs = new StaircaseDefinition { Centre = new Point2(3, 4) };
+    history.RecordBefore(building, 0);
+    Assert(BuildingStoreys.TryAddStaircase(building, stairs,
+        out var added, out reason), reason);
+    var moved = stairs.Copy();
+    moved.Centre = new Point2(7, 4);
+    moved.OpeningExtraLength = 0.4;
+    history.RecordBefore(added, 0);
+    Assert(BuildingStoreys.TryUpdateStaircase(added, moved,
+        out var changed, out reason), reason);
+
+    Assert(history.TryUndo(changed, 1, out var beforeMove));
+    Equal(beforeMove.Building.Staircases.Single().Centre.X, 3);
+    Equal(beforeMove.Building.Staircases.Single().OpeningExtraLength, 0);
+    Assert(beforeMove.FloorIndex == 0);
+    Assert(history.TryUndo(beforeMove.Building, beforeMove.FloorIndex, out var beforeAdding));
+    Assert(beforeAdding.Building.Staircases.Count == 0);
+    Assert(history.TryRedo(beforeAdding.Building, beforeAdding.FloorIndex, out var redone));
+    Assert(redone.Building.Staircases.Count == 1);
+    Assert(history.TryRedo(redone.Building, redone.FloorIndex, out var movedAgain));
+    Equal(movedAgain.Building.Staircases.Single().Centre.X, 7);
+    Equal(movedAgain.Building.Staircases.Single().OpeningExtraLength, 0.4);
+    Assert(BuildingStoreys.Validate(movedAgain.Building, out reason), reason);
+});
+
+Check("Adding then removing a floor is undoable across floor-count changes", () =>
+{
+    var history = new BuildingEditHistory();
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    history.RecordBefore(ground, 0);
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    Assert(BuildingStoreys.FloorCount(two) == 2);
+
+    history.RecordBefore(two, 1);
+    Assert(BuildingStoreys.TryRemoveTopFloor(two, out var one, out reason), reason);
+    Assert(BuildingStoreys.FloorCount(one) == 1);
+
+    Assert(history.TryUndo(one, 0, out var undoRemoval));
+    Assert(BuildingStoreys.FloorCount(undoRemoval.Building) == 2);
+    Assert(undoRemoval.FloorIndex == 1);
+    Assert(history.TryUndo(undoRemoval.Building, undoRemoval.FloorIndex,
+        out var undoAddition));
+    Assert(BuildingStoreys.FloorCount(undoAddition.Building) == 1);
+    Assert(undoAddition.FloorIndex == 0);
+    Assert(history.TryRedo(undoAddition.Building, 0, out var redoAddition));
+    Assert(BuildingStoreys.FloorCount(redoAddition.Building) == 2);
+});
+
+Check("A new committed edit clears the redo branch", () =>
+{
+    var history = new BuildingEditHistory();
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    history.RecordBefore(building, 0);
+    var changed = BuildingStoreys.Copy(building);
+    changed.Name = "First name";
+    Assert(history.TryUndo(changed, 0, out var restored));
+    Assert(history.CanRedo);
+    history.RecordBefore(restored.Building, 0);
+    Assert(!history.CanRedo && history.RedoCount == 0);
+    var other = BuildingStoreys.Copy(restored.Building);
+    other.Name = "Different edit";
+    Assert(history.TryUndo(other, 0, out var undoNewEdit));
+    Assert(undoNewEdit.Building.Name == building.Name);
+});
+
+Check("History snapshots do not share mutable room or stair instances", () =>
+{
+    var history = new BuildingEditHistory();
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(building, out var two, out var reason), reason);
+    two.Staircases.Add(new StaircaseDefinition { Centre = new Point2(5, 4) });
+    history.RecordBefore(two, 1);
+    two.Perimeter[0] = new Point2(-2, 0);
+    two.Staircases[0].Centre = new Point2(7, 5);
+    Assert(history.TryUndo(two, 0, out var copy));
+    Equal(copy.Building.Perimeter[0].X, 0);
+    Equal(copy.Building.Staircases[0].Centre.X, 5);
+
+    // Even the returned snapshot must not mutate a subsequent redo target.
+    copy.Building.Staircases[0].Centre = new Point2(8, 6);
+    Assert(history.TryRedo(copy.Building, 1, out var redo));
+    Equal(redo.Building.Staircases[0].Centre.X, 7);
+});
+
+Check("History records only successful commits and exposes bounded counts", () =>
+{
+    var history = new BuildingEditHistory();
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    for (int i = 0; i < 225; i++)
+    {
+        history.RecordBefore(building, 0);
+        building = BuildingStoreys.Copy(building);
+        building.Name = $"Version {i}";
+    }
+    Assert(history.UndoCount == 200);
+    Assert(history.CanUndo);
+    for (int i = 0; i < 200; i++)
+    {
+        Assert(history.TryUndo(building, 0, out var previous));
+        building = previous.Building;
+    }
+    Assert(!history.CanUndo && history.RedoCount == 200);
+    Assert(!history.TryUndo(building, 0, out _));
+});
+
+Check("New or opened document resets both global history directions", () =>
+{
+    var history = new BuildingEditHistory();
+    var original = new BuildingDocument { Perimeter = rectangle.ToList() };
+    history.RecordBefore(original, 0);
+    var changed = BuildingStoreys.Copy(original);
+    changed.Name = "Edited";
+    Assert(history.TryUndo(changed, 0, out _));
+    Assert(history.CanRedo);
+    history.Clear();
+    Assert(!history.CanUndo && !history.CanRedo);
+    Assert(history.UndoCount == 0 && history.RedoCount == 0);
+});
+
+Check("Global history preserves JSON round-trip after cross-floor undo", () =>
+{
+    var history = new BuildingEditHistory();
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var room = new RoomDefinition { Name = "Upper study", Outline = rectangle.ToList() };
+    history.RecordBefore(two, 1);
+    var upper = BuildingStoreys.GetFloor(two, 1);
+    upper.Rooms.Add(room);
+    BuildingStoreys.SetFloor(two, 1, upper);
+    Assert(history.TryUndo(two, 0, out var previous));
+    var roundTripped = BuildingDocumentJson.Deserialize(
+        BuildingDocumentJson.Serialize(previous.Building));
+    Assert(roundTripped.UpperFloors[0].Rooms.Count == 0);
+    Assert(BuildingStoreys.FloorCount(roundTripped) == 2);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

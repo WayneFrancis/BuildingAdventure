@@ -73,8 +73,9 @@ validation. Procedural generation remains **not implemented yet**.
   Later edits can give that floor a different outline.
 - The editor handles one floor at a time. Switching floors snapshots the
   current editor geometry into its correct storey, loads the new geometry,
-  and resets the local undo stack for the new floor. Building metadata and
-  stair definitions are held by the main window.
+  and resets the editor's transient interaction state for the new floor.
+  Building metadata and stair definitions are held by the main window.
+  The separate building-wide history persists across floor changes.
 - A stair flight has a lower-floor index, centre, length, width and rotation.
   A rotated four-corner polygon defines its footprint on both connected
   floors, where the same world coordinates guarantee vertical alignment.
@@ -103,8 +104,8 @@ validation. Procedural generation remains **not implemented yet**.
 - Rotation and size are editable after placement, including arbitrary
   rotation angles. The sidebar supports exact centre coordinates and quick
   15-degree rotation steps. Existing JSON schema version 2 is unchanged.
-- Stair creation, movement and property edits are not yet in the global
-  undo/redo history. Future work should unify them with floor-edit commands.
+- Stair creation, movement and property edits are committed through the
+  building-wide undo/redo journal introduced in v0.7.
 
 ## Drag-to-rotate staircase controls (v0.5.2)
 
@@ -148,9 +149,34 @@ validation. Procedural generation remains **not implemented yet**.
   viewport paints the referenced perimeter and interior walls with dashed,
   translucent strokes behind the active floor. Reference opacity and floor
   visibility are view-only UI settings, not part of building JSON.
-- Global undo/redo across staircase changes and floor operations is not
-  part of this milestone. The same stair validation applies to mouse drags,
-  rotations, numeric property edits and future outline edits.
+- Stair validation applies consistently to mouse drags, rotations, numeric
+  property edits and perimeter adjustments. Global undo/redo now covers
+  these committed operations as of v0.7.
+
+## Document-wide undo and redo (v0.7)
+
+- Core BuildingEditHistory retains up to 200 detached snapshots of the
+  complete multi-floor BuildingDocument together with the active floor index.
+  The journal itself is session-only and is not serialized to JSON.
+- FloorPlanSurface emits DocumentEditCommitted(previousFloor) once from its
+  common successful-mutation path. The host combines the previous floor
+  geometry with all current other floors and staircase definitions to
+  construct the actual full-building prior state. This avoids capturing a
+  half-finished drag, preview or temporary polygon draft.
+- When hosted by MainWindow, FloorPlanSurface does not accumulate its
+  legacy duplicate local history stacks. MainWindow owns the authoritative
+  undo and redo. An incomplete outline/partition selection is still undone
+  locally before considering committed building-history entries.
+- The host explicitly records a pre-change snapshot for stair placement,
+  relocation, resizing, rotation and removal; floor addition/removal; and
+  accepted building rename, committed once on leaving the name field.
+  Switching floor view, panning, zooming and rejected changes are not edits.
+- Undo/redo restores the entire detached snapshot and selects the floor on
+  which the recorded change happened. A new committed edit invalidates the
+  redo branch. Loading or creating a new document resets the history.
+- Snapshots are immutable by ownership convention: every stored and
+  returned building is deep-copied. Changes on one floor cannot mutate
+  previously saved history states or an unrelated floor.
 
 ## Current project boundaries
 

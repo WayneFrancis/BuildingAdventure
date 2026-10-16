@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.6 — Stairwell openings and floor alignment guides (development branch)
+## v0.7 — Global undo/redo across all floors (development branch)
 
 The editor currently supports:
 
@@ -27,6 +27,15 @@ The editor currently supports:
 - **Multiple floors (1–4)**: use Add Floor to create an upper floor with
   the preceding story's outline but independent rooms and doors. Switch floors
   with the selector in the right panel; remove only the highest floor.
+- **Global undo/redo**: Ctrl+Z and Ctrl+Y now restore full-building snapshots
+  for completed perimeter, room and door edits, stair placement/movement/
+  rotation/opening changes, adding or removing a floor, and building renames
+  (one step on leaving the name field). Edits can be undone after switching
+  to another floor; the correct editing floor is restored. Pure view
+  changes, rejected edits and unfinished drawing strokes do not create
+  document-history entries. Temporary drawing corners can still be undone
+  individually before completing the outline. History stores up to 200
+  committed document states and is reset on New or Open.
 - **True 2D stairwell slab openings**: each stair flight now cuts a linked
   opening in the floor above (not the lower floor). The room and floor
   surface fills exclude these voids. Openings follow staircase translation,
@@ -92,10 +101,9 @@ The editor currently supports:
 partition walls; window placement; door width editing; hidden passages;
 furnishing; and VTT export. Stairwell cutouts are represented in the 2D
 floor-slab plan; realistic 3D structural slabs, rise/run calculations,
-landings, guardrails and automatic stairwell rooms are still future work. Undo history for
-perimeter/room edits is local to the active floor and resets on switching
-floors; staircase placement, movement and property changes currently use
-direct controls rather than global undo.
+landings, guardrails and automatic stairwell rooms are still future work.
+Global undo/redo now covers completed edits across floors and stairs.
+Undo history is session-only and is not written into JSON files.
 Move Wall currently moves a chosen segment perpendicular to itself, not an
 unrestricted wall rotation or a whole chain of connected non-collinear walls. Doors are simple openings and are not
 yet a complete circulation/accessibility model.
@@ -163,7 +171,7 @@ Run the geometry checks without third-party test packages:
 | Fit | Ctrl+0 |
 | Temporarily bypass snapping | Hold Shift while placing/moving corners |
 | Cancel drawing | Esc |
-| Undo/redo | Ctrl+Z / Ctrl+Y |
+| Undo/redo | Ctrl+Z / Ctrl+Y; includes stairs, upper floors and switching back to the edited floor |
 | New/Open/Save | Ctrl+N / Ctrl+O / Ctrl+S |
 
 **Important:** Draw Perimeter replaces the whole exterior outline, while
@@ -192,8 +200,8 @@ is centred and rotated with its stairs; the upper-floor slab and filled rooms
 are geometrically excluded from that rectangle. The opening has no separate
 floating position to become detached. Stairwells cannot cut through interior
 walls or leave the upper floor. Legacy v2 files with zero extra clearance
-remain readable. The global undo history for stair and floor changes is still
-planned for a later milestone.
+remain readable. Document history is maintained in memory independently
+of the building JSON schema, so existing saved files remain compatible.
 
 A multi-floor document uses JSON schema version 2 while preserving ground
 floor fields from previous files. Its upperFloors array stores independent
