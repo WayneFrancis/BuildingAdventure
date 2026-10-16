@@ -132,5 +132,89 @@ Check("JSON rejects intersecting perimeter", () =>
     catch (InvalidDataException) { }
 });
 
+Check("Older v0.1 JSON still loads with no rooms", () =>
+{
+    var oldFile = """{"schemaVersion":1,"name":"Old Building","perimeter":[{"x":0,"y":0},{"x":10,"y":0},{"x":10,"y":8},{"x":0,"y":8}]}""";
+    var document = BuildingDocumentJson.Deserialize(oldFile);
+    Assert(document.Rooms.Count == 0 && document.Doors.Count == 0);
+});
+
+Check("Adjacent rooms share one interior wall", () =>
+{
+    var left = new RoomDefinition
+    {
+        Name = "Shop", Type = "Shop",
+        Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)]
+    };
+    var right = new RoomDefinition
+    {
+        Name = "Home", Type = "Living room",
+        Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)]
+    };
+    var building = new BuildingDocument
+    {
+        Name = "Merchant House",
+        Perimeter = rectangle.ToList(),
+        Rooms = [left, right],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 4) }]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    var walls = FloorGeometry.BuildWalls(building.Perimeter, building.Rooms);
+    Assert(walls.Count == 7, $"Expected 7 unique wall fragments; got {walls.Count}.");
+    Assert(walls.Count(w => !w.IsExterior) == 1);
+    Assert(walls.Single(w => !w.IsExterior).Length == 8);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(building));
+    Assert(loaded.Rooms.Count == 2 && loaded.Doors.Count == 1);
+    Assert(loaded.Rooms[0].Name == "Shop");
+});
+
+Check("Reject partly overlapping rooms", () =>
+{
+    var document = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "A", Outline = [new(0, 0), new(6, 0), new(6, 8), new(0, 8)] },
+            new RoomDefinition { Name = "B", Outline = [new(4, 0), new(10, 0), new(10, 8), new(4, 8)] }
+        ]
+    };
+    Assert(!FloorGeometry.Validate(document, out _));
+});
+
+Check("Reject rooms that cross a concave exterior notch", () =>
+{
+    var document = new BuildingDocument
+    {
+        Perimeter = concave.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Bad Room",
+                Outline = [new(1, 4), new(5, 1), new(1, 1)] }
+        ]
+    };
+    Assert(!FloorGeometry.Validate(document, out _));
+});
+
+Check("Reject doors detached from walls", () =>
+{
+    var document = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(4, 4) }]
+    };
+    Assert(!FloorGeometry.Validate(document, out _));
+});
+
+Check("Reject a door too close to a wall corner", () =>
+{
+    var document = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(0.2, 0) }]
+    };
+    Assert(!FloorGeometry.Validate(document, out _));
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

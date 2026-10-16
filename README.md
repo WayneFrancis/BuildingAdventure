@@ -1,41 +1,54 @@
 # BuildingAdventure
 
-**BuildingAdventure** is a Windows floor-plan editor for believable tabletop
-RPG buildings. The eventual goal is a hybrid architectural designer:
-automatically generate a building from requirements, draw one by hand, or
-manually place rooms and let the application complete the remaining space.
+**BuildingAdventure** is a Windows editor for realistic tabletop RPG floor
+plans. The goal is a hybrid architectural designer: generate a building from
+requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.1 — Perimeter editor (development branch)
+## v0.2 — Manual room layout and doors (development branch)
 
-This first milestone includes:
+The editor currently supports:
 
-- Drawing closed, irregular perimeters with walls at arbitrary angles.
-- Moving vertices and inserting/removing corners.
-- A metre-based grid with optional 0.5 m snapping (hold Shift to override).
-- Mouse-wheel zoom, middle-mouse panning, a Pan tool, and fit-to-window.
-- Undo and redo for completed perimeter edits.
-- Area and exterior-wall-length measurements.
-- Self-intersection and invalid-outline rejection.
-- New, Open, Save and Save As using a versioned JSON format.
+- Closed building footprints of arbitrary shape, including angled walls.
+- Drawing interior rooms as polygons, with grid, corner and edge snapping.
+- Selecting and naming rooms, and assigning room types (shop, workshop, kitchen,
+  living room, bedroom, hall, storeroom, and others).
+- Dragging room and building vertices; coincident shared junctions move together.
+- Derived shared physical wall segments, avoiding doubled wall drawing.
+- Manually adding and removing 0.9 metre openings on existing walls.
+- Rejecting invalid rooms: outside the perimeter, self-crossing, or overlapping.
+- Undo/redo for completed edits, panning, mouse-wheel zoom, fit-to-window.
+- Measuring area and exterior perimeter; saving and reopening all geometry as JSON.
+- Loading older v0.1 perimeter-only JSON documents.
 
-**Not yet implemented:** internal rooms, multi-story layouts, generation,
-doors/windows, secret passages, furnishings, or VTT exports.
+**Not yet implemented:** automatic room generation; free-standing, unenclosed
+partition walls; multiple floors; window placement; door width editing; hidden
+passages; furnishing; and VTT export. Doors are simple openings and are not
+yet a complete circulation/accessibility model.
 
 ## Requirements
 
 - Windows 10/11
 - .NET 10 SDK (or Visual Studio with .NET 10 / WPF desktop development support)
 
-## Run
+## Get the development branch
 
-From a terminal in a checkout of the development branch:
+First clone:
+
+    git clone -b development https://github.com/WayneFrancis/BuildingAdventure.git
+    cd BuildingAdventure
+
+Already checked out on development:
+
+    git pull --ff-only
+
+Run:
 
     dotnet run --project src/BuildingAdventure.Desktop
 
 Or open BuildingAdventure.sln in Visual Studio and set
 BuildingAdventure.Desktop as the startup project.
 
-To run the geometry checks without any external test packages:
+Run the geometry checks without third-party test packages:
 
     dotnet run --project tests/BuildingAdventure.Tests
 
@@ -43,30 +56,37 @@ To run the geometry checks without any external test packages:
 
 | Operation | Interaction |
 | --- | --- |
-| Draw a perimeter | Select Draw Perimeter; click consecutive corners |
-| Finish drawing | Click the first corner, double-click, or click Finish |
-| Cancel unfinished perimeter | Esc |
-| Select a vertex | Select/Edit tool; click a vertex |
-| Move a vertex | Drag a vertex |
-| Insert a vertex | Double-click an existing wall |
-| Remove a vertex | Select one and press Delete |
-| Pan | Middle-mouse drag, or Pan tool + left drag |
+| Draw building | Draw Perimeter, click exterior corners, then Finish |
+| Draw room | Draw Room, click room corners inside the building, then Finish |
+| Rename/type room | Select/Edit, click its interior, edit details, click Apply room details |
+| Move corner | Select/Edit, drag an existing corner |
+| Insert corner | Double-click a wall with Select/Edit |
+| Delete corner | Select a corner and press Delete |
+| Add door | Add Door, then click on a sufficiently long wall |
+| Delete room or door | Select it and use the appropriate side-panel Delete button |
+| Pan | Middle-mouse drag, or Pan and left-drag |
 | Zoom | Mouse wheel, or toolbar +/- |
-| Fit building in view | Ctrl+0 |
-| Disable snapping temporarily | Hold Shift while placing or moving a vertex |
+| Fit | Ctrl+0 |
+| Temporarily bypass snapping | Hold Shift while placing/moving corners |
+| Cancel drawing | Esc |
 | Undo/redo | Ctrl+Z / Ctrl+Y |
 | New/Open/Save | Ctrl+N / Ctrl+O / Ctrl+S |
 
-When drawing a new perimeter over an existing building, the previous footprint
-is retained until you finish a valid replacement. Esc cancels the draft
-without replacing it. JSON stores measurements in metres independently of zoom.
+Rooms are separate enclosed polygons inside the exterior footprint. Shared room
+edges render as one interior wall and can be snapped together. Room boundaries
+may touch one another, but their interiors cannot overlap. The current model
+does not automatically resize neighbouring entire wall edges when one room
+changes; an edit that would create overlap is rejected.
 
-## Project structure
+When drawing a replacement exterior perimeter, existing rooms and doors must
+still fit or the change is rejected. When deleting a room, doors attached only
+to its removed walls are deleted too. Existing files remain compatible.
 
-- src/BuildingAdventure.Core — models, polygon validation, JSON serialization
-- src/BuildingAdventure.Desktop — WPF application and perimeter editor
-- tests/BuildingAdventure.Tests — executable core geometry tests
-- docs/ARCHITECTURE.md — design decisions and future stages
+## Project layout
 
-This is the initial implementation. See the architecture document for the
-planned editor/generation split and future milestones.
+- src/BuildingAdventure.Core — polygon validation, room/wall/door geometry, JSON
+- src/BuildingAdventure.Desktop — WPF floor-plan editor and file commands
+- tests/BuildingAdventure.Tests — executable geometry checks
+- docs/ARCHITECTURE.md — design rationale and future milestones
+
+See the [architecture notes](docs/ARCHITECTURE.md).

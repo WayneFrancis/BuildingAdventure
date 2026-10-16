@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         EditorSurface.Changed += (_, _) => Refresh();
+        EditorSurface.SelectionChanged += (_, _) => UpdateSelectedRoomControls();
         EditorSurface.Hint += message => { _hint = message; Refresh(); };
         EditorSurface.SetTool(EditorTool.DrawPerimeter);
         _lastSavedJson = CurrentJson();
@@ -31,7 +32,9 @@ public partial class MainWindow : Window
     private BuildingDocument CurrentDocument() => new()
     {
         Name = NameBox.Text,
-        Perimeter = EditorSurface.GetOutline().ToList()
+        Perimeter = EditorSurface.GetOutline().ToList(),
+        Rooms = EditorSurface.GetRooms().ToList(),
+        Doors = EditorSurface.GetDoors().ToList()
     };
 
     private string CurrentJson() => BuildingDocumentJson.Serialize(CurrentDocument());
@@ -54,11 +57,16 @@ public partial class MainWindow : Window
         CornersText.Text = $"{outline.Count} corners";
         AreaText.Text = outline.Count >= 3 ? $"Area: {PolygonGeometry.Area(outline):N2} m²" : "Area: —";
         LengthText.Text = outline.Count >= 3 ? $"Exterior walls: {PolygonGeometry.Perimeter(outline):N2} m" : "Exterior walls: —";
+        RoomsText.Text = $"{EditorSurface.GetRooms().Count} rooms, {EditorSurface.GetDoors().Count} doors";
+        DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
+        DeleteDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
         UndoButton.IsEnabled = UndoMenu.IsEnabled = EditorSurface.CanUndo;
         RedoButton.IsEnabled = RedoMenu.IsEnabled = EditorSurface.CanRedo;
         FinishButton.IsEnabled = EditorSurface.IsDrawing;
         SelectButton.FontWeight = EditorSurface.Tool == EditorTool.Select ? FontWeights.Bold : FontWeights.Normal;
         DrawButton.FontWeight = EditorSurface.Tool == EditorTool.DrawPerimeter ? FontWeights.Bold : FontWeights.Normal;
+        RoomButton.FontWeight = EditorSurface.Tool == EditorTool.DrawRoom ? FontWeights.Bold : FontWeights.Normal;
+        DoorButton.FontWeight = EditorSurface.Tool == EditorTool.AddDoor ? FontWeights.Bold : FontWeights.Normal;
         PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
         HintText.Text = _hint;
         ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
@@ -93,7 +101,7 @@ public partial class MainWindow : Window
         {
             var document = BuildingDocumentJson.Deserialize(File.ReadAllText(dialog.FileName));
             _loading = true;
-            EditorSurface.LoadOutline(document.Perimeter);
+            EditorSurface.LoadDocument(document);
             NameBox.Text = document.Name;
             _filePath = dialog.FileName;
             _loading = false;
@@ -145,6 +153,31 @@ public partial class MainWindow : Window
         }
     }
 
+    private void UpdateSelectedRoomControls()
+    {
+        if (RoomNameBox is null || RoomTypeBox is null || EditorSurface is null) return;
+        var room = EditorSurface.SelectedRoom;
+        RoomNameBox.IsEnabled = RoomTypeBox.IsEnabled = ApplyRoomButton.IsEnabled = room is not null;
+        RoomNameBox.Text = room?.Name ?? "";
+        if (room is not null)
+        {
+            var item = RoomTypeBox.Items.Cast<ComboBoxItem>()
+                .FirstOrDefault(i => string.Equals(i.Content?.ToString(), room.Type, StringComparison.Ordinal));
+            RoomTypeBox.SelectedItem = item ?? RoomTypeBox.Items[0];
+        }
+        else RoomTypeBox.SelectedIndex = -1;
+        Refresh();
+    }
+
+    private void ApplyRoom_Click(object sender, RoutedEventArgs e)
+    {
+        if (RoomTypeBox.SelectedItem is ComboBoxItem item)
+            EditorSurface.SetSelectedRoomProperties(RoomNameBox.Text, item.Content?.ToString() ?? "Other");
+    }
+
+    private void DeleteRoom_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedRoom();
+    private void DeleteDoor_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedDoor();
+
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
     private void Undo_Click(object sender, RoutedEventArgs e) => EditorSurface.Undo();
     private void Redo_Click(object sender, RoutedEventArgs e) => EditorSurface.Redo();
@@ -153,6 +186,8 @@ public partial class MainWindow : Window
     private void Finish_Click(object sender, RoutedEventArgs e) => EditorSurface.FinishDrawing();
     private void SelectTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.Select);
     private void DrawTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.DrawPerimeter);
+    private void RoomTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.DrawRoom);
+    private void DoorTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.AddDoor);
     private void PanTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.Pan);
     private void Fit_Click(object sender, RoutedEventArgs e) => EditorSurface.FitToView();
     private void ZoomIn_Click(object sender, RoutedEventArgs e) => EditorSurface.ZoomBy(1.25);
@@ -188,7 +223,11 @@ public partial class MainWindow : Window
         else if (ctrl && e.Key == Key.Y) EditorSurface.Redo();
         else if (ctrl && e.Key == Key.D0) EditorSurface.FitToView();
         else if (e.Key == Key.Escape) EditorSurface.CancelDrawing();
-        else if (e.Key == Key.Delete && !NameBox.IsKeyboardFocusWithin) EditorSurface.DeleteSelectedVertex();
+        else if (e.Key == Key.Delete && !NameBox.IsKeyboardFocusWithin && !RoomNameBox.IsKeyboardFocusWithin)
+        {
+            if (EditorSurface.HasSelectedDoor) EditorSurface.DeleteSelectedDoor();
+            else EditorSurface.DeleteSelectedVertex();
+        }
         else return;
         e.Handled = true;
     }

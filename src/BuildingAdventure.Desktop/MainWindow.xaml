@@ -20,6 +20,8 @@
                 <MenuItem x:Name="RedoMenu" Header="_Redo" Click="Redo_Click" InputGestureText="Ctrl+Y"/>
                 <Separator/>
                 <MenuItem Header="Delete selected corner" Click="Delete_Click" InputGestureText="Delete"/>
+                <MenuItem Header="Delete selected room" Click="DeleteRoom_Click"/>
+                <MenuItem Header="Delete selected door" Click="DeleteDoor_Click"/>
                 <MenuItem Header="Cancel drawing" Click="Cancel_Click" InputGestureText="Esc"/>
             </MenuItem>
             <MenuItem Header="_View">
@@ -38,6 +40,8 @@
             <Separator/>
             <Button x:Name="SelectButton" Content="Select / Edit" Click="SelectTool_Click" Padding="9,4"/>
             <Button x:Name="DrawButton" Content="Draw Perimeter" Click="DrawTool_Click" Padding="9,4"/>
+            <Button x:Name="RoomButton" Content="Draw Room" Click="RoomTool_Click" Padding="9,4"/>
+            <Button x:Name="DoorButton" Content="Add Door" Click="DoorTool_Click" Padding="9,4"/>
             <Button x:Name="PanButton" Content="Pan" Click="PanTool_Click" Padding="9,4"/>
             <Separator/>
             <Button Content="Fit" Click="Fit_Click" Padding="9,4"/>
@@ -69,23 +73,53 @@
                     <TextBlock x:Name="LengthText" Text="Wall length: —" Margin="0,0,0,16"/>
                     <CheckBox x:Name="SnapCheckBox" Content="Snap to 0.5 m grid" IsChecked="True"
                               Checked="SnapChanged" Unchecked="SnapChanged" Margin="0,0,0,18"/>
-                    <Button x:Name="FinishButton" Content="Finish perimeter" Click="Finish_Click"
+                    <Button x:Name="FinishButton" Content="Finish drawing" Click="Finish_Click"
                             Padding="8" Margin="0,0,0,10"/>
                     <Button Content="Delete selected corner" Click="Delete_Click"
-                            Padding="8" Margin="0,0,0,24"/>
+                            Padding="8" Margin="0,0,0,14"/>
+                    <Separator/>
+                    <TextBlock Text="ROOMS" FontSize="12" FontWeight="Bold" Foreground="#566579"
+                               Margin="0,12,0,12"/>
+                    <TextBlock x:Name="RoomsText" Text="0 rooms" Margin="0,0,0,12"/>
+                    <TextBlock Text="Selected room" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                    <TextBox x:Name="RoomNameBox" IsEnabled="False" Padding="7" Margin="0,0,0,10"/>
+                    <TextBlock Text="Room type" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                    <ComboBox x:Name="RoomTypeBox" IsEnabled="False" Margin="0,0,0,12" Padding="5">
+                        <ComboBoxItem Content="Other"/>
+                        <ComboBoxItem Content="Shop"/>
+                        <ComboBoxItem Content="Storeroom"/>
+                        <ComboBoxItem Content="Workshop"/>
+                        <ComboBoxItem Content="Kitchen"/>
+                        <ComboBoxItem Content="Living room"/>
+                        <ComboBoxItem Content="Bedroom"/>
+                        <ComboBoxItem Content="Bathroom"/>
+                        <ComboBoxItem Content="Hallway"/>
+                        <ComboBoxItem Content="Stairwell"/>
+                        <ComboBoxItem Content="Office"/>
+                        <ComboBoxItem Content="Dining room"/>
+                        <ComboBoxItem Content="Guest room"/>
+                        <ComboBoxItem Content="Common room"/>
+                        <ComboBoxItem Content="Cellar"/>
+                    </ComboBox>
+                    <Button x:Name="ApplyRoomButton" Content="Apply room details" IsEnabled="False"
+                            Click="ApplyRoom_Click" Padding="8" Margin="0,0,0,10"/>
+                    <Button x:Name="DeleteRoomButton" Content="Delete selected room" IsEnabled="False"
+                            Click="DeleteRoom_Click" Padding="8" Margin="0,0,0,10"/>
+                    <Button x:Name="DeleteDoorButton" Content="Delete selected door" IsEnabled="False"
+                            Click="DeleteDoor_Click" Padding="8" Margin="0,0,0,14"/>
                     <Separator/>
                     <TextBlock Text="HOW TO USE" FontSize="12" FontWeight="Bold" Foreground="#566579"
                                Margin="0,14,0,12"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Draw Perimeter: click each corner, then click the first corner or double-click to close. Angled walls are fully supported."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Select / Edit: drag a blue corner to move it. Double-click a wall to insert a new corner. Select a corner and press Delete to remove it."/>
+                               Text="Select / Edit: click a room to select and rename it. Drag corners to move them, or double-click a wall to insert a corner."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Pan: drag with the middle mouse button, or select the Pan tool and left-drag. Use the mouse wheel to zoom around the pointer."/>
+                               Text="Draw Room: outline each room inside the perimeter. Snap to building and other room walls. Rooms cannot overlap."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Hold Shift while placing or moving corners to temporarily disable snapping. Esc cancels an unfinished perimeter."/>
+                               Text="Add Door: click a wall to create a 0.9 metre opening. Click the opening to select it. Hold Shift to disable snapping; Esc cancels drawing."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
-                               Text="Rooms, stairs, furnishings and multi-floor generation are planned for later milestones."/>
+                               Text="Automatic room generation, stairs, furniture and multiple stories are future milestones."/>
                 </StackPanel>
             </ScrollViewer>
         </Border>

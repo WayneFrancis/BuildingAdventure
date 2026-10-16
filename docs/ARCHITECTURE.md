@@ -7,8 +7,9 @@ automatic layouts with precise manual editing. Its design goals are realistic
 buildings with one to four stories and support for homes, shops, inns,
 workshops, warehouses, mixed-use occupancy, and optionally hidden rooms.
 
-The first milestone intentionally implements only the perimeter editor.
-Rooms and procedural layout generation are **not implemented yet**.
+The first milestone implemented a perimeter editor. The second milestone adds
+manual polygonal rooms, shared-wall rendering, simple door openings and
+validation. Procedural generation remains **not implemented yet**.
 
 ## Coordinate system
 
@@ -17,12 +18,18 @@ Rooms and procedural layout generation are **not implemented yet**.
 - The user can draw straight walls at any angle, not just orthogonal edges.
 - The current footprint is a single, closed, simple polygon; no internal holes
   or multiple disconnected structures are supported yet.
+- Rooms are also simple polygons. Each room must fit inside the exterior, with
+  no interior overlap with other rooms. Shared edges and boundary contact are allowed.
+- A derived wall arrangement subdivides room and exterior edges at collinear
+  endpoints and de-duplicates coincident fragments.
+- Door centres and widths are stored in metres; the current renderer associates
+  a door with a suitable wall fragment geometrically.
 - A clockwise or counterclockwise ordered list of vertices defines the boundary.
 - All geometric constraints run in the renderer-independent core library.
 
 ## Current project boundaries
 
-- BuildingAdventure.Core: geometry operations and the versioned JSON document.
+- BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.
 - BuildingAdventure.Desktop: WPF viewport, interaction, and file commands.
 - BuildingAdventure.Tests: a dependency-free executable geometry test harness.
 
@@ -41,8 +48,9 @@ Rooms and procedural layout generation are **not implemented yet**.
 
 ## Proposed next milestones
 
-1. Internal walls, rooms, shared edge topology, and doors.
-2. Movable rooms, constrained edits, and partial regeneration.
+1. More capable topology editing: partition/extend walls, doors spanning wall
+   fragments, openings, windows, resize tools and constrained room-edge moves.
+2. Movable rooms, partial regeneration, and lock/preference states.
 3. Floors, stairs and vertical constraints.
 4. Building-type definitions and architectural adjacency rules.
 5. Constraint-based room allocation and optimization.
@@ -51,7 +59,7 @@ Rooms and procedural layout generation are **not implemented yet**.
 ## Current JSON format
 
 The file is a UTF-8 JSON object. The model uses camelCase keys with schema
-version 1, a human-readable name, and perimeter points in metres.
+version 1, a human-readable name, perimeter points and optionally rooms and doors in metres.
 
 Example:
 
@@ -67,7 +75,11 @@ Example:
       ]
     }
 
-An empty perimeter is allowed for an unfinished, blank document. Saving a draft
-does not save its unclosed vertices; finish the perimeter before saving.
-Version 1 does not yet support rooms, stories or furnishings. New fields
+The current file extends the original version 1 document with optional arrays,
+for example a room with an id, name, type and outline, and a door with an id,
+centre and width. Documents saved with v0.1 that omit these arrays still load.
+
+An empty perimeter is allowed for a blank document, but rooms or doors require
+a closed perimeter. Saving a draft does not save its unclosed vertices; finish
+each outline before saving. Version 1 does not yet support stories or furnishings. New fields
 should be introduced with an explicit schema migration plan.
