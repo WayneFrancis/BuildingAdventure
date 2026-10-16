@@ -201,7 +201,7 @@
                                 Click="DeleteWindow_Click" IsEnabled="False" Padding="6,4"/>
                     </WrapPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579"
-                               Text="Use Add Window on exterior walls only; windows are blue. Select an existing window to change its width or delete it."
+                               Text="Exterior windows are thick cyan with a dark casing. In Select / Edit, drag the window line along the exterior wall to move it. Once selected, drag either square end handle to resize while fixing the opposite end. You can also type an exact width."
                                Margin="0,0,0,14"/>
                     <Button x:Name="DeleteDoorButton" Content="Delete selected door" IsEnabled="False"
                             Click="DeleteDoor_Click" Padding="8" Margin="0,0,0,14"/>
@@ -215,7 +215,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Draw Room outlines new spaces. Split Room cuts a selected room between two boundary points. Merge Rooms combines two adjoining rooms: click the first room, then the second."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Move Wall drags an entire wall. Select / Edit supports snapping to corners and edges. Add Door creates a doorway; Add Window creates an exterior glazing opening. Unassigned floor areas remain usable space."/>
+                               Text="Move Wall drags a connected straight wall run. Exterior walls carry coincident room boundaries and their doors/windows along. Dragging a perimeter corner also updates attached room vertices between corners. Use Shift to bypass snap while adjusting corners."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
                                Text="Stairwell slab openings and translucent adjacent-floor references are supported. Structural beams, real 3D floor thickness, furniture and automatic generation are future milestones."/>
                 </StackPanel>

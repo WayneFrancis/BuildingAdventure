@@ -1929,5 +1929,211 @@ Check("Completely assigned floor has no unassigned interior points", () =>
         FloorSpaceAnalysis.SpaceKind.Outside);
 });
 
+Check("Shared exterior wall move carries partial room walls and its window", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Shop",
+                Outline = [new(0, 0), new(4, 0), new(4, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Home",
+                Outline = [new(4, 0), new(10, 0), new(10, 8), new(4, 8)] }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(7, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(original, out var reason), reason);
+    var wall = FloorGeometry.BuildWalls(original.Perimeter, original.Rooms)
+        .First(w => w.IsExterior && w.A.Y == 0 && w.B.Y == 0);
+    Assert(InteriorEditing.TryMoveWall(original, wall, 1,
+        out var moved, out reason), reason);
+    Equal(moved.Perimeter[0].Y, moved.Perimeter[1].Y);
+    Equal(moved.Rooms[0].Outline[0].Y, moved.Perimeter[0].Y);
+    Equal(moved.Rooms[0].Outline[1].Y, moved.Perimeter[0].Y);
+    Equal(moved.Rooms[1].Outline[0].Y, moved.Perimeter[0].Y);
+    Equal(moved.Rooms[1].Outline[1].Y, moved.Perimeter[0].Y);
+    Equal(moved.Windows[0].Centre.Y, moved.Perimeter[0].Y);
+    Equal(original.Windows[0].Centre.Y, 0);
+    Assert(FloorGeometry.Validate(moved, out reason), reason);
+});
+
+Check("Moving perimeter corner interpolates every room's shared wall endpoints", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "A",
+                Outline = [new(0, 0), new(4, 0), new(4, 8), new(0, 8)] },
+            new RoomDefinition { Name = "B",
+                Outline = [new(4, 0), new(7, 0), new(7, 8), new(4, 8)] },
+            new RoomDefinition { Name = "C",
+                Outline = [new(7, 0), new(10, 0), new(10, 8), new(7, 8)] }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(6, 0) }]
+    };
+    Assert(FloorGeometry.Validate(original, out var reason), reason);
+    var moved = SharedBoundaryEditing.MoveVertex(original,
+        new Point2(0, 0), new Point2(0, 2));
+    Equal(moved.Rooms[0].Outline[1].Y, 1.2);
+    Equal(moved.Rooms[1].Outline[0].Y, 1.2);
+    Equal(moved.Rooms[1].Outline[1].Y, 0.6);
+    Equal(moved.Rooms[2].Outline[0].Y, 0.6);
+    Equal(moved.Rooms[2].Outline[1].Y, 0);
+    Equal(moved.Windows[0].Centre.Y, 0.8);
+    Equal(original.Rooms[1].Outline[0].Y, 0);
+    Assert(FloorGeometry.Validate(moved, out reason), reason);
+});
+
+Check("Room corner on exterior is treated as an exterior corner for attached points", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(FloorGeometry.Validate(original, out var reason), reason);
+    // Even when initiated by selecting a room vertex, a coincident perimeter
+    // endpoint requires both adjacent rooms to adjust as one boundary.
+    var changed = SharedBoundaryEditing.MoveVertex(original,
+        new Point2(0, 0), new Point2(0, 1));
+    Equal(changed.Perimeter[0].Y, 1);
+    Equal(changed.Rooms[0].Outline[1].Y, 0.5);
+    Equal(changed.Rooms[1].Outline[0].Y, 0.5);
+    Assert(FloorGeometry.Validate(changed, out reason), reason);
+});
+
+Check("Interior vertex editing does not move the unrelated exterior outline", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = [new RoomDefinition { Name = "Hall",
+            Outline = [new(2, 2), new(8, 2), new(8, 6), new(2, 6)] }]
+    };
+    var moved = SharedBoundaryEditing.MoveVertex(
+        doc, new Point2(2, 2), new Point2(3, 2));
+    Assert(moved.Perimeter.SequenceEqual(rectangle));
+    Equal(moved.Rooms[0].Outline[0].X, 3);
+    Assert(FloorGeometry.Validate(moved, out var reason), reason);
+});
+
+Check("Moving an exterior wall moves all collinear perimeter split vertices", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter =
+        [
+            new(0, 0), new(5, 0), new(10, 0), new(10, 8), new(0, 8)
+        ],
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(FloorGeometry.Validate(doc, out var reason), reason);
+    var fragment = FloorGeometry.BuildWalls(doc.Perimeter, doc.Rooms)
+        .First(w => w.IsExterior && w.A.Y == 0 && w.B.Y == 0);
+    Assert(InteriorEditing.TryMoveWall(doc, fragment, 1, out var moved, out reason), reason);
+    Equal(moved.Perimeter[0].Y, moved.Perimeter[1].Y);
+    Equal(moved.Perimeter[1].Y, moved.Perimeter[2].Y);
+    Equal(moved.Rooms[0].Outline[1].Y, moved.Rooms[1].Outline[0].Y);
+    Assert(FloorGeometry.Validate(moved, out reason), reason);
+});
+
+Check("Window relocation along exterior wall can be validated without changing size", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(3, 0), Width = 1.2 }]
+    };
+    var changed = BuildingStoreys.Copy(doc);
+    changed.Windows[0].Centre = new Point2(6, 0);
+    Assert(FloorGeometry.Validate(changed, out var reason), reason);
+    Equal(changed.Windows[0].Width, 1.2);
+    Equal(doc.Windows[0].Centre.X, 3);
+    changed.Windows[0].Centre = new Point2(6, 3);
+    Assert(!FloorGeometry.Validate(changed, out _));
+});
+
+Check("Window endpoint resizing keeps the opposite endpoint fixed", () =>
+{
+    var original = new WindowDefinition
+    {
+        Centre = new Point2(5, 0), Width = 1.2
+    };
+    // Original endpoints are 4.4 and 5.6. Keep 4.4 and drag 5.6 to 6.4.
+    var resized = WindowPlacement.ResizeFromEndpoint(
+        original, new Point2(4.4, 0), new Point2(6.4, 0));
+    Equal(resized.Width, 2);
+    Equal(resized.Centre.X, 5.4);
+    var changed = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [resized]
+    };
+    Assert(FloorGeometry.Validate(changed, out var reason), reason);
+    Equal(original.Width, 1.2);
+});
+
+Check("Window endpoint editing preserves identity and rejects invalid results", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(5, 0), Width = 1.2 }]
+    };
+    var oldWindow = original.Windows[0];
+    var resized = WindowPlacement.ResizeFromEndpoint(oldWindow,
+        new Point2(4.4, 0), new Point2(6.4, 0));
+    Assert(resized.Id == oldWindow.Id);
+    Assert(WindowPlacement.TryUpdateWindow(original, resized,
+        out var updated, out var reason), reason);
+    Equal(updated.Windows[0].Width, 2);
+    Equal(updated.Windows[0].Centre.X, 5.4);
+    Equal(original.Windows[0].Width, 1.2);
+
+    var invalid = WindowPlacement.ResizeFromEndpoint(oldWindow,
+        new Point2(4.4, 0), new Point2(10.2, 0));
+    Assert(!WindowPlacement.TryUpdateWindow(original, invalid, out _, out reason));
+    Assert(!string.IsNullOrWhiteSpace(reason));
+    Equal(original.Windows[0].Centre.X, 5);
+});
+
+Check("Windows move cleanly along multiple exterior segments", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(2.5, 0) }]
+    };
+    var moved = doc.Windows[0].Copy();
+    moved.Centre = new Point2(7.5, 0);
+    Assert(WindowPlacement.TryUpdateWindow(doc, moved,
+        out var updated, out var reason), reason);
+    Assert(updated.Windows[0].Id == doc.Windows[0].Id);
+    Equal(updated.Windows[0].Centre.X, 7.5);
+    Assert(FloorGeometry.Validate(updated, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

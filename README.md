@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.8 — Unassigned interior highlighting and exterior windows (development branch)
+## v0.8.1 — Shared wall propagation and drag-editable windows (development branch)
 
 The editor currently supports:
 
@@ -33,6 +33,19 @@ The editor currently supports:
   The panel shows their actual remaining surface area in square metres.
   You can use Draw Room to give part of that space a name or purpose
   without automatically generating unwanted walls.
+- **Improved exterior wall propagation**: moving a connected straight
+  exterior wall run also moves all room-wall points lying along it, even when
+  multiple rooms subdivide that wall into smaller segments. Moving a
+  perimeter corner interpolates the positions of attached room vertices,
+  instead of moving only corners at exactly the same XY coordinate.
+  Exterior windows and doors follow their supporting walls during these edits.
+- **Mouse-editable windows**: existing windows have a high-contrast thick
+  cyan line with a white casing. In Select / Edit, drag the window along an
+  exterior wall to reposition it. Select a window to expose square endpoint
+  handles; drag one endpoint to change width while anchoring the other.
+  Width, clearances and positions are validated on release, with rejected
+  edits leaving the original geometry untouched. Mouse-based edits support
+  the global undo/redo history.
 - **Exterior windows**: Add Window places a glazed opening on the exterior
   wall in the active floor, including sloped walls. Default width is 1.2 m
   but can be set in the WINDOWS panel. Click a window in Select / Edit
@@ -116,7 +129,7 @@ floor-slab plan; realistic 3D structural slabs, rise/run calculations,
 landings, guardrails and automatic stairwell rooms are still future work.
 Global undo/redo now covers completed edits across floors and stairs.
 Undo history is session-only and is not written into JSON files.
-Move Wall currently moves a chosen segment perpendicular to itself, not an
+Move Wall moves a continuous straight exterior wall run perpendicular to itself. Internal wall movement still follows the selected segment, not an
 unrestricted wall rotation or a whole chain of connected non-collinear walls. Doors are simple openings and are not
 yet a complete circulation/accessibility model.
 
@@ -178,7 +191,9 @@ Run the geometry checks without third-party test packages:
 | Delete corner | Select a corner and press Delete; the adjacent walls join |
 | Add door | Add Door, then click on a sufficiently long wall |
 | Add an exterior window | Choose window width, Add Window, click on an exterior wall |
-| Resize or remove a window | Select / Edit, click the blue window, then Apply width or Delete window |
+| Move a window | Select / Edit, drag the thick cyan glazing line to another valid location on an exterior wall |
+| Resize a window with handles | Select / Edit, select the window, drag either square endpoint to resize with its opposite end fixed |
+| Resize or remove a window | Select / Edit, click the cyan window, then Apply width or Delete window |
 | Highlight unassigned spaces | Tick Highlight unassigned interior in the sidebar; amber shading excludes rooms and stairwell voids |
 | Delete room or door | Select it and use the appropriate side-panel Delete button |
 | Pan | Middle-mouse drag, or Pan and left-drag |

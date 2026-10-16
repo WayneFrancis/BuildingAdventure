@@ -206,6 +206,32 @@ validation. Procedural generation remains **not implemented yet**.
 - Physical wall cross-sections, elevation/height, window glazing style,
   full window swing or sash detail are intentionally deferred.
 
+## Shared perimeter propagation and interactive window editing (v0.8.1)
+
+- SharedBoundaryEditing.MoveVertex applies a perimeter endpoint edit to
+  all coincident points and interpolates interior-room vertices lying on the
+  two exterior edges touching the dragged corner. Geometry is recomputed from
+  the drag-start snapshot to avoid cumulative drift.
+- Exterior wall movement resolves the maximal connected collinear perimeter
+  run rather than a single physical fragment (which can be subdivided by room
+  endpoints). All perimeter and interior-room vertices lying on that run move
+  together. True angled joints remain boundaries of the moved run.
+- SharedBoundaryEditing.MoveOpenings maps doors and windows onto the changed
+  counterparts of their original supporting polygon edges. Windows prefer
+  perimeter edges; doors use the shortest changed room or perimeter edge.
+  The final geometry is validated before committing to global undo.
+- Select / Edit on a window line initiates a drag along exterior walls.
+  Clicking the selected window's square endpoints initiates a length resize
+  that anchors the opposite endpoint. All candidates are validated, and
+  invalid mouse releases restore the saved window without creating history.
+- WindowPlacement.ResizeFromEndpoint and TryUpdateWindow expose testable,
+  renderer-independent geometry and validation. Windows have a thick, bright
+  cyan line with contrasting white/dark casing for improved visibility.
+- Room connectivity is still represented by matching polygon coordinates,
+  not by shared structural wall object IDs. This milestone preserves the
+  geometry of walls already lying on the same exterior boundary; a future
+  topology layer could provide explicit persistent wall associations.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

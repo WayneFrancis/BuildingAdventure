@@ -159,6 +159,13 @@ public static class InteriorEditing
             return false;
         }
 
+        // Exterior walls can contain subsegments from several adjoining
+        // rooms. Moving the whole collinear exterior run keeps every shared
+        // room point attached, rather than moving one fragmented edge.
+        if (wall.IsExterior)
+            return SharedBoundaryEditing.TryMoveExteriorWall(
+                source, wall, offsetMetres, out result, out reason);
+
         double offsetX = -(wall.B.Y - wall.A.Y) / length * offsetMetres;
         double offsetY = (wall.B.X - wall.A.X) / length * offsetMetres;
         var displaced = new Dictionary<Point2, Point2>();
@@ -188,18 +195,7 @@ public static class InteriorEditing
             room.Outline = room.Outline.Select(p =>
                 displaced.TryGetValue(p, out var moved) ? moved : p).ToList();
 
-        result.Doors = RepositionDoors(source, wall, displaced, offsetX, offsetY);
-        // Windows use the same attachment movement but remain separate data.
-        var asDoors = Copy(source);
-        asDoors.Doors = source.Windows.Select(w => new DoorDefinition
-        {
-            Id = w.Id, Centre = w.Centre, Width = w.Width
-        }).ToList();
-        result.Windows = RepositionDoors(asDoors, wall, displaced, offsetX, offsetY)
-            .Select(d => new WindowDefinition
-            {
-                Id = d.Id, Centre = d.Centre, Width = d.Width
-            }).ToList();
+        SharedBoundaryEditing.MoveOpenings(source, result);
 
         if (!FloorGeometry.Validate(result, out reason))
             return false;
