@@ -106,6 +106,27 @@ validation. Procedural generation remains **not implemented yet**.
 - Stair creation, movement and property edits are not yet in the global
   undo/redo history. Future work should unify them with floor-edit commands.
 
+## Drag-to-rotate staircase controls (v0.5.2)
+
+- The selected staircase has a circular rotation grip at the positive end
+  of its local long axis, offset by a fixed number of screen pixels so it
+  stays accessible at any zoom.
+- Mouse-down on the handle records the initial world-space pointer angle.
+  Rotation derives from the initial staircase angle plus the change in
+  pointer angle. The cursor need not start exactly in the handle centre,
+  eliminating angle jumps when the user grabs near its edge.
+- Shift during rotation constrains the result to 15-degree increments.
+  Without Shift the staircase rotates freely through 360 degrees, including
+  across 0/360 wraparound.
+- The original stair is not mutated during a drag. Each preview copy
+  runs the existing whole-building validation, visualized green for valid
+  or red for invalid. Only a valid mouse release emits the same committed
+  edit command used by the numeric controls, preserving floor alignment.
+- Each floor already maintains an independent polygonal perimeter. An
+  added floor initially copies the previous footprint, then stores future
+  edits independently. Stair flights are checked against both outlines;
+  a floor change may be rejected if it would invalidate an existing flight.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

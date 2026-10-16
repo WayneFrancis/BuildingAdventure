@@ -1252,5 +1252,104 @@ Check("Rejected staircase rotation preserves last valid angle for the next edit"
     Equal(placed.Staircases[0].RotationDegrees, 0);
 });
 
+Check("Stair rotation handle remains outside the long edge at any zoom", () =>
+{
+    var stair = new StaircaseDefinition
+    {
+        Centre = new Point2(5, 4), Length = 3.6, Width = 1.4,
+        RotationDegrees = 0
+    };
+    Point2 at40 = StairRotation.HandleCentre(stair, 40);
+    Point2 at80 = StairRotation.HandleCentre(stair, 80);
+    Equal(at40.X, 5);
+    Equal(at40.Y, 4 + 1.8 + 24d / 40);
+    Equal(at80.Y, 4 + 1.8 + 24d / 80);
+
+    stair.RotationDegrees = 90;
+    Point2 rotated = StairRotation.HandleCentre(stair, 40);
+    Equal(rotated.X, 5 - 1.8 - 24d / 40);
+    Equal(rotated.Y, 4);
+});
+
+Check("Stair rotation handle derives the correct angle in every quadrant", () =>
+{
+    var centre = new Point2(5, 4);
+    Equal(StairRotation.PointerAngle(centre, new Point2(5, 8)), 0);
+    Equal(StairRotation.PointerAngle(centre, new Point2(1, 4)), 90);
+    Equal(StairRotation.PointerAngle(centre, new Point2(5, 0)), 180);
+    Equal(StairRotation.PointerAngle(centre, new Point2(9, 4)), 270);
+    Equal(StairRotation.PointerAngle(centre, new Point2(4, 5)), 45);
+});
+
+Check("Rotation drag preserves the starting angle and grab offset", () =>
+{
+    Equal(StairRotation.FromDrag(42, 47, 47, false), 42);
+    Equal(StairRotation.FromDrag(42, 47, 62, false), 57);
+    Equal(StairRotation.FromDrag(42, 47, 62, true), 60);
+    Equal(StairRotation.FromDrag(42, 47, 62, false), 57); // Shift off.
+});
+
+Check("Rotation drag follows cursor correctly across 0 and 360 degrees", () =>
+{
+    Equal(StairRotation.FromDrag(355, 350, 5, false), 10);
+    Equal(StairRotation.FromDrag(355, 350, 5, true), 15);
+    Equal(StairRotation.FromDrag(5, 10, 350, false), 345);
+    Equal(StairRotation.Normalize(-15), 345);
+    Equal(StairRotation.Normalize(375), 15);
+});
+
+Check("Rotation handle can propose invalid geometry without mutating valid stairs", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var flight = new StaircaseDefinition
+    {
+        Centre = new Point2(3.5, 4), Length = 3.6, Width = 1.2,
+        RotationDegrees = 0
+    };
+    Assert(BuildingStoreys.TryAddStaircase(building, flight, out var placed, out reason), reason);
+    var candidate = flight.Copy();
+    candidate.RotationDegrees = StairRotation.FromDrag(0, 0, 90, false);
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, candidate,
+        out _, out reason), "A rotation into the shared wall should be rejected.");
+    Assert(reason.Contains("interior wall"));
+    Equal(placed.Staircases[0].RotationDegrees, 0);
+});
+
+Check("Different floors can have independent differently shaped perimeters", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var upper = BuildingStoreys.GetFloor(building, 1);
+    upper.Perimeter =
+    [
+        new(0, 0), new(8, 0), new(8, 6), new(5, 6), new(5, 8), new(0, 8)
+    ];
+    BuildingStoreys.SetFloor(building, 1, upper);
+
+    Equal(PolygonGeometry.Area(building.Perimeter), 80);
+    Equal(PolygonGeometry.Area(building.UpperFloors[0].Perimeter), 58);
+    Assert(building.Perimeter.Count == 4 && building.UpperFloors[0].Perimeter.Count == 6);
+    Assert(BuildingStoreys.Validate(building, out reason), reason);
+
+    var staircase = new StaircaseDefinition { Centre = new Point2(3, 3) };
+    Assert(BuildingStoreys.TryAddStaircase(building, staircase,
+        out var withStairs, out reason), reason);
+    Assert(BuildingStoreys.Validate(withStairs, out reason), reason);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(withStairs));
+    Assert(loaded.Perimeter.Count == 4 && loaded.UpperFloors[0].Perimeter.Count == 6);
+    Equal(PolygonGeometry.Area(loaded.UpperFloors[0].Perimeter), 58);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

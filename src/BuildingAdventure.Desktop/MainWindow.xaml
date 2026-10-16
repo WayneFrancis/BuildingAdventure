@@ -82,6 +82,8 @@
                         <Button x:Name="RemoveFloorButton" Content="Remove Top Floor"
                                 Click="RemoveFloor_Click" Padding="7,5"/>
                     </WrapPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,14"
+                               Text="Each floor has its own perimeter. Add Floor copies the outline initially; select that floor and use Split Perimeter, Remove Corner or drag corners to reshape it independently. Stairs must remain inside both connected floors."/>
                     <TextBlock Text="STAIRCASES" FontSize="12" FontWeight="Bold"
                                Foreground="#566579" Margin="0,0,0,10"/>
                     <TextBlock x:Name="StairsText" Text="0 stair flights" Margin="0,0,0,8"/>
@@ -115,7 +117,7 @@
                             IsEnabled="False" Click="DeleteStairs_Click" Padding="7"
                             Margin="0,0,0,10"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,17"
-                               Text="Place Stairs shows a green/red preview. Click to place, then drag stairs in Select / Edit to reposition. Select stairs to edit dimensions, angle or X/Y coordinates. Shift bypasses grid snapping."/>
+                               Text="In Select / Edit: drag a staircase to move it, or drag its orange circular rotation handle to turn it freely. Hold Shift while rotating to snap to 15° increments. Changes must fit both floors."/>
                     <Separator Margin="0,0,0,12"/>
                     <TextBlock Text="PERIMETER" FontSize="12" FontWeight="Bold" Foreground="#566579"
                                Margin="0,0,0,12"/>

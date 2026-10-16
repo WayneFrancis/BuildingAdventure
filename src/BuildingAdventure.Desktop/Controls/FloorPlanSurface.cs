@@ -33,6 +33,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     private List<StaircaseDefinition> _staircases = new();
     private int _stairFloorIndex;
     private bool _draggingStair;
+    private bool _rotatingStair;
+    private double _rotationStartPointerAngle;
     private StaircaseDefinition? _dragStartStair;
     private StaircaseDefinition? _dragPreviewStair;
     private Point2 _stairGrabOffset;
@@ -104,6 +106,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             (s.LowerFloorIndex == floorIndex || s.LowerFloorIndex + 1 == floorIndex))
             ? selectId : null;
         _draggingStair = false;
+        _rotatingStair = false;
         _dragStartStair = null;
         _dragPreviewStair = null;
         InvalidateVisual();
@@ -141,6 +144,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _selectedStairId = null;
         _stairPlacementHover = null;
         _draggingStair = false;
+        _rotatingStair = false;
         _dragPreviewStair = null;
         _undo.Clear();
         _redo.Clear();
@@ -178,7 +182,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             EditorTool.MoveWall => "Drag a wall perpendicular to itself. Connected corners and doors will follow.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
             EditorTool.PlaceStairs => "Move the cursor to preview stairs; click to place. Rotate or resize in the side panel.",
-            EditorTool.Select => "Drag stairs to reposition them. Click selected stairs to edit their dimensions or rotation.",
+            EditorTool.Select => "Drag stairs to move them, or drag the circular handle on selected stairs to rotate. Shift snaps rotation to 15°.",
             _ => "Drag to pan; use the mouse wheel to zoom."
         });
         InvalidateVisual();
@@ -193,15 +197,16 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     public void CancelDrawing()
     {
-        if (_draggingStair)
+        if (_draggingStair || _rotatingStair)
         {
             _draggingStair = false;
+            _rotatingStair = false;
             _dragPreviewStair = null;
             _dragStartStair = null;
             ReleaseMouseCapture();
             Cursor = DefaultCursor();
             InvalidateVisual();
-            Say("Staircase movement cancelled.");
+            Say("Staircase drag cancelled.");
             return;
         }
         if (_draft.Count == 0 && !_partitionStart.HasValue &&
@@ -562,9 +567,12 @@ public sealed class FloorPlanSurface : FrameworkElement
                 dc.DrawLine(pen, tip, tip - vector * 9 + side * 5);
                 dc.DrawLine(pen, tip, tip - vector * 9 - side * 5);
             }
+
+            if (selected && Tool == EditorTool.Select && !_draggingStair && !_rotatingStair)
+                DrawStairRotationHandle(dc, stair);
         }
 
-        if (_draggingStair && _dragPreviewStair is not null)
+        if ((_draggingStair || _rotatingStair) && _dragPreviewStair is not null)
             DrawStairGhost(dc, _dragPreviewStair, _stairPreviewValid);
         else if (Tool == EditorTool.PlaceStairs && _stairPlacementHover.HasValue)
         {
@@ -636,8 +644,29 @@ public sealed class FloorPlanSurface : FrameworkElement
         dc.DrawLine(new Pen(stroke, 2), centre,
             ToScreen(new Point2(stair.Centre.X + dx * stair.Length * 0.3,
                                  stair.Centre.Y + dy * stair.Length * 0.3)));
-        DrawText(dc, valid ? "Valid stairs" : "Invalid position",
+        DrawText(dc, valid
+                ? $"{StairRotation.Normalize(stair.RotationDegrees):0.#}°"
+                : $"Invalid {StairRotation.Normalize(stair.RotationDegrees):0.#}°",
             new Point(centre.X + 10, centre.Y + 10), 11, stroke);
+
+        if (_rotatingStair)
+            DrawStairRotationHandle(dc, stair, stroke);
+    }
+
+    private void DrawStairRotationHandle(DrawingContext dc,
+        StaircaseDefinition stair, Brush? highlight = null)
+    {
+        Point tip = ToScreen(StairRotation.HandleCentre(stair, _pixelsPerMetre));
+        double angle = stair.RotationDegrees * Math.PI / 180;
+        Point edge = ToScreen(new Point2(
+            stair.Centre.X - Math.Sin(angle) * stair.Length / 2,
+            stair.Centre.Y + Math.Cos(angle) * stair.Length / 2));
+
+        Brush color = highlight ?? Brushes.DarkOrange;
+        dc.DrawLine(new Pen(color, 1.5) { DashStyle = DashStyles.Dash },
+            edge, tip);
+        dc.DrawEllipse(Brushes.White, new Pen(color, 2.5), tip, 9, 9);
+        DrawText(dc, "↻", new Point(tip.X - 6, tip.Y - 9), 14, color);
     }
 
     private void DrawVertices(DrawingContext dc, IReadOnlyList<Point2> outline,
@@ -834,6 +863,12 @@ public sealed class FloorPlanSurface : FrameworkElement
 
         if (Tool == EditorTool.Select)
         {
+            if (TryStartStairRotation(position))
+            {
+                e.Handled = true;
+                return;
+            }
+
             if (e.ClickCount >= 2 && TryInsertCorner(position, perimeterOnly: false))
             {
                 e.Handled = true;
@@ -903,6 +938,12 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        if (_rotatingStair && _dragStartStair is not null)
+        {
+            PreviewStairRotation(position);
+            return;
+        }
+
         if (_draggingStair && _dragStartStair is not null)
         {
             PreviewStairDrag(position);
@@ -956,6 +997,10 @@ public sealed class FloorPlanSurface : FrameworkElement
             _stairPlacementHover = SnapStairCentre(ToWorld(position));
             InvalidateVisual();
         }
+        else if (Tool == EditorTool.Select)
+        {
+            Cursor = IsOverStairRotationHandle(position) ? Cursors.Hand : DefaultCursor();
+        }
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)
@@ -978,6 +1023,30 @@ public sealed class FloorPlanSurface : FrameworkElement
             Cursor = DefaultCursor();
             InvalidateVisual();
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        if (_rotatingStair && e.ChangedButton == MouseButton.Left)
+        {
+            PreviewStairRotation(e.GetPosition(this));
+            _rotatingStair = false;
+            ReleaseMouseCapture();
+            Cursor = DefaultCursor();
+
+            if (_stairPreviewValid && _dragPreviewStair is not null &&
+                _dragStartStair is not null &&
+                Math.Abs(StairRotation.Normalize(_dragPreviewStair.RotationDegrees) -
+                         StairRotation.Normalize(_dragStartStair.RotationDegrees)) > 1e-6)
+            {
+                StairEditRequested?.Invoke(_dragPreviewStair.Copy());
+            }
+            else if (!_stairPreviewValid)
+                Say("Staircase rotation rejected: " + _stairPreviewReason);
+
+            _dragStartStair = null;
+            _dragPreviewStair = null;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
         }
 
         if (_draggingStair && e.ChangedButton == MouseButton.Left)
@@ -1301,6 +1370,65 @@ public sealed class FloorPlanSurface : FrameworkElement
             pair.First.Outline.SequenceEqual(pair.Second.Outline)) &&
         _doors.Zip(snapshot.Doors).All(pair =>
             pair.First.Centre.Equals(pair.Second.Centre));
+
+    private bool IsOverStairRotationHandle(Point position)
+    {
+        var selected = SelectedStaircase;
+        if (selected is null ||
+            (selected.LowerFloorIndex != _stairFloorIndex &&
+             selected.LowerFloorIndex + 1 != _stairFloorIndex))
+            return false;
+        Point handle = ToScreen(StairRotation.HandleCentre(selected, _pixelsPerMetre));
+        return (handle - position).Length <= 13;
+    }
+
+    private bool TryStartStairRotation(Point position)
+    {
+        var selected = SelectedStaircase;
+        if (selected is null) return false;
+        if (selected.LowerFloorIndex != _stairFloorIndex &&
+            selected.LowerFloorIndex + 1 != _stairFloorIndex)
+            return false;
+
+        if (!IsOverStairRotationHandle(position))
+            return false;
+
+        Point2 initial = ToWorld(position);
+        if (initial.DistanceTo(selected.Centre) < 1e-6)
+            return false;
+
+        _dragStartStair = selected;
+        _dragPreviewStair = selected.Copy();
+        _rotationStartPointerAngle = StairRotation.PointerAngle(selected.Centre, initial);
+        _rotatingStair = true;
+        _stairPreviewValid = true;
+        _stairPreviewReason = "";
+        CaptureMouse();
+        Cursor = Cursors.Hand;
+        Say("Rotating stairs. Drag the handle; hold Shift to snap to 15°. Release to apply.");
+        InvalidateVisual();
+        return true;
+    }
+
+    private void PreviewStairRotation(Point position)
+    {
+        if (_dragStartStair is null) return;
+        Point2 pointer = ToWorld(position);
+        if (pointer.DistanceTo(_dragStartStair.Centre) < 1e-6)
+            return;
+
+        var proposed = _dragStartStair.Copy();
+        proposed.RotationDegrees = StairRotation.FromDrag(
+            _dragStartStair.RotationDegrees,
+            _rotationStartPointerAngle,
+            StairRotation.PointerAngle(_dragStartStair.Centre, pointer),
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+        var check = StairValidator?.Invoke(proposed) ?? (true, "");
+        _dragPreviewStair = proposed;
+        _stairPreviewValid = check.Item1;
+        _stairPreviewReason = check.Item2;
+        InvalidateVisual();
+    }
 
     private Point2 SnapStairCentre(Point2 point)
     {

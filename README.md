@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.5.1 — Interactive staircase placement and editing (development branch)
+## v0.5.2 — Drag-to-rotate stairs and independent floor outlines (development branch)
 
 The editor currently supports:
 
@@ -36,6 +36,12 @@ The editor currently supports:
   including when viewing the floor above. An offset is preserved from where
   you grabbed it, with optional 0.5 m snapping (hold Shift to bypass). The
   new location is validated on both floors on release.
+- **Rotation grip on selected stairs**: the orange circular handle just beyond
+  the staircase's long end behaves like a rotation handle in a graphics editor.
+  Drag it around the centre to rotate freely; hold Shift to constrain rotation
+  to 15-degree increments. The preview turns green for valid orientations or
+  red for blocked ones. Invalid releases leave the original angle unchanged.
+  The handle remains easy to grab at different zoom levels.
 - **Edit stair properties**: select existing stairs to populate the side
   panel with length, width, rotation, and precise X/Y centre coordinates.
   Click Apply stair changes to resize, rotate or reposition the same flight,
@@ -123,6 +129,7 @@ Run the geometry checks without third-party test packages:
 | Remove upper floor | Remove Top Floor in the right panel |
 | Add stairs | Select lower floor, set width/length/rotation, Place Stairs; green/red live ghost guides placement |
 | Move stairs | Select / Edit, drag staircase on either connected floor; Shift bypasses grid snapping |
+| Rotate stairs with mouse | Select / Edit, select the staircase, drag its orange circular handle; Shift snaps to 15° |
 | Rotate or resize stairs | Select stairs, enter dimensions and arbitrary angle, Apply stair changes |
 | Rotate quickly | Use Rotate −15° or Rotate +15° (updates a selected flight immediately) |
 | Position precisely | Select stairs, enter centre X/Y coordinates in metres, then Apply |
@@ -156,6 +163,13 @@ A doorway cannot straddle a genuine bend, and edits are rejected if they
 leave too little physical clearance. When removing a bent corner, doors
 on the two affected walls move proportionally along the new straight
 segment; unrelated doors stay where they are. Invalid edits are rejected.
+
+**Per-floor perimeters are independent.** Add Floor starts with a copy of the
+previous floor's footprint for convenience. Select the upper floor from the
+floor picker, then use Split Perimeter to add vertices, Select / Edit to drag
+them, or Remove Corner to simplify that story alone. You can make the upper
+floor smaller, larger or differently shaped (subject to normal polygon
+validation and keeping existing stairs inside both connected floor outlines).
 
 A multi-floor document uses JSON schema version 2 while preserving ground
 floor fields from previous files. Its upperFloors array stores independent
