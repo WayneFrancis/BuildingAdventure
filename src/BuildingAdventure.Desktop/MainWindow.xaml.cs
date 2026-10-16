@@ -42,6 +42,7 @@ public partial class MainWindow : Window
             UpdateSelectedRoomControls();
             UpdateSelectedStairControls();
             UpdateSelectedWindowControls();
+            UpdateSelectedDoorControls();
         };
         EditorSurface.Hint += message => { _hint = message; Refresh(); };
         EditorSurface.StairPlacementRequested += PlaceStairAt;
@@ -113,6 +114,7 @@ public partial class MainWindow : Window
             : "Unassigned usable floor: —";
         DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
         DeleteDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
+        ApplyDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
         DeleteWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
         ApplyWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
         DeleteStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
@@ -263,6 +265,31 @@ public partial class MainWindow : Window
 
     private void DeleteRoom_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedRoom();
     private void DeleteDoor_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedDoor();
+
+    private void UpdateSelectedDoorControls()
+    {
+        if (EditorSurface is null || DoorWidthBox is null ||
+            ApplyDoorButton is null || DeleteDoorButton is null)
+            return;
+        var door = EditorSurface.SelectedDoor;
+        ApplyDoorButton.IsEnabled = DeleteDoorButton.IsEnabled = door is not null;
+        if (door is not null)
+            DoorWidthBox.Text = door.Width.ToString(
+                "R", System.Globalization.CultureInfo.CurrentCulture);
+    }
+
+    private void ApplyDoor_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryReadMetres(DoorWidthBox.Text, out double width) ||
+            !double.IsFinite(width))
+        {
+            _hint = "Enter a valid numeric door width.";
+            Refresh();
+            return;
+        }
+        EditorSurface.SetSelectedDoorWidth(width);
+        UpdateSelectedDoorControls();
+    }
     private void DeleteWindow_Click(object sender, RoutedEventArgs e) =>
         EditorSurface.DeleteSelectedWindow();
 

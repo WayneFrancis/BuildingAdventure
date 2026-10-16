@@ -2477,5 +2477,137 @@ Check("Narrow interior partition receives a smaller miter than exterior corners"
     Assert(joins.Single(j => j.Centre == new Point2(5, 0)).Outline.Count >= 4);
 });
 
+Check("Opening grid snap uses half-metre increments on an axis-aligned wall", () =>
+{
+    var wall = new WallSegment(new(0, 0), new(10, 0), true);
+    var snapped = OpeningEditing.OnWall(new Point2(3.26, 0.19), wall, true);
+    Equal(snapped.X, 3.5);
+    Equal(snapped.Y, 0);
+    var free = OpeningEditing.OnWall(new Point2(3.26, 0.19), wall, false);
+    Equal(free.X, 3.26);
+    Equal(free.Y, 0);
+});
+
+Check("Snapped window endpoints remain attached to diagonal walls", () =>
+{
+    var wall = new WallSegment(new(0, 0), new(8, 4), true);
+    var snapped = OpeningEditing.OnWall(new Point2(3.21, 1.61), wall, true);
+    Equal(snapped.X, 3);
+    Equal(snapped.Y, 1.5);
+    var free = OpeningEditing.OnWall(new Point2(3.21, 1.61), wall, false);
+    Assert(free.DistanceTo(snapped) > 0.1);
+    Equal(free.Y, free.X / 2);
+});
+
+Check("Snapped pointer is clipped to finite wall endpoints", () =>
+{
+    var wall = new WallSegment(new(0, 0), new(2, 0), true);
+    var result = OpeningEditing.OnWall(new Point2(9, -1), wall, true);
+    Equal(result.X, 2);
+    Equal(result.Y, 0);
+});
+
+Check("Door endpoint resize fixes the opposite end and preserves door identity", () =>
+{
+    var door = new DoorDefinition { Centre = new Point2(5, 0), Width = 0.9 };
+    var edited = OpeningEditing.ResizeDoor(door,
+        new Point2(4.55, 0), new Point2(6.05, 0));
+    Equal(edited.Width, 1.5);
+    Equal(edited.Centre.X, 5.3);
+    Assert(edited.Id == door.Id);
+    Equal(door.Width, 0.9);
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [door]
+    };
+    Assert(OpeningEditing.TryUpdateDoor(floor, edited, out var saved, out var reason),
+        reason);
+    Equal(saved.Doors[0].Width, 1.5);
+    Equal(floor.Doors[0].Width, 0.9);
+});
+
+Check("Door can move onto a different wall including interior partitions", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(2, 0) }]
+    };
+    var changed = floor.Doors[0].Copy();
+    changed.Centre = new Point2(5, 4);
+    Assert(OpeningEditing.TryUpdateDoor(floor, changed, out var moved, out var reason),
+        reason);
+    Equal(moved.Doors[0].Centre.X, 5);
+    Equal(moved.Doors[0].Centre.Y, 4);
+    Equal(floor.Doors[0].Centre.X, 2);
+    Assert(moved.Doors[0].Id == floor.Doors[0].Id);
+});
+
+Check("Door resize rejects impossible width while preserving the source", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(1, 0), Width = 0.9 }]
+    };
+    var proposed = floor.Doors[0].Copy();
+    proposed.Width = 3;
+    Assert(!OpeningEditing.TryUpdateDoor(floor, proposed, out _, out var reason));
+    Assert(reason.Contains("wall"));
+    Equal(floor.Doors[0].Width, 0.9);
+});
+
+Check("Door resize must reject overlapping doorways and windows", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [
+            new DoorDefinition { Centre = new Point2(2, 0), Width = 0.9 },
+            new DoorDefinition { Centre = new Point2(5, 0), Width = 0.9 }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(8, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var tooWide = floor.Doors[1].Copy();
+    tooWide.Centre = new Point2(4, 0);
+    tooWide.Width = 3;
+    Assert(!OpeningEditing.TryUpdateDoor(floor, tooWide, out _, out reason));
+    Assert(reason.Contains("close"));
+    var moved = floor.Doors[1].Copy();
+    moved.Centre = new Point2(7, 0);
+    Assert(!OpeningEditing.TryUpdateDoor(floor, moved, out _, out reason));
+    Assert(reason.Contains("window"));
+});
+
+Check("Door editing participates in document history and JSON persistence", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(4, 0), Width = 0.9 }]
+    };
+    var journal = new BuildingEditHistory();
+    journal.RecordBefore(source, 0);
+    var edited = OpeningEditing.ResizeDoor(source.Doors[0],
+        new Point2(3.55, 0), new Point2(5.05, 0));
+    Assert(OpeningEditing.TryUpdateDoor(source, edited, out var current, out var reason),
+        reason);
+    var saved = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(current));
+    Equal(saved.Doors[0].Width, 1.5);
+    Assert(journal.TryUndo(saved, 0, out var old));
+    Equal(old.Building.Doors[0].Width, 0.9);
+    Assert(journal.TryRedo(old.Building, 0, out var again));
+    Equal(again.Building.Doors[0].Width, 1.5);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

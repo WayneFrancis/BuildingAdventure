@@ -68,15 +68,19 @@
                 BorderBrush="#D9DEE6" BorderThickness="1,0,0,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="18">
-                    <TextBlock Text="BUILDING" FontSize="12" FontWeight="Bold" Foreground="#566579"
-                               Margin="0,0,0,12"/>
+                    <Expander Header="BUILDING" IsExpanded="True"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <TextBlock Text="Building name" FontWeight="SemiBold" Margin="0,0,0,5"/>
                     <TextBox x:Name="NameBox" Text="Untitled Building" TextChanged="NameBox_TextChanged"
                              GotKeyboardFocus="NameBox_GotKeyboardFocus"
                              LostKeyboardFocus="NameBox_LostKeyboardFocus"
                              Padding="7" Margin="0,0,0,14"/>
-                    <TextBlock Text="FLOORS" FontSize="12" FontWeight="Bold" Foreground="#566579"
-                               Margin="0,0,0,10"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="FLOORS" IsExpanded="True"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <ComboBox x:Name="FloorPicker" SelectionChanged="FloorPicker_SelectionChanged"
                               Padding="5" Margin="0,0,0,9"/>
                     <TextBlock Text="ALIGN ADJACENT FLOORS" FontSize="11"
@@ -101,8 +105,11 @@
                     </WrapPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,14"
                                Text="Each floor has its own perimeter. Add Floor copies the outline initially; select that floor and use Split Perimeter, Remove Corner or drag corners to reshape it independently. Stairs must remain inside both connected floors."/>
-                    <TextBlock Text="STAIRCASES" FontSize="12" FontWeight="Bold"
-                               Foreground="#566579" Margin="0,0,0,10"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="STAIRCASES" IsExpanded="False"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <TextBlock x:Name="StairsText" Text="0 stair flights" Margin="0,0,0,8"/>
                     <TextBlock x:Name="OpeningText" Text="0 stairwell openings above ground"
                                Margin="0,0,0,10"/>
@@ -144,8 +151,11 @@
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,17"
                                Text="Stairwell openings are cut out of the upper floor slab and follow the stairs. Increase opening clearance if needed; both stair and opening must fit the connected floors without crossing walls."/>
                     <Separator Margin="0,0,0,12"/>
-                    <TextBlock Text="WALL CONSTRUCTION" FontSize="12" FontWeight="Bold"
-                               Foreground="#566579" Margin="0,0,0,10"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="WALL CONSTRUCTION" IsExpanded="False"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <TextBlock Text="Exterior wall thickness (m)" Margin="0,0,0,4"/>
                     <TextBox x:Name="ExteriorWallBox" Text="0.24" Padding="5" Margin="0,0,0,8"/>
                     <TextBlock Text="Interior wall thickness (m)" Margin="0,0,0,4"/>
@@ -156,8 +166,11 @@
                                Margin="0,0,0,16"
                                Text="Thickness is measured perpendicular to each wall's existing centre line. Each floor can have different thicknesses. Doors and windows cut through the wall."/>
                     <Separator Margin="0,0,0,12"/>
-                    <TextBlock Text="PERIMETER" FontSize="12" FontWeight="Bold" Foreground="#566579"
-                               Margin="0,0,0,12"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="PERIMETER" IsExpanded="True"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <TextBlock x:Name="CornersText" Text="0 corners" Margin="0,0,0,8"/>
                     <TextBlock x:Name="AreaText" Text="Area: —" Margin="0,0,0,8"/>
                     <CheckBox x:Name="HighlightUnassignedCheckBox" Content="Highlight unassigned interior"
@@ -174,8 +187,11 @@
                     <Button Content="Remove selected corner" Click="Delete_Click"
                             Padding="8" Margin="0,0,0,14"/>
                     <Separator/>
-                    <TextBlock Text="ROOMS" FontSize="12" FontWeight="Bold" Foreground="#566579"
-                               Margin="0,12,0,12"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="ROOMS" IsExpanded="True"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <TextBlock x:Name="RoomsText" Text="0 rooms" Margin="0,0,0,12"/>
                     <TextBlock Text="Selected room" FontWeight="SemiBold" Margin="0,0,0,5"/>
                     <TextBox x:Name="RoomNameBox" IsEnabled="False" Padding="7" Margin="0,0,0,10"/>
@@ -201,8 +217,11 @@
                             Click="ApplyRoom_Click" Padding="8" Margin="0,0,0,10"/>
                     <Button x:Name="DeleteRoomButton" Content="Delete selected room" IsEnabled="False"
                             Click="DeleteRoom_Click" Padding="8" Margin="0,0,0,10"/>
-                    <TextBlock Text="WINDOWS" FontSize="12" FontWeight="Bold"
-                               Foreground="#566579" Margin="0,9,0,9"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="WINDOWS" IsExpanded="False"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <TextBlock Text="Window width (m)" Margin="0,0,0,4"/>
                     <TextBox x:Name="WindowWidthBox" Text="1.2" Padding="5" Margin="0,0,0,8"/>
                     <WrapPanel Margin="0,0,0,12">
@@ -213,13 +232,29 @@
                                 Click="DeleteWindow_Click" IsEnabled="False" Padding="6,4"/>
                     </WrapPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579"
-                               Text="Exterior windows are thick cyan with a dark casing. In Select / Edit, drag the window line along the exterior wall to move it. Once selected, drag either square end handle to resize while fixing the opposite end. You can also type an exact width."
+                               Text="Exterior windows are thick cyan with a dark casing. Drag the window line to move it; select it and drag either square endpoint to resize. Windows snap to the 0.5 m grid when enabled. Hold Shift while dragging to temporarily disable snapping."
                                Margin="0,0,0,14"/>
-                    <Button x:Name="DeleteDoorButton" Content="Delete selected door" IsEnabled="False"
-                            Click="DeleteDoor_Click" Padding="8" Margin="0,0,0,14"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="DOORS" IsExpanded="False"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
+                    <TextBlock Text="Door width (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="DoorWidthBox" Text="0.9" Padding="5" Margin="0,0,0,8"/>
+                    <WrapPanel Margin="0,0,0,12">
+                        <Button x:Name="ApplyDoorButton" Content="Apply width" IsEnabled="False"
+                                Click="ApplyDoor_Click" Padding="6,4" Margin="0,0,6,0"/>
+                        <Button x:Name="DeleteDoorButton" Content="Delete door" IsEnabled="False"
+                                Click="DeleteDoor_Click" Padding="6,4"/>
+                    </WrapPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,14"
+                               Text="In Select / Edit, drag a door's centre marker to move it along any wall. Select it, then drag either square endpoint to resize with the opposite end fixed. Door widths can also be entered above."/>
                     <Separator/>
-                    <TextBlock Text="HOW TO USE" FontSize="12" FontWeight="Bold" Foreground="#566579"
-                               Margin="0,14,0,12"/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="HOW TO USE" IsExpanded="False"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Draw Perimeter creates or replaces the entire exterior. For an existing building, use Split Perimeter instead of redrawing."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
@@ -230,6 +265,9 @@
                                Text="Move Wall drags a connected straight wall run. Exterior walls carry coincident room boundaries and their doors/windows along. Dragging a perimeter corner also updates attached room vertices between corners. Use Shift to bypass snap while adjusting corners."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
                                Text="Stairwell slab openings and translucent adjacent-floor references are supported. Structural beams, real 3D floor thickness, furniture and automatic generation are future milestones."/>
+
+                        </StackPanel>
+                    </Expander>
                 </StackPanel>
             </ScrollViewer>
         </Border>

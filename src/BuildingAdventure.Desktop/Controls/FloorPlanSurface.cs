@@ -32,6 +32,15 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private Guid? _selectedRoomId;
     private Guid? _selectedDoorId;
+    private bool _draggingDoor;
+    private bool _resizingDoor;
+    private DoorDefinition? _originalDoor;
+    private DoorDefinition? _doorPreview;
+    private WallSegment? _doorSupport;
+    private Point2 _doorFixedEnd;
+    private Point2 _doorGrabOffset;
+    private bool _doorEditValid;
+    private string _doorEditError = "";
     private Guid? _selectedWindowId;
     private bool _draggingWindow;
     private bool _resizingWindow;
@@ -120,6 +129,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue || _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
+    public DoorDefinition? SelectedDoor =>
+        _doors.FirstOrDefault(d => d.Id == _selectedDoorId)?.Copy();
     public WallThicknessSettings WallThickness => _wallThickness.Copy();
 
     public void SetWallThickness(WallThicknessSettings settings)
@@ -210,6 +221,10 @@ public sealed class FloorPlanSurface : FrameworkElement
         _selectedVertex = -1;
         _selectedRoomId = null;
         _selectedDoorId = null;
+        _draggingDoor = false;
+        _resizingDoor = false;
+        _originalDoor = null;
+        _doorPreview = null;
         _selectedWindowId = null;
         _draggingWindow = false;
         _resizingWindow = false;
@@ -257,7 +272,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
             EditorTool.AddWindow => "Click an exterior wall to add a window. Windows must fit between corners and doors.",
             EditorTool.PlaceStairs => "Move the cursor to preview stairs; click to place. Rotate or resize in the side panel.",
-            EditorTool.Select => "Drag blue windows to move; drag their square end handles to resize. Drag stairs to move or rotate.",
+            EditorTool.Select => "Drag windows or door openings to move; select either to drag square endpoint resize handles. Shift disables window grid snapping.",
             _ => "Drag to pan; use the mouse wheel to zoom."
         });
         InvalidateVisual();
@@ -272,6 +287,20 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     public void CancelDrawing()
     {
+        if (_draggingDoor || _resizingDoor)
+        {
+            _draggingDoor = false;
+            _resizingDoor = false;
+            if (_beforeDrag is not null) Restore(_beforeDrag);
+            _beforeDrag = null;
+            _originalDoor = null;
+            _doorPreview = null;
+            ReleaseMouseCapture();
+            Cursor = DefaultCursor();
+            InvalidateVisual();
+            Say("Door edit cancelled.");
+            return;
+        }
         if (_draggingWindow || _resizingWindow)
         {
             _draggingWindow = false;
@@ -651,6 +680,15 @@ public sealed class FloorPlanSurface : FrameworkElement
             Pen doorPen = new(door.Id == _selectedDoorId ? Brushes.OrangeRed : Brushes.SaddleBrown, 2);
             dc.DrawLine(doorPen, ToScreen(hinge), ToScreen(openEnd));
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
+            if (door.Id == _selectedDoorId && Tool == EditorTool.Select)
+            {
+                var border = new Pen(Brushes.DarkOrange, 2);
+                dc.DrawRoundedRectangle(Brushes.White, border,
+                    new Rect(ToScreen(hinge).X - 6, ToScreen(hinge).Y - 6, 12, 12), 2, 2);
+                dc.DrawRoundedRectangle(Brushes.White, border,
+                    new Rect(ToScreen(latch).X - 6, ToScreen(latch).Y - 6, 12, 12), 2, 2);
+                dc.DrawEllipse(Brushes.OrangeRed, null, ToScreen(door.Centre), 5, 5);
+            }
         }
 
         foreach (var window in _windows)
@@ -658,6 +696,20 @@ public sealed class FloorPlanSurface : FrameworkElement
             if (!TryGetWindowEnds(window, out var a, out var b, out _))
                 continue;
             DrawWindowSymbol(dc, a, b, window.Id == _selectedWindowId);
+        }
+
+        if ((_draggingDoor || _resizingDoor) && !_doorEditValid &&
+            _doorPreview is not null && _doorSupport is not null)
+        {
+            var candidate = _doorPreview;
+            var support = _doorSupport;
+            double dx = (support.B.X - support.A.X) / support.Length;
+            double dy = (support.B.Y - support.A.Y) / support.Length;
+            dc.DrawLine(new Pen(Brushes.IndianRed, 6),
+                ToScreen(new Point2(candidate.Centre.X - dx * candidate.Width / 2,
+                                    candidate.Centre.Y - dy * candidate.Width / 2)),
+                ToScreen(new Point2(candidate.Centre.X + dx * candidate.Width / 2,
+                                    candidate.Centre.Y + dy * candidate.Width / 2)));
         }
 
         if ((_draggingWindow || _resizingWindow) && !_windowEditValid &&
@@ -1101,7 +1153,7 @@ public sealed class FloorPlanSurface : FrameworkElement
                 return;
             }
 
-            if (TryStartWindowDrag(position))
+            if (TryStartWindowDrag(position) || TryStartDoorDrag(position))
             {
                 e.Handled = true;
                 return;
@@ -1191,6 +1243,13 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        if ((_draggingDoor || _resizingDoor) &&
+            _beforeDrag is not null && _originalDoor is not null)
+        {
+            PreviewDoorDrag(position);
+            return;
+        }
+
         if ((_draggingWindow || _resizingWindow) &&
             _beforeDrag is not null && _originalWindow is not null)
         {
@@ -1252,6 +1311,14 @@ public sealed class FloorPlanSurface : FrameworkElement
                     PolygonGeometry.ClosestPointOnSegment(
                         ToWorld(position), ToWorld(from), ToWorld(to))
                         .DistanceTo(ToWorld(position)) * _pixelsPerMetre <= 10))
+                    Cursor = Cursors.SizeAll;
+                else if (_doors.Any(d =>
+                    d.Id == _selectedDoorId &&
+                    TryGetDoorEnds(d, out var first, out var second, out _) &&
+                    ((first - position).Length <= 10 ||
+                     (second - position).Length <= 10)) ||
+                    _doors.Any(d =>
+                        (ToScreen(d.Centre) - position).Length <= 12))
                     Cursor = Cursors.SizeAll;
                 else
                     Cursor = DefaultCursor();
@@ -1321,6 +1388,38 @@ public sealed class FloorPlanSurface : FrameworkElement
                 Say("Staircase cannot move here: " + _stairPreviewReason);
             _dragStartStair = null;
             _dragPreviewStair = null;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
+        if ((_draggingDoor || _resizingDoor) &&
+            e.ChangedButton == MouseButton.Left)
+        {
+            PreviewDoorDrag(e.GetPosition(this));
+            bool changed = _originalDoor is not null &&
+                _doorPreview is not null &&
+                (_doorPreview.Centre.DistanceTo(_originalDoor.Centre) > 1e-7 ||
+                 Math.Abs(_doorPreview.Width - _originalDoor.Width) > 1e-7);
+            _draggingDoor = false;
+            _resizingDoor = false;
+            ReleaseMouseCapture();
+            Cursor = DefaultCursor();
+            if (_beforeDrag is not null && changed && _doorEditValid)
+            {
+                PushUndo(_beforeDrag);
+                RaiseChanged();
+                Say("Door moved or resized.");
+            }
+            else
+            {
+                if (_beforeDrag is not null) Restore(_beforeDrag);
+                if (!_doorEditValid)
+                    Say("Door edit rejected: " + _doorEditError);
+            }
+            _beforeDrag = null;
+            _originalDoor = null;
+            _doorPreview = null;
             InvalidateVisual();
             e.Handled = true;
             return;
@@ -1778,6 +1877,138 @@ public sealed class FloorPlanSurface : FrameworkElement
         Say("Window width updated.");
     }
 
+    public void SetSelectedDoorWidth(double width)
+    {
+        var door = _doors.FirstOrDefault(d => d.Id == _selectedDoorId);
+        if (door is null || Math.Abs(door.Width - width) < 1e-9) return;
+        var previous = Snapshot();
+        door.Width = width;
+        if (!Validate(out var reason))
+        {
+            Restore(previous);
+            Say("Cannot resize door: " + reason);
+            return;
+        }
+        PushUndo(previous);
+        RaiseChanged();
+        Say("Door width updated.");
+    }
+
+    private bool TryGetDoorEnds(DoorDefinition door,
+        out Point a, out Point b, out WallSegment? support)
+    {
+        a = default;
+        b = default;
+        if (!FloorGeometry.TryFindDoorWall(
+            door, FloorGeometry.BuildWalls(_outline, _rooms), out support) ||
+            support is null || support.Length < 1e-6)
+            return false;
+        double dx = (support.B.X - support.A.X) / support.Length;
+        double dy = (support.B.Y - support.A.Y) / support.Length;
+        a = ToScreen(new Point2(
+            door.Centre.X - dx * door.Width / 2,
+            door.Centre.Y - dy * door.Width / 2));
+        b = ToScreen(new Point2(
+            door.Centre.X + dx * door.Width / 2,
+            door.Centre.Y + dy * door.Width / 2));
+        return true;
+    }
+
+    private bool TryStartDoorDrag(Point position)
+    {
+        // The door centre is the drag target. Resize handles are shown only
+        // after selection so short doorways remain easy to move.
+        foreach (var door in _doors.OrderByDescending(d => d.Id == _selectedDoorId))
+        {
+            if (!TryGetDoorEnds(door, out var a, out var b, out var support) ||
+                support is null) continue;
+            bool selected = door.Id == _selectedDoorId;
+            bool endA = (position - a).Length <= 10;
+            bool endB = (position - b).Length <= 10;
+            bool atCentre = (position - ToScreen(door.Centre)).Length <= 12;
+            if (!atCentre && !(selected && (endA || endB))) continue;
+
+            _selectedDoorId = door.Id;
+            _selectedWindowId = null;
+            _selectedStairId = null;
+            _selectedRoomId = null;
+            _selectedVertex = -1;
+            _beforeDrag = Snapshot();
+            _originalDoor = door.Copy();
+            _doorPreview = door.Copy();
+            _doorSupport = support;
+            // Narrow doorways may have handles inside the centre hit zone;
+            // a click directly on the centre marker still moves the door.
+            _resizingDoor = selected && (endA || endB) &&
+                (position - ToScreen(door.Centre)).Length > 5;
+            _draggingDoor = !_resizingDoor;
+            _doorEditValid = true;
+            _doorEditError = "";
+            if (_resizingDoor)
+                _doorFixedEnd = ToWorld(endA ? b : a);
+            var mouse = ToWorld(position);
+            _doorGrabOffset = new Point2(
+                mouse.X - door.Centre.X, mouse.Y - door.Centre.Y);
+            CaptureMouse();
+            Cursor = Cursors.SizeAll;
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+            InvalidateVisual();
+            return true;
+        }
+        return false;
+    }
+
+    private void PreviewDoorDrag(Point position)
+    {
+        if (_beforeDrag is null || _originalDoor is null) return;
+        var candidate = _originalDoor.Copy();
+        if (_resizingDoor && _doorSupport is not null)
+        {
+            Point2 dragged = OpeningEditing.OnWall(
+                ToWorld(position), _doorSupport,
+                SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+            candidate = OpeningEditing.ResizeDoor(
+                _originalDoor, _doorFixedEnd, dragged);
+        }
+        else if (_draggingDoor)
+        {
+            var pointer = ToWorld(position);
+            Point2 target = new(
+                pointer.X - _doorGrabOffset.X,
+                pointer.Y - _doorGrabOffset.Y);
+            double closest = 20;
+            bool found = false;
+            foreach (var wall in FloorGeometry.BuildWalls(_outline, _rooms))
+            {
+                Point2 projection = PolygonGeometry.ClosestPointOnSegment(
+                    target, wall.A, wall.B);
+                double distance = projection.DistanceTo(target) * _pixelsPerMetre;
+                if (distance >= closest) continue;
+                closest = distance;
+                candidate.Centre = OpeningEditing.OnWall(target, wall,
+                    SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+                found = true;
+            }
+            if (!found)
+            {
+                _doorEditValid = false;
+                _doorEditError = "Move onto an existing wall.";
+                _doorPreview = candidate;
+                _doors = _beforeDrag.Doors.Select(d => d.Copy()).ToList();
+                InvalidateVisual();
+                return;
+            }
+        }
+
+        _doorPreview = candidate;
+        _doors = _beforeDrag.Doors.Select(d =>
+            d.Id == candidate.Id ? candidate.Copy() : d.Copy()).ToList();
+        _doorEditValid = Validate(out _doorEditError);
+        if (!_doorEditValid)
+            _doors = _beforeDrag.Doors.Select(d => d.Copy()).ToList();
+        InvalidateVisual();
+    }
+
     private void DrawWindowSymbol(
         DrawingContext dc, Point a, Point b, bool selected)
     {
@@ -1876,8 +2107,8 @@ public sealed class FloorPlanSurface : FrameworkElement
         if (_resizingWindow && _resizeWindowWall is not null)
         {
             Point2 pointer = ToWorld(position);
-            Point2 dragged = PolygonGeometry.ClosestPointOnSegment(
-                pointer, _resizeWindowWall.A, _resizeWindowWall.B);
+            Point2 dragged = OpeningEditing.OnWall(pointer, _resizeWindowWall,
+                SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
             candidate = WindowPlacement.ResizeFromEndpoint(
                 _originalWindow, _windowFixedEnd, dragged);
         }
@@ -1896,7 +2127,8 @@ public sealed class FloorPlanSurface : FrameworkElement
                 double pixels = target.DistanceTo(projected) * _pixelsPerMetre;
                 if (pixels >= bestPixels) continue;
                 bestPixels = pixels;
-                candidate.Centre = projected;
+                candidate.Centre = OpeningEditing.OnWall(target, wall,
+                    SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
                 found = true;
             }
             if (!found)
@@ -1943,6 +2175,8 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        centre = OpeningEditing.OnWall(mouse, nearestWall,
+            SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
         double width = WindowWidthProvider?.Invoke() ?? 1.2;
         var previous = Snapshot();
         var window = new WindowDefinition { Centre = centre, Width = width };

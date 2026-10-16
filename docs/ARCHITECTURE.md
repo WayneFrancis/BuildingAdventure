@@ -282,6 +282,30 @@ ceiling heights, or 3D wall meshes.
   radius to prevent extreme protrusions at nearly parallel walls. Editing,
   snapping, collision rules, JSON schema, and wall centre lines are unchanged.
 
+## Collapsible sidebar and interactive openings (v0.10)
+
+- MainWindow uses WPF Expanders for nine sections of the existing scrolling
+  right panel. Collapsing a section only hides its controls and does not
+  alter the building document, undo history, or editing mode. BUILDING,
+  FLOORS, PERIMETER and ROOMS start expanded; advanced sections start
+  collapsed for easier navigation.
+- OpeningEditing.OnWall handles editor snapping for both door and window
+  operations. When enabled, it rounds the pointer in world XY to a regular
+  grid and then projects to the target wall. Angled walls therefore still
+  receive a point on the wall, while Shift temporarily disables rounding.
+- Existing window placement, movement and endpoint resizing now use this
+  helper, honouring the existing Snap to 0.5 m grid checkbox.
+- Door movement/resize uses the same snapshot-based drag lifecycle as
+  windows. OpeningEditing.ResizeDoor keeps one endpoint fixed and updates
+  the centre and width. OpeningEditing.TryUpdateDoor validates a detached
+  candidate independently of WPF, preserving the source on failure.
+- Selected doors show square endpoint handles and an orange centre marker.
+  The centre is used for dragging; handles are used for resizing. Movement
+  can use both interior and exterior walls, and FloorGeometry.Validate
+  rejects unsupported, oversized or overlapping doorway placements.
+- All successful interactive changes use the existing floor edit commit
+  callback and global history; preview-only operations remain transient.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

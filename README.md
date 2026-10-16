@@ -4,9 +4,27 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.9.1 — Solid wall corner and T-junctions (development branch)
+## v0.10 — Collapsible editor sections, door handles and window snapping (development branch)
 
 The editor currently supports:
+
+- **Collapsible settings panel**: BUILDING, FLOORS, STAIRCASES,
+  WALL CONSTRUCTION, PERIMETER, ROOMS, WINDOWS, DOORS, and HOW TO USE
+  are individually expandable sections in the right-hand scrolling panel.
+  Less frequently used sections start collapsed, and their open/closed
+  state remains in place as you switch floors.
+- **Drag-editable doors**: in Select / Edit, drag the door's centre
+  marker to reposition it on an interior or exterior wall. Once selected,
+  drag its square endpoint handles to change opening width while keeping
+  the opposite endpoint fixed. The DOORS section also provides a numeric
+  width field. Invalid placements and overlaps are rejected and do not
+  create undo entries; completed changes use global Ctrl+Z/Ctrl+Y.
+- **Grid-snapped window and door editing**: with Snap to 0.5 m grid
+  enabled, placing, dragging, or resizing a window snaps the pointer
+  position to the 0.5 m grid before projecting onto its supporting wall.
+  Hold Shift during the drag for unsnapped movement. Door movements and
+  handle resizing use the same grid behaviour. Snapping is view/editor
+  behaviour; saved window and door coordinates remain ordinary metres.
 
 - Closed building footprints of arbitrary shape, including angled walls.
 - **Split Perimeter** tool: click any existing exterior wall to add a corner,
@@ -208,6 +226,11 @@ Run the geometry checks without third-party test packages:
 | Insert corner | Double-click a wall with Select/Edit |
 | Delete corner | Select a corner and press Delete; the adjacent walls join |
 | Add door | Add Door, then click on a sufficiently long wall |
+| Collapse sidebar settings | Click a section's header to expand or collapse it |
+| Move a door | In Select / Edit, drag the door centre marker to a valid wall position |
+| Resize a door with handles | Select the door, then drag either square endpoint; the other endpoint remains fixed |
+| Set door width precisely | Select the door, expand DOORS, enter metres and click Apply width |
+| Place and move snapped windows | Enable Snap to 0.5 m grid; hold Shift to disable snapping temporarily |
 | Add an exterior window | Choose window width, Add Window, click on an exterior wall |
 | Move a window | Select / Edit, drag the thick cyan glazing line to another valid location on an exterior wall |
 | Resize a window with handles | Select / Edit, select the window, drag either square endpoint to resize with its opposite end fixed |
