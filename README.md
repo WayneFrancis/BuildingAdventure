@@ -9,6 +9,10 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
 The editor currently supports:
 
 - Closed building footprints of arbitrary shape, including angled walls.
+- **Split Perimeter** tool: click any existing exterior wall to add a corner,
+  then switch to Select / Edit and drag it into an angled wall or extension.
+  Splitting a straight wall preserves doors and propagates matching vertices
+  into any rooms sharing that exterior edge.
 - Drawing interior rooms as polygons, with grid, corner and edge snapping.
 - Selecting and naming rooms, and assigning room types (shop, workshop, kitchen,
   living room, bedroom, hall, storeroom, and others).
@@ -60,6 +64,8 @@ Run the geometry checks without third-party test packages:
 | Operation | Interaction |
 | --- | --- |
 | Draw building | Draw Perimeter, click exterior corners, then Finish |
+| Add perimeter segments | Split Perimeter, click a wall, then Select / Edit and drag new corner |
+| Split any existing wall | Double-click in Select / Edit; exterior walls take priority |
 | Draw room | Draw Room, click room corners inside the building, then Finish |
 | Rename/type room | Select/Edit, click its interior, edit details, click Apply room details |
 | Move corner | Select/Edit, drag an existing corner |
@@ -74,6 +80,15 @@ Run the geometry checks without third-party test packages:
 | Cancel drawing | Esc |
 | Undo/redo | Ctrl+Z / Ctrl+Y |
 | New/Open/Save | Ctrl+N / Ctrl+O / Ctrl+S |
+
+**Important:** Draw Perimeter replaces the whole exterior outline, while
+Split Perimeter changes an existing outline in place. You can also double-click
+a wall in Select / Edit to insert a corner. A split alone does not change
+building area; drag the new corner to create the new wall segments.
+
+If a door crosses a split corner on a still-straight wall, it remains valid.
+A doorway cannot straddle a genuine bend, and edits are rejected if they
+leave too little physical clearance.
 
 Rooms are separate enclosed polygons inside the exterior footprint. Shared room
 edges render as one interior wall and can be snapped together. Room boundaries

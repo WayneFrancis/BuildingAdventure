@@ -161,24 +161,91 @@ public static class FloorGeometry
         return pieces.Values.ToList();
     }
 
+    /// <summary>
+    /// A corner inserted into a straight wall is a topology vertex, not a
+    /// physical obstruction. Resolve a door against the entire continuous
+    /// collinear run, allowing the doorway to span a split vertex.
+    /// A real bend still ends the run and requires sufficient clearance.
+    /// </summary>
     public static bool TryFindDoorWall(DoorDefinition door, IReadOnlyList<WallSegment> walls,
         out WallSegment? wall)
     {
         wall = null;
         foreach (var candidate in walls)
         {
-            double length = candidate.Length;
-            if (length < door.Width + 0.2) continue;
-            Point2 closest = PolygonGeometry.ClosestPointOnSegment(
+            var nearest = PolygonGeometry.ClosestPointOnSegment(
                 door.Centre, candidate.A, candidate.B);
-            if (closest.DistanceTo(door.Centre) > 0.01) continue;
-            if (door.Centre.DistanceTo(candidate.A) < door.Width / 2 + 0.1 ||
-                door.Centre.DistanceTo(candidate.B) < door.Width / 2 + 0.1)
+            if (nearest.DistanceTo(door.Centre) > 0.01) continue;
+
+            WallSegment run = ContinuousCollinearWall(candidate, walls);
+            if (run.Length < door.Width + 0.2) continue;
+
+            Point2 projection = PolygonGeometry.ClosestPointOnSegment(
+                door.Centre, run.A, run.B);
+            if (projection.DistanceTo(door.Centre) > 0.01) continue;
+            if (door.Centre.DistanceTo(run.A) < door.Width / 2 + 0.1 ||
+                door.Centre.DistanceTo(run.B) < door.Width / 2 + 0.1)
                 continue;
-            wall = candidate;
+
+            wall = run;
             return true;
         }
         return false;
+    }
+
+    private static WallSegment ContinuousCollinearWall(
+        WallSegment seed, IReadOnlyList<WallSegment> walls)
+    {
+        double dx = seed.B.X - seed.A.X;
+        double dy = seed.B.Y - seed.A.Y;
+        double lengthSquared = dx * dx + dy * dy;
+        if (lengthSquared < Tolerance * Tolerance) return seed;
+
+        double length = Math.Sqrt(lengthSquared);
+        double minimum = 0, maximum = 1;
+        bool exterior = seed.IsExterior;
+
+        // Expand the interval in both directions through all touching
+        // straight fragments. Do not cross a kink in the wall.
+        for (int iteration = 0; iteration < walls.Count; iteration++)
+        {
+            bool expanded = false;
+            foreach (var edge in walls)
+            {
+                double crossA = Math.Abs(
+                    dx * (edge.A.Y - seed.A.Y) -
+                    dy * (edge.A.X - seed.A.X)) / length;
+                double crossB = Math.Abs(
+                    dx * (edge.B.Y - seed.A.Y) -
+                    dy * (edge.B.X - seed.A.X)) / length;
+                if (crossA > Tolerance || crossB > Tolerance)
+                    continue;
+
+                double tA = ((edge.A.X - seed.A.X) * dx +
+                             (edge.A.Y - seed.A.Y) * dy) / lengthSquared;
+                double tB = ((edge.B.X - seed.A.X) * dx +
+                             (edge.B.Y - seed.A.Y) * dy) / lengthSquared;
+                double lo = Math.Min(tA, tB);
+                double hi = Math.Max(tA, tB);
+
+                if (lo > maximum + Tolerance || hi < minimum - Tolerance)
+                    continue;
+
+                if (lo < minimum - Tolerance || hi > maximum + Tolerance)
+                {
+                    minimum = Math.Min(minimum, lo);
+                    maximum = Math.Max(maximum, hi);
+                    expanded = true;
+                }
+                exterior |= edge.IsExterior;
+            }
+            if (!expanded) break;
+        }
+
+        return new WallSegment(
+            new Point2(seed.A.X + dx * minimum, seed.A.Y + dy * minimum),
+            new Point2(seed.A.X + dx * maximum, seed.A.Y + dy * maximum),
+            exterior);
     }
 
     private static bool IsWithinPolygon(IReadOnlyList<Point2> inner, IReadOnlyList<Point2> outer)

@@ -24,6 +24,12 @@ validation. Procedural generation remains **not implemented yet**.
   endpoints and de-duplicates coincident fragments.
 - Door centres and widths are stored in metres; the current renderer associates
   a door with a suitable wall fragment geometrically.
+- Door validation and rendering resolve continuous collinear wall runs across
+  split vertices; inserting a vertex in the middle of a door does not break it.
+  A true corner (non-collinear bend) still requires the door to fit one run.
+- Splitting an exterior/room edge propagates the same new vertex to all
+  coincident room and exterior edges. This preserves shared-edge topology and
+  does not change the actual outline until the new point is dragged.
 - A clockwise or counterclockwise ordered list of vertices defines the boundary.
 - All geometric constraints run in the renderer-independent core library.
 

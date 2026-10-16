@@ -324,5 +324,125 @@ Check("Invalid door clearance still rejects extreme wall shortening", () =>
         "Shortened walls must not accept a door with insufficient clearance.");
 });
 
+Check("Split an exterior wall into two segments without changing the footprint", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(PerimeterEditing.TrySplitWall(doc, true, null, 0,
+        new Point2(4, 0), out var result, out var reason), reason);
+    Assert(result.Perimeter.Count == 5, "Expected five perimeter vertices.");
+    Equal(PolygonGeometry.Area(result.Perimeter), 80);
+    Equal(PolygonGeometry.Perimeter(result.Perimeter), 36);
+    Assert(doc.Perimeter.Count == 4, "Original document was unexpectedly modified.");
+});
+
+Check("Split a wall directly through an existing doorway", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0), Width = 0.9 }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(doc, true, null, 0,
+        new Point2(5, 0), out var split, out var reason), reason);
+    Assert(split.Perimeter.Count == 5);
+    Assert(split.Doors.Count == 1);
+    Assert(FloorGeometry.Validate(split, out reason), reason);
+    var walls = FloorGeometry.BuildWalls(split.Perimeter, split.Rooms);
+    Assert(FloorGeometry.TryFindDoorWall(split.Doors[0], walls, out var supportingWall));
+    Assert(supportingWall is not null);
+    Equal(supportingWall!.Length, 10);
+    var reopened = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(split));
+    Assert(reopened.Perimeter.Count == 5 && reopened.Doors.Count == 1);
+});
+
+Check("Split a diagonal perimeter wall with a doorway", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(8, 4), new(8, 10), new(0, 10)],
+        Doors = [new DoorDefinition { Centre = new Point2(4, 2) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(doc, true, null, 0,
+        new Point2(3, 1.5), out var split, out var reason), reason);
+    Assert(FloorGeometry.Validate(split, out reason), reason);
+    Equal(PolygonGeometry.Area(split.Perimeter), 64);
+    Assert(split.Perimeter.Contains(new Point2(3, 1.5)));
+});
+
+Check("Exterior wall split also inserts shared corners into room boundary", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name = "Shop",
+                Outline = [new(0, 0), new(10, 0), new(10, 4), new(0, 4)]
+            }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(doc, true, null, 0,
+        new Point2(5, 0), out var split, out var reason), reason);
+    Assert(split.Perimeter.Contains(new Point2(5, 0)));
+    Assert(split.Rooms[0].Outline.Contains(new Point2(5, 0)));
+    Assert(split.Rooms[0].Outline.Count == 5);
+    Assert(FloorGeometry.Validate(split, out reason), reason);
+});
+
+Check("A newly split corner can be dragged into a new angled exterior", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(2, 0) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(doc, true, null, 0,
+        new Point2(6, 0), out var split, out var reason), reason);
+
+    var oldVertex = new Point2(6, 0);
+    var newVertex = new Point2(6, 2);
+    var doors = DoorPlacement.ForMovedVertex(
+        split.Perimeter, split.Rooms, split.Doors, oldVertex, newVertex);
+    var reshaped = new BuildingDocument
+    {
+        Perimeter = split.Perimeter.Select(p => p == oldVertex ? newVertex : p).ToList(),
+        Doors = doors
+    };
+    Assert(FloorGeometry.Validate(reshaped, out reason), reason);
+    Equal(doors[0].Centre.X, 2);
+    Equal(doors[0].Centre.Y, 2d / 3d);
+});
+
+Check("Split near an existing corner is rejected", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(!PerimeterEditing.TrySplitWall(doc, true, null, 0,
+        new Point2(0.01, 0), out _, out _));
+});
+
+Check("Splitting room wall propagates to another room sharing that wall", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Shop",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Residence",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 4) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(doc, false, doc.Rooms[0].Id, 1,
+        new Point2(5, 4), out var split, out var reason), reason);
+    Assert(split.Rooms[0].Outline.Count == 5);
+    Assert(split.Rooms[1].Outline.Count == 5);
+    Assert(FloorGeometry.Validate(split, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

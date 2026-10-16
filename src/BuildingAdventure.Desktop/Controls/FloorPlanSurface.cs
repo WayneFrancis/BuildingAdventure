@@ -7,7 +7,7 @@ using BuildingAdventure.Core.Geometry;
 
 namespace BuildingAdventure.Desktop.Controls;
 
-public enum EditorTool { Select, DrawPerimeter, DrawRoom, AddDoor, Pan }
+public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, DrawRoom, AddDoor, Pan }
 
 /// <summary>Interactive metre-based editor for a single building floor.</summary>
 public sealed class FloorPlanSurface : FrameworkElement
@@ -99,6 +99,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         Say(tool switch
         {
             EditorTool.DrawPerimeter => "Click exterior corners; click the starting point or Finish to close.",
+            EditorTool.SplitPerimeter => "Click any exterior wall to insert a corner. Select / Edit to drag it into a new shape.",
             EditorTool.DrawRoom => "Click room corners inside the building, then click the first or Finish.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
             EditorTool.Select => "Click a room to select it, drag a corner, or double-click a wall to add a corner.",
@@ -390,7 +391,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
         }
 
-        if (Tool == EditorTool.Select)
+        if (Tool is EditorTool.Select or EditorTool.SplitPerimeter)
         {
             DrawVertices(dc, _outline, _selectedPerimeterVertex, Brushes.SteelBlue);
             foreach (var room in _rooms)
@@ -554,9 +555,16 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        if (Tool == EditorTool.SplitPerimeter)
+        {
+            TryInsertCorner(position, perimeterOnly: true);
+            e.Handled = true;
+            return;
+        }
+
         if (Tool == EditorTool.Select)
         {
-            if (e.ClickCount >= 2 && TryInsertCorner(position))
+            if (e.ClickCount >= 2 && TryInsertCorner(position, perimeterOnly: false))
             {
                 e.Handled = true;
                 return;
@@ -767,35 +775,80 @@ public sealed class FloorPlanSurface : FrameworkElement
         return false;
     }
 
-    private bool TryInsertCorner(Point position)
+    private bool TryInsertCorner(Point position, bool perimeterOnly)
     {
-        List<Point2>? target = null;
-        int edge = -1;
-        Point2 point = default;
-        var selectedRoom = _rooms.FirstOrDefault(r => r.Id == _selectedRoomId);
-        if (selectedRoom is not null && TryFindEdge(selectedRoom.Outline, position, out edge, out point))
+        int edge;
+        Point2 point;
+        bool exterior = false;
+        Guid? roomId = null;
+        bool found = false;
+
+        // Exterior edges always take precedence over room edges. This is
+        // particularly important where a room and the exterior share a wall.
+        if (TryFindEdge(_outline, position, out edge, out point))
         {
-            target = selectedRoom.Outline;
-            _selectedPerimeterVertex = false;
+            exterior = true;
+            found = true;
         }
-        else if (TryFindEdge(_outline, position, out edge, out point))
+        else if (!perimeterOnly)
         {
-            target = _outline;
-            _selectedPerimeterVertex = true;
+            int foundEdge = -1;
+            Point2 foundPoint = default;
+            var selectedRoom = _rooms.FirstOrDefault(r => r.Id == _selectedRoomId);
+            if (selectedRoom is not null &&
+                TryFindEdge(selectedRoom.Outline, position, out foundEdge, out foundPoint))
+            {
+                roomId = selectedRoom.Id;
+                found = true;
+            }
+            else
+            {
+                foreach (var room in _rooms)
+                {
+                    if (!TryFindEdge(room.Outline, position, out foundEdge, out foundPoint))
+                        continue;
+                    roomId = room.Id;
+                    found = true;
+                    break;
+                }
+            }
+            edge = foundEdge;
+            point = foundPoint;
         }
-        if (target is null) return false;
+
+        if (!found)
+        {
+            if (perimeterOnly)
+                Say("Click within 10 screen pixels of an exterior wall to split it.");
+            return false;
+        }
+
         var previous = Snapshot();
-        target.Insert(edge + 1, point); // Exact insertion does not distort wall geometry.
-        if (!Validate(out var reason))
+        if (!PerimeterEditing.TrySplitWall(Document(), exterior, roomId, edge,
+            point, out var updated, out var reason))
         {
-            Restore(previous);
-            Say($"Cannot insert corner: {reason}");
+            Say($"Cannot split wall: {reason}");
             return true;
         }
+
+        _outline = updated.Perimeter;
+        _rooms = updated.Rooms;
+        _doors = updated.Doors;
+        _selectedPerimeterVertex = exterior;
+        _selectedRoomId = exterior ? null : roomId;
+        _selectedDoorId = null;
+
+        // Use the new polygon's index; inserting at the closing edge wraps
+        // naturally to the end of its vertex sequence.
+        var vertices = exterior ? _outline :
+            _rooms.First(r => r.Id == roomId).Outline;
+        _selectedVertex = vertices.FindIndex(p => p.DistanceTo(point) < 1e-7);
+
         PushUndo(previous);
-        _selectedVertex = edge + 1;
         RaiseChanged();
-        Say("Corner inserted. Drag it to move.");
+        Say(exterior
+            ? "Perimeter split. Choose Select / Edit and drag the new blue corner to make another wall segment."
+            : "Room wall split. Choose Select / Edit and drag the new corner.");
         return true;
     }
 

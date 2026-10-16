@@ -40,6 +40,7 @@
             <Separator/>
             <Button x:Name="SelectButton" Content="Select / Edit" Click="SelectTool_Click" Padding="9,4"/>
             <Button x:Name="DrawButton" Content="Draw Perimeter" Click="DrawTool_Click" Padding="9,4"/>
+            <Button x:Name="SplitButton" Content="Split Perimeter" Click="SplitPerimeter_Click" Padding="9,4"/>
             <Button x:Name="RoomButton" Content="Draw Room" Click="RoomTool_Click" Padding="9,4"/>
             <Button x:Name="DoorButton" Content="Add Door" Click="DoorTool_Click" Padding="9,4"/>
             <Button x:Name="PanButton" Content="Pan" Click="PanTool_Click" Padding="9,4"/>
@@ -111,9 +112,9 @@
                     <TextBlock Text="HOW TO USE" FontSize="12" FontWeight="Bold" Foreground="#566579"
                                Margin="0,14,0,12"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Draw Perimeter: click each corner, then click the first corner or double-click to close. Angled walls are fully supported."/>
+                               Text="Draw Perimeter creates or replaces the entire exterior. For an existing building, use Split Perimeter instead of redrawing."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Select / Edit: click a room to select and rename it. Drag corners to move them, or double-click a wall to insert a corner."/>
+                               Text="Split Perimeter: click an exterior wall to add a corner, then choose Select / Edit and drag the new corner to make extra angled wall segments. Double-clicking a wall in Select / Edit also splits it."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Draw Room: outline each room inside the perimeter. Snap to building and other room walls. Rooms cannot overlap."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
