@@ -47,6 +47,7 @@
             <Button x:Name="MergeRoomsButton" Content="Merge Rooms" Click="MergeRoomsTool_Click" Padding="9,4"/>
             <Button x:Name="MoveWallButton" Content="Move Wall" Click="MoveWallTool_Click" Padding="9,4"/>
             <Button x:Name="DoorButton" Content="Add Door" Click="DoorTool_Click" Padding="9,4"/>
+            <Button x:Name="PlaceStairsButton" Content="Place Stairs" Click="PlaceStairsTool_Click" Padding="9,4"/>
             <Button x:Name="PanButton" Content="Pan" Click="PanTool_Click" Padding="9,4"/>
             <Separator/>
             <Button Content="Fit" Click="Fit_Click" Padding="9,4"/>
@@ -70,7 +71,37 @@
                                Margin="0,0,0,12"/>
                     <TextBlock Text="Building name" FontWeight="SemiBold" Margin="0,0,0,5"/>
                     <TextBox x:Name="NameBox" Text="Untitled Building" TextChanged="NameBox_TextChanged"
-                             Padding="7" Margin="0,0,0,20"/>
+                             Padding="7" Margin="0,0,0,14"/>
+                    <TextBlock Text="FLOORS" FontSize="12" FontWeight="Bold" Foreground="#566579"
+                               Margin="0,0,0,10"/>
+                    <ComboBox x:Name="FloorPicker" SelectionChanged="FloorPicker_SelectionChanged"
+                              Padding="5" Margin="0,0,0,9"/>
+                    <WrapPanel Margin="0,0,0,10">
+                        <Button x:Name="AddFloorButton" Content="Add Floor" Click="AddFloor_Click"
+                                Padding="7,5" Margin="0,0,7,0"/>
+                        <Button x:Name="RemoveFloorButton" Content="Remove Top Floor"
+                                Click="RemoveFloor_Click" Padding="7,5"/>
+                    </WrapPanel>
+                    <TextBlock Text="STAIRCASES" FontSize="12" FontWeight="Bold"
+                               Foreground="#566579" Margin="0,0,0,10"/>
+                    <TextBlock x:Name="StairsText" Text="0 stair flights" Margin="0,0,0,8"/>
+                    <TextBlock Text="Length (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="StairLengthBox" Text="3.6" Padding="5" Margin="0,0,0,8"/>
+                    <TextBlock Text="Width (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="StairWidthBox" Text="1.4" Padding="5" Margin="0,0,0,8"/>
+                    <TextBlock Text="Rotation (degrees)" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="StairRotationBox" SelectedIndex="0" Padding="5" Margin="0,0,0,10">
+                        <ComboBoxItem Content="0"/>
+                        <ComboBoxItem Content="90"/>
+                        <ComboBoxItem Content="180"/>
+                        <ComboBoxItem Content="270"/>
+                    </ComboBox>
+                    <Button x:Name="DeleteStairsButton" Content="Remove selected staircase"
+                            IsEnabled="False" Click="DeleteStairs_Click" Padding="7"
+                            Margin="0,0,0,10"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,17"
+                               Text="Place Stairs: select a lower floor, then click within its footprint. The stair reservation must fit the floor above too."/>
+                    <Separator Margin="0,0,0,12"/>
                     <TextBlock Text="PERIMETER" FontSize="12" FontWeight="Bold" Foreground="#566579"
                                Margin="0,0,0,12"/>
                     <TextBlock x:Name="CornersText" Text="0 corners" Margin="0,0,0,8"/>
@@ -124,7 +155,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Move Wall drags an entire wall. In Select / Edit, dragging a corner snaps to nearby corners or wall edges; hold Shift for precise unsnapped placement. Add Door inserts a 0.9 m doorway."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
-                               Text="Automatic room generation, stairs, furniture and multiple stories are future milestones."/>
+                               Text="Floors 1–4 and linked stair footprints are supported. Stair reservations are overlays, not automatically carved stairwell rooms. Furniture and automatic generation are future milestones."/>
                 </StackPanel>
             </ScrollViewer>
         </Border>

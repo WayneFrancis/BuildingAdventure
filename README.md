@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.4 — Merge Rooms and enhanced snapping (development branch)
+## v0.5 — Multiple floors and linked staircases (development branch)
 
 The editor currently supports:
 
@@ -24,6 +24,14 @@ The editor currently supports:
 - **Move Wall** tool: click and drag a wall perpendicular to its direction.
   Coincident shared vertices and affected doors follow the edit. The entire
   result is validated; invalid movements are rejected.
+- **Multiple floors (1–4)**: use Add Floor to create an upper floor with
+  the preceding story's outline but independent rooms and doors. Switch floors
+  with the selector in the right panel; remove only the highest floor.
+- **Linked staircases**: choose dimensions and one of four orientations in the
+  right panel, select the lower floor, click Place Stairs, and click a valid
+  location. Each flight is displayed on both connected floors as an UP/DOWN
+  reservation. Stairs must fit within both floor boundaries and cannot cross
+  internal partition walls. Select a staircase to remove it.
 - **Merge Rooms** tool: select a room and click Merge Rooms, then click an
   adjoining room (or click the two rooms in succession). The shared partition
   disappears and the first room retains its name, type, and ID. Doors on the
@@ -49,8 +57,13 @@ The editor currently supports:
 - Loading older v0.1 perimeter-only JSON documents.
 
 **Not yet implemented:** automatic room generation; free-standing unenclosed
-partition walls; multiple floors; window placement; door width editing;
-hidden passages; furnishing; and VTT export.
+partition walls; window placement; door width editing; hidden passages;
+furnishing; and VTT export. Staircases are reserved and displayed on both
+floors but do not yet generate stairwell rooms, ceiling holes, elevations,
+stairs geometry or automatic upper-floor circulation. Undo history for
+perimeter/room edits is local to the active floor and resets on switching
+floors; floor/stair additions and removals currently use direct controls
+rather than global undo.
 Move Wall currently moves a chosen segment perpendicular to itself, not an
 unrestricted wall rotation or a whole chain of connected non-collinear walls. Doors are simple openings and are not
 yet a complete circulation/accessibility model.
@@ -91,6 +104,11 @@ Run the geometry checks without third-party test packages:
 | Join two wall segments | Remove Corner, click the shared corner |
 | Split a room into two | Select a room, Split Room, click two points on its boundary |
 | Merge adjacent rooms | Select a room, Merge Rooms, click the second room; or click both in Merge Rooms mode |
+| Add an upper floor | Add Floor in the right panel (copies only exterior footprint) |
+| Change floors | Select a floor in the right-hand floor selector |
+| Remove upper floor | Remove Top Floor in the right panel |
+| Add stairs | Select lower floor, set width/length/rotation, Place Stairs, then click inside both footprints |
+| Remove stairs | Select / Edit, click staircase footprint, Remove selected staircase |
 | Move a wall | Move Wall, drag a wall perpendicular to itself; Shift disables distance snap |
 | Split any existing wall | Double-click in Select / Edit; exterior walls take priority |
 | Draw room | Draw Room, click room corners inside the building, then Finish |
@@ -120,6 +138,13 @@ A doorway cannot straddle a genuine bend, and edits are rejected if they
 leave too little physical clearance. When removing a bent corner, doors
 on the two affected walls move proportionally along the new straight
 segment; unrelated doors stay where they are. Invalid edits are rejected.
+
+A multi-floor document uses JSON schema version 2 while preserving ground
+floor fields from previous files. Its upperFloors array stores independent
+floor plans; its staircases array stores connected lower-floor index, centre,
+width, length and angle. Existing schema-1 files continue to load as a
+single-story building. A floor can have a different shape after it is added;
+new stair placements are validated against both connected floors.
 
 Rooms are separate enclosed polygons inside the exterior footprint. Shared room
 edges render as one interior wall and can be snapped together. Merge Rooms

@@ -63,6 +63,28 @@ validation. Procedural generation remains **not implemented yet**.
 - A clockwise or counterclockwise ordered list of vertices defines the boundary.
 - All geometric constraints run in the renderer-independent core library.
 
+## Storeys and stair reservations (v0.5)
+
+- Version-1 JSON buildings still have one floor, with perimeter, rooms and
+  doors at the root. Version-2 files retain that ground-floor representation
+  and introduce upperFloors and staircases arrays.
+- An upper floor stores an independent perimeter, rooms and doors. Adding a
+  floor initially copies the previous floor's perimeter, not its partitions.
+  Later edits can give that floor a different outline.
+- The editor handles one floor at a time. Switching floors snapshots the
+  current editor geometry into its correct storey, loads the new geometry,
+  and resets the local undo stack for the new floor. Building metadata and
+  stair definitions are held by the main window.
+- A stair flight has a lower-floor index, centre, length, width and rotation.
+  A rotated four-corner polygon defines its footprint on both connected
+  floors, where the same world coordinates guarantee vertical alignment.
+- Validation checks each floor independently and the stair footprint inside
+  both connected floor outlines. Stairs may occupy a room or hallway region,
+  but cannot cross an existing interior wall. Stairwell holes, rise/run,
+  structural floor slabs and automated vertical circulation are future work.
+- Up to four floors are currently supported; only the highest floor can be
+  removed. Removing it also removes stair flights leading to that floor.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

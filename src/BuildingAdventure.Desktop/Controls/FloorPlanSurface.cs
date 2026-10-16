@@ -7,7 +7,7 @@ using BuildingAdventure.Core.Geometry;
 
 namespace BuildingAdventure.Desktop.Controls;
 
-public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MergeRooms, MoveWall, AddDoor, Pan }
+public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MergeRooms, MoveWall, AddDoor, PlaceStairs, Pan }
 
 /// <summary>Interactive metre-based editor for a single building floor.</summary>
 public sealed class FloorPlanSurface : FrameworkElement
@@ -29,6 +29,9 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private Guid? _selectedRoomId;
     private Guid? _selectedDoorId;
+    private Guid? _selectedStairId;
+    private List<StaircaseDefinition> _staircases = new();
+    private int _stairFloorIndex;
     private int _selectedVertex = -1;
     private bool _selectedPerimeterVertex;
     private bool _panning;
@@ -46,6 +49,10 @@ public sealed class FloorPlanSurface : FrameworkElement
     public event EventHandler? Changed;
     public event EventHandler? SelectionChanged;
     public event Action<string>? Hint;
+    public event Action<Point2>? StairPlacementRequested;
+
+    /// <summary>Optional whole-building constraint check for the edited floor.</summary>
+    public Func<BuildingDocument, (bool Valid, string Reason)>? AdditionalValidator { get; set; }
 
     public FloorPlanSurface()
     {
@@ -62,6 +69,21 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue || _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
+    public Guid? SelectedStaircaseId => _selectedStairId;
+
+    /// <summary>
+    /// Display all flights touching the active floor. Staircase changes are
+    /// owned by the main window's multi-floor document, not the local undo
+    /// history of an individual floor.
+    /// </summary>
+    public void SetStairOverlay(IReadOnlyList<StaircaseDefinition> staircases, int floorIndex)
+    {
+        _staircases = staircases.Select(s => s.Copy()).ToList();
+        _stairFloorIndex = floorIndex;
+        _selectedStairId = null;
+        InvalidateVisual();
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+    }
     public IReadOnlyList<Point2> GetOutline() => _outline.ToList().AsReadOnly();
     public IReadOnlyList<RoomDefinition> GetRooms() => _rooms.Select(r => r.Copy()).ToList().AsReadOnly();
     public IReadOnlyList<DoorDefinition> GetDoors() => _doors.Select(d => d.Copy()).ToList().AsReadOnly();
@@ -91,6 +113,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _selectedVertex = -1;
         _selectedRoomId = null;
         _selectedDoorId = null;
+        _selectedStairId = null;
         _undo.Clear();
         _redo.Clear();
         InvalidateVisual();
@@ -125,6 +148,7 @@ public sealed class FloorPlanSurface : FrameworkElement
                 : "Click the first room, then an adjoining second room to merge them.",
             EditorTool.MoveWall => "Drag a wall perpendicular to itself. Connected corners and doors will follow.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
+            EditorTool.PlaceStairs => "Click inside the current floor to place a stair flight to the floor above.",
             EditorTool.Select => "Click a room to select it, drag a corner, or double-click a wall to add a corner.",
             _ => "Drag to pan; use the mouse wheel to zoom."
         });
@@ -276,6 +300,12 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = updated.Perimeter;
         _rooms = updated.Rooms;
         _doors = updated.Doors;
+        if (!Validate(out var buildingReason))
+        {
+            Restore(previous);
+            Say($"Cannot remove corner: {buildingReason}");
+            return;
+        }
         _selectedVertex = -1;
         PushUndo(previous);
         RaiseChanged();
@@ -442,6 +472,48 @@ public sealed class FloorPlanSurface : FrameworkElement
             Pen doorPen = new(door.Id == _selectedDoorId ? Brushes.OrangeRed : Brushes.SaddleBrown, 2);
             dc.DrawLine(doorPen, ToScreen(hinge), ToScreen(openEnd));
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
+        }
+
+        foreach (var stair in _staircases.Where(stair =>
+            stair.LowerFloorIndex == _stairFloorIndex ||
+            stair.LowerFloorIndex + 1 == _stairFloorIndex))
+        {
+            var footprint = BuildingStoreys.StairFootprint(stair);
+            bool selected = stair.Id == _selectedStairId;
+            bool goingUp = stair.LowerFloorIndex == _stairFloorIndex;
+            var fill = goingUp
+                ? new SolidColorBrush(Color.FromArgb(105, 97, 153, 202))
+                : new SolidColorBrush(Color.FromArgb(100, 172, 139, 203));
+            dc.DrawGeometry(fill,
+                new Pen(selected ? Brushes.DarkOrange : Brushes.DarkSlateBlue, selected ? 3 : 2)
+                { DashStyle = DashStyles.Dash },
+                BuildGeometry(footprint, true));
+
+            Point middle = ToScreen(stair.Centre);
+            string label = goingUp ? $"UP to {stair.LowerFloorIndex + 2}"
+                                   : $"DOWN to {stair.LowerFloorIndex + 1}";
+            DrawText(dc, label, new Point(middle.X + 5, middle.Y - 8),
+                12, Brushes.DarkSlateBlue);
+
+            // Direction arrow along the staircase's local long axis.
+            double angle = stair.RotationDegrees * Math.PI / 180;
+            double vx = -Math.Sin(angle), vy = Math.Cos(angle);
+            Point start = ToScreen(new Point2(
+                stair.Centre.X - vx * stair.Length * 0.23,
+                stair.Centre.Y - vy * stair.Length * 0.23));
+            Point tip = ToScreen(new Point2(
+                stair.Centre.X + vx * stair.Length * 0.23,
+                stair.Centre.Y + vy * stair.Length * 0.23));
+            var pen = new Pen(Brushes.DarkSlateBlue, 1.6);
+            dc.DrawLine(pen, start, tip);
+            Vector vector = tip - start;
+            if (vector.Length > 1)
+            {
+                vector.Normalize();
+                Vector side = new(-vector.Y, vector.X);
+                dc.DrawLine(pen, tip, tip - vector * 9 + side * 5);
+                dc.DrawLine(pen, tip, tip - vector * 9 - side * 5);
+            }
         }
 
         if (Tool is EditorTool.Select or EditorTool.SplitPerimeter or EditorTool.RemoveCorner or EditorTool.MoveWall or EditorTool.SplitRoom or EditorTool.MergeRooms)
@@ -621,6 +693,13 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
+        if (Tool == EditorTool.PlaceStairs)
+        {
+            StairPlacementRequested?.Invoke(ToWorld(position));
+            e.Handled = true;
+            return;
+        }
+
         if (Tool == EditorTool.SplitRoom)
         {
             HandleSplitRoomClick(position);
@@ -673,12 +752,21 @@ public sealed class FloorPlanSurface : FrameworkElement
             }
             else if (TrySelectDoor(position))
             {
+                _selectedStairId = null;
                 _selectedVertex = -1;
+                _selectedRoomId = null;
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
+            }
+            else if (TrySelectStair(position))
+            {
+                _selectedVertex = -1;
+                _selectedDoorId = null;
                 _selectedRoomId = null;
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
             }
             else
             {
+                _selectedStairId = null;
                 Point2 point = ToWorld(position);
                 var room = _rooms.LastOrDefault(r => PolygonGeometry.ContainsPoint(r.Outline, point));
                 _selectedRoomId = room?.Id;
@@ -859,8 +947,15 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = combined.Perimeter;
         _rooms = combined.Rooms;
         _doors = combined.Doors;
+        if (!Validate(out var buildingReason))
+        {
+            Restore(previous);
+            Say($"Cannot merge rooms: {buildingReason}");
+            return;
+        }
         _selectedRoomId = _mergePrimaryRoomId;
         _selectedDoorId = null;
+        _selectedStairId = null;
         _selectedVertex = -1;
         _mergePrimaryRoomId = null;
         Tool = EditorTool.Select;
@@ -952,6 +1047,12 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = document.Perimeter;
         _rooms = document.Rooms;
         _doors = document.Doors;
+        if (!Validate(out var buildingReason))
+        {
+            Restore(previous);
+            Say($"Room not split: {buildingReason}");
+            return;
+        }
         _partitionStart = null;
         _draftCursor = null;
         _selectedVertex = -1;
@@ -1012,8 +1113,17 @@ public sealed class FloorPlanSurface : FrameworkElement
             _outline = moved.Perimeter;
             _rooms = moved.Rooms;
             _doors = moved.Doors;
-            _wallMoveAccepted = Math.Abs(amount) > 1e-7;
-            _wallMoveError = "";
+            if (Validate(out var buildingReason))
+            {
+                _wallMoveAccepted = Math.Abs(amount) > 1e-7;
+                _wallMoveError = "";
+            }
+            else
+            {
+                Restore(_beforeDrag);
+                _wallMoveAccepted = false;
+                _wallMoveError = buildingReason;
+            }
         }
         else
         {
@@ -1078,6 +1188,23 @@ public sealed class FloorPlanSurface : FrameworkElement
         Say("Door added. Select it and use Delete Door to remove it.");
     }
 
+    private bool TrySelectStair(Point position)
+    {
+        var world = ToWorld(position);
+        for (int i = _staircases.Count - 1; i >= 0; i--)
+        {
+            var stair = _staircases[i];
+            if (stair.LowerFloorIndex != _stairFloorIndex &&
+                stair.LowerFloorIndex + 1 != _stairFloorIndex)
+                continue;
+            if (!PolygonGeometry.ContainsPoint(BuildingStoreys.StairFootprint(stair), world))
+                continue;
+            _selectedStairId = stair.Id;
+            return true;
+        }
+        return false;
+    }
+
     private bool TrySelectDoor(Point position)
     {
         foreach (var door in _doors)
@@ -1101,6 +1228,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             _selectedVertex = selected;
             _selectedPerimeterVertex = false;
             _selectedDoorId = null;
+            _selectedStairId = null;
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             return true;
         }
@@ -1111,6 +1239,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             _selectedPerimeterVertex = true;
             _selectedRoomId = null;
             _selectedDoorId = null;
+            _selectedStairId = null;
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             return true;
         }
@@ -1119,6 +1248,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             if (!TryVertexHit(_rooms[i].Outline, position, out selected)) continue;
             _selectedRoomId = _rooms[i].Id;
             _selectedDoorId = null;
+            _selectedStairId = null;
             _selectedVertex = selected;
             _selectedPerimeterVertex = false;
             SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -1225,6 +1355,12 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = updated.Perimeter;
         _rooms = updated.Rooms;
         _doors = updated.Doors;
+        if (!Validate(out var buildingReason))
+        {
+            Restore(previous);
+            Say($"Cannot split wall: {buildingReason}");
+            return true;
+        }
         _selectedPerimeterVertex = exterior;
         _selectedRoomId = exterior ? null : roomId;
         _selectedDoorId = null;
@@ -1250,7 +1386,15 @@ public sealed class FloorPlanSurface : FrameworkElement
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool Validate(out string reason) => FloorGeometry.Validate(Document(), out reason);
+    private bool Validate(out string reason)
+    {
+        var floor = Document();
+        if (!FloorGeometry.Validate(floor, out reason)) return false;
+        if (AdditionalValidator is null) return true;
+        var result = AdditionalValidator(floor);
+        reason = result.Reason;
+        return result.Valid;
+    }
 
     private EditorSnapshot Snapshot() =>
         new(_outline.ToList(), _rooms.Select(r => r.Copy()).ToList(),

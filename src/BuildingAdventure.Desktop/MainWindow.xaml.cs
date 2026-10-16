@@ -15,27 +15,45 @@ public partial class MainWindow : Window
     private string _lastSavedJson = "";
     private bool _loading;
     private string _hint = "Select Draw Perimeter, then click corners to begin.";
+    private BuildingDocument _building = new();
+    private int _activeFloorIndex;
 
     public MainWindow()
     {
         InitializeComponent();
+        StairRotationBox.SelectedIndex = 0;
         EditorSurface.Changed += (_, _) => Refresh();
         EditorSurface.SelectionChanged += (_, _) => UpdateSelectedRoomControls();
         EditorSurface.Hint += message => { _hint = message; Refresh(); };
+        EditorSurface.StairPlacementRequested += PlaceStairAt;
+        EditorSurface.AdditionalValidator = editedFloor =>
+        {
+            var candidate = BuildingStoreys.Copy(_building);
+            BuildingStoreys.SetFloor(candidate, _activeFloorIndex, editedFloor);
+            bool valid = BuildingStoreys.Validate(candidate, out var reason);
+            return (valid, reason);
+        };
         EditorSurface.SetTool(EditorTool.DrawPerimeter);
+        RebuildFloorPicker();
+        EditorSurface.SetStairOverlay(_building.Staircases, 0);
         _lastSavedJson = CurrentJson();
         Loaded += (_, _) => { EditorSurface.Focus(); Refresh(); };
         Closing += (_, e) => { if (!ConfirmDiscard()) e.Cancel = true; };
         Refresh();
     }
 
-    private BuildingDocument CurrentDocument() => new()
+    private BuildingDocument CurrentDocument()
     {
-        Name = NameBox.Text,
-        Perimeter = EditorSurface.GetOutline().ToList(),
-        Rooms = EditorSurface.GetRooms().ToList(),
-        Doors = EditorSurface.GetDoors().ToList()
-    };
+        var result = BuildingStoreys.Copy(_building);
+        result.Name = NameBox.Text;
+        BuildingStoreys.SetFloor(result, _activeFloorIndex, new BuildingDocument
+        {
+            Perimeter = EditorSurface.GetOutline().ToList(),
+            Rooms = EditorSurface.GetRooms().ToList(),
+            Doors = EditorSurface.GetDoors().ToList()
+        });
+        return result;
+    }
 
     private string CurrentJson() => BuildingDocumentJson.Serialize(CurrentDocument());
 
@@ -60,6 +78,10 @@ public partial class MainWindow : Window
         RoomsText.Text = $"{EditorSurface.GetRooms().Count} rooms, {EditorSurface.GetDoors().Count} doors";
         DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
         DeleteDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
+        DeleteStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
+        StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
+        AddFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
+        RemoveFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) > 1;
         UndoButton.IsEnabled = UndoMenu.IsEnabled = EditorSurface.CanUndo;
         RedoButton.IsEnabled = RedoMenu.IsEnabled = EditorSurface.CanRedo;
         FinishButton.IsEnabled = EditorSurface.IsDrawing;
@@ -72,6 +94,7 @@ public partial class MainWindow : Window
         MergeRoomsButton.FontWeight = EditorSurface.Tool == EditorTool.MergeRooms ? FontWeights.Bold : FontWeights.Normal;
         MoveWallButton.FontWeight = EditorSurface.Tool == EditorTool.MoveWall ? FontWeights.Bold : FontWeights.Normal;
         DoorButton.FontWeight = EditorSurface.Tool == EditorTool.AddDoor ? FontWeights.Bold : FontWeights.Normal;
+        PlaceStairsButton.FontWeight = EditorSurface.Tool == EditorTool.PlaceStairs ? FontWeights.Bold : FontWeights.Normal;
         PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
         HintText.Text = _hint;
         ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
@@ -83,7 +106,11 @@ public partial class MainWindow : Window
     {
         if (!ConfirmDiscard()) return;
         _loading = true;
+        _building = new BuildingDocument();
+        _activeFloorIndex = 0;
         EditorSurface.LoadOutline(Array.Empty<Point2>());
+        EditorSurface.SetStairOverlay(_building.Staircases, 0);
+        RebuildFloorPicker();
         NameBox.Text = "Untitled Building";
         _filePath = null;
         _loading = false;
@@ -106,7 +133,11 @@ public partial class MainWindow : Window
         {
             var document = BuildingDocumentJson.Deserialize(File.ReadAllText(dialog.FileName));
             _loading = true;
-            EditorSurface.LoadDocument(document);
+            _building = BuildingStoreys.Copy(document);
+            _activeFloorIndex = 0;
+            EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
+            EditorSurface.SetStairOverlay(_building.Staircases, 0);
+            RebuildFloorPicker();
             NameBox.Text = document.Name;
             _filePath = dialog.FileName;
             _loading = false;
@@ -116,7 +147,7 @@ public partial class MainWindow : Window
             _hint = "Building opened.";
             Refresh();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException or InvalidDataException)
         {
             _loading = false;
             MessageBox.Show(this, ex.Message, "Cannot open building", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -152,7 +183,7 @@ public partial class MainWindow : Window
             _hint = $"Saved {Path.GetFileName(target)}.";
             Refresh();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidDataException)
         {
             MessageBox.Show(this, ex.Message, "Cannot save building", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -182,6 +213,147 @@ public partial class MainWindow : Window
 
     private void DeleteRoom_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedRoom();
     private void DeleteDoor_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedDoor();
+
+    private void RebuildFloorPicker()
+    {
+        if (FloorPicker is null) return;
+        bool prior = _loading;
+        _loading = true;
+        FloorPicker.Items.Clear();
+        for (int i = 0; i < BuildingStoreys.FloorCount(_building); i++)
+            FloorPicker.Items.Add(i == 0 ? "Ground Floor" : _building.UpperFloors[i - 1].Name);
+        FloorPicker.SelectedIndex = _activeFloorIndex;
+        _loading = prior;
+    }
+
+    private void ShowFloor(int index)
+    {
+        if (index < 0 || index >= BuildingStoreys.FloorCount(_building)) return;
+        _loading = true;
+        _activeFloorIndex = index;
+        EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, index));
+        EditorSurface.SetStairOverlay(_building.Staircases, index);
+        EditorSurface.SetTool(EditorTool.Select);
+        FloorPicker.SelectedIndex = index;
+        _loading = false;
+        EditorSurface.FitToView();
+        _hint = $"Editing {BuildingStoreys.FloorLabel(index)}.";
+        Refresh();
+    }
+
+    private void FloorPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || EditorSurface is null || FloorPicker is null) return;
+        int next = FloorPicker.SelectedIndex;
+        if (next < 0 || next == _activeFloorIndex) return;
+        _building = CurrentDocument();
+        ShowFloor(next);
+    }
+
+    private void AddFloor_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BuildingStoreys.TryAddFloor(CurrentDocument(), out var added, out var reason))
+        {
+            MessageBox.Show(this, reason, "Cannot add floor",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        _building = added;
+        _activeFloorIndex = BuildingStoreys.FloorCount(_building) - 1;
+        RebuildFloorPicker();
+        ShowFloor(_activeFloorIndex);
+        _hint = "Upper floor created. Exterior copied; rooms and doors are independent.";
+        Refresh();
+    }
+
+    private void RemoveFloor_Click(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show(this,
+                "Remove the highest floor and any staircase leading to it?",
+                "Remove floor", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+                != MessageBoxResult.Yes) return;
+
+        if (!BuildingStoreys.TryRemoveTopFloor(CurrentDocument(), out var updated, out var reason))
+        {
+            MessageBox.Show(this, reason, "Cannot remove floor",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        _building = updated;
+        _activeFloorIndex = Math.Min(_activeFloorIndex,
+            BuildingStoreys.FloorCount(_building) - 1);
+        RebuildFloorPicker();
+        ShowFloor(_activeFloorIndex);
+        _hint = "Highest floor removed.";
+        Refresh();
+    }
+
+    private void PlaceStairsTool_Click(object sender, RoutedEventArgs e) =>
+        EditorSurface.SetTool(EditorTool.PlaceStairs);
+
+    private static bool TryReadMetres(string input, out double value) =>
+        double.TryParse(input, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.CurrentCulture, out value) ||
+        double.TryParse(input, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out value);
+
+    private void PlaceStairAt(Point2 centre)
+    {
+        if (_activeFloorIndex >= BuildingStoreys.FloorCount(_building) - 1)
+        {
+            _hint = "Add an upper floor, then select its lower floor to place stairs.";
+            Refresh();
+            return;
+        }
+        if (!TryReadMetres(StairLengthBox.Text, out double length) ||
+            !TryReadMetres(StairWidthBox.Text, out double width) ||
+            StairRotationBox.SelectedItem is not ComboBoxItem rotationItem ||
+            !double.TryParse(rotationItem.Content?.ToString(),
+                out double rotation))
+        {
+            _hint = "Enter numeric staircase dimensions and rotation.";
+            Refresh();
+            return;
+        }
+
+        if (EditorSurface.SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            centre = new Point2(
+                Math.Round(centre.X * 2, MidpointRounding.AwayFromZero) / 2,
+                Math.Round(centre.Y * 2, MidpointRounding.AwayFromZero) / 2);
+
+        var candidate = CurrentDocument();
+        candidate.Staircases.Add(new StaircaseDefinition
+        {
+            LowerFloorIndex = _activeFloorIndex,
+            Centre = centre,
+            Length = length,
+            Width = width,
+            RotationDegrees = rotation
+        });
+        if (!BuildingStoreys.Validate(candidate, out var error))
+        {
+            _hint = $"Cannot place stairs: {error}";
+            Refresh();
+            return;
+        }
+
+        _building = candidate;
+        EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex);
+        _hint = $"Stairs connect {BuildingStoreys.FloorLabel(_activeFloorIndex)} to " +
+                $"{BuildingStoreys.FloorLabel(_activeFloorIndex + 1)}.";
+        Refresh();
+    }
+
+    private void DeleteStairs_Click(object sender, RoutedEventArgs e)
+    {
+        Guid? id = EditorSurface.SelectedStaircaseId;
+        if (!id.HasValue) return;
+        _building = CurrentDocument();
+        _building.Staircases.RemoveAll(s => s.Id == id.Value);
+        EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex);
+        _hint = "Staircase removed from both connected floors.";
+        Refresh();
+    }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
     private void Undo_Click(object sender, RoutedEventArgs e) => EditorSurface.Undo();
@@ -235,7 +407,9 @@ public partial class MainWindow : Window
         else if (e.Key == Key.Escape) EditorSurface.CancelDrawing();
         else if (e.Key == Key.Delete && !NameBox.IsKeyboardFocusWithin && !RoomNameBox.IsKeyboardFocusWithin)
         {
-            if (EditorSurface.HasSelectedDoor) EditorSurface.DeleteSelectedDoor();
+            if (EditorSurface.SelectedStaircaseId.HasValue)
+                DeleteStairs_Click(this, new RoutedEventArgs());
+            else if (EditorSurface.HasSelectedDoor) EditorSurface.DeleteSelectedDoor();
             else EditorSurface.DeleteSelectedVertex();
         }
         else return;

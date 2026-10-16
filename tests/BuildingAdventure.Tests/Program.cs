@@ -917,5 +917,168 @@ Check("A room can be split and immediately merged back together", () =>
     Assert(FloorGeometry.Validate(merged, out reason), reason);
 });
 
+Check("Version 1 building files still deserialize with one floor", () =>
+{
+    var text = """{"schemaVersion":1,"name":"Old Tavern","perimeter":[{"x":0,"y":0},{"x":12,"y":0},{"x":12,"y":10},{"x":0,"y":10}]}""";
+    var loaded = BuildingDocumentJson.Deserialize(text);
+    Assert(BuildingStoreys.FloorCount(loaded) == 1);
+    Assert(loaded.UpperFloors.Count == 0 && loaded.Staircases.Count == 0);
+    Equal(PolygonGeometry.Area(loaded.Perimeter), 120);
+});
+
+Check("Adding upper floors preserves ground rooms and uses independent outlines", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Name = "Shop and Home",
+        Perimeter = rectangle.ToList(),
+        Rooms = [new RoomDefinition { Name = "Shop", Type = "Shop",
+            Outline = rectangle.ToList() }],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0) }]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    Assert(two.SchemaVersion == 2 && BuildingStoreys.FloorCount(two) == 2);
+    Assert(two.UpperFloors[0].Perimeter.SequenceEqual(ground.Perimeter));
+    Assert(two.UpperFloors[0].Rooms.Count == 0 && two.UpperFloors[0].Doors.Count == 0);
+    Assert(two.Rooms.Count == 1 && two.Doors.Count == 1);
+    var upper = BuildingStoreys.GetFloor(two, 1);
+    upper.Rooms.Add(new RoomDefinition { Name = "Bedroom", Type = "Bedroom",
+        Outline = rectangle.ToList() });
+    BuildingStoreys.SetFloor(two, 1, upper);
+    Assert(two.Rooms.Count == 1 && two.Rooms[0].Name == "Shop");
+    Assert(two.UpperFloors[0].Rooms.Single().Name == "Bedroom");
+    Assert(BuildingStoreys.Validate(two, out reason), reason);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(two));
+    Assert(loaded.Rooms.Count == 1 && loaded.UpperFloors[0].Rooms.Count == 1);
+    Assert(loaded.UpperFloors[0].Rooms[0].Type == "Bedroom");
+});
+
+Check("Staircase connects adjacent floors and round-trips JSON", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var flight = new StaircaseDefinition
+    {
+        LowerFloorIndex = 0, Centre = new Point2(5, 4),
+        Width = 1.4, Length = 3.6, RotationDegrees = 30
+    };
+    two.Staircases.Add(flight);
+    Assert(BuildingStoreys.Validate(two, out reason), reason);
+    var footprint = BuildingStoreys.StairFootprint(flight);
+    Equal(PolygonGeometry.Area(footprint), flight.Width * flight.Length);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(two));
+    Assert(loaded.Staircases.Count == 1);
+    Assert(loaded.Staircases[0].Id == flight.Id);
+    Equal(loaded.Staircases[0].RotationDegrees, 30);
+    Assert(loaded.Staircases[0].LowerFloorIndex == 0);
+});
+
+Check("Staircase must fit both floor perimeters", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var smallUpper = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)]
+    };
+    BuildingStoreys.SetFloor(two, 1, smallUpper);
+    two.Staircases.Add(new StaircaseDefinition
+    {
+        LowerFloorIndex = 0, Centre = new Point2(8, 4)
+    });
+    Assert(!BuildingStoreys.Validate(two, out reason));
+    Assert(reason.Contains("Floor"));
+});
+
+Check("Stairs may not intersect an interior partition wall", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    building.Staircases.Add(new StaircaseDefinition
+    {
+        Centre = new Point2(5, 4), Width = 2, Length = 4,
+        LowerFloorIndex = 0
+    });
+    Assert(!BuildingStoreys.Validate(building, out reason));
+    Assert(reason.Contains("interior wall"));
+});
+
+Check("Remove highest floor also removes its connecting staircase", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    three.Staircases.Add(new StaircaseDefinition
+    {
+        LowerFloorIndex = 0, Centre = new Point2(3, 3)
+    });
+    three.Staircases.Add(new StaircaseDefinition
+    {
+        LowerFloorIndex = 1, Centre = new Point2(7, 5)
+    });
+    Assert(BuildingStoreys.Validate(three, out reason), reason);
+    Assert(BuildingStoreys.TryRemoveTopFloor(three, out var reduced, out reason), reason);
+    Assert(BuildingStoreys.FloorCount(reduced) == 2);
+    Assert(reduced.Staircases.Count == 1 &&
+           reduced.Staircases[0].LowerFloorIndex == 0);
+    Assert(three.Staircases.Count == 2);
+    Assert(BuildingStoreys.Validate(reduced, out reason), reason);
+});
+
+Check("Floor limit is four stories", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var current = ground;
+    for (int i = 0; i < 3; i++)
+    {
+        Assert(BuildingStoreys.TryAddFloor(current, out var next, out var reason), reason);
+        current = next;
+    }
+    Assert(BuildingStoreys.FloorCount(current) == 4);
+    Assert(!BuildingStoreys.TryAddFloor(current, out _, out _));
+});
+
+Check("Reject malformed staircase with unknown floor index", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    two.Staircases.Add(new StaircaseDefinition
+    {
+        LowerFloorIndex = 1, Centre = new Point2(5, 4)
+    });
+    Assert(!BuildingStoreys.Validate(two, out _));
+});
+
+Check("Reject upper floors stored under schema version one", () =>
+{
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    building.UpperFloors.Add(new StoreyDefinition
+    {
+        Name = "First Floor", Perimeter = rectangle.ToList()
+    });
+    Assert(!BuildingStoreys.Validate(building, out _));
+});
+
+Check("Cannot place stairs without a second floor", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Staircases = [new StaircaseDefinition { Centre = new Point2(5, 4) }]
+    };
+    ground.SchemaVersion = 2;
+    Assert(!BuildingStoreys.Validate(ground, out _));
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
