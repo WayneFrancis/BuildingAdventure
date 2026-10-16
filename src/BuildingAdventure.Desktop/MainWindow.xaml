@@ -144,6 +144,18 @@
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,17"
                                Text="Stairwell openings are cut out of the upper floor slab and follow the stairs. Increase opening clearance if needed; both stair and opening must fit the connected floors without crossing walls."/>
                     <Separator Margin="0,0,0,12"/>
+                    <TextBlock Text="WALL CONSTRUCTION" FontSize="12" FontWeight="Bold"
+                               Foreground="#566579" Margin="0,0,0,10"/>
+                    <TextBlock Text="Exterior wall thickness (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="ExteriorWallBox" Text="0.24" Padding="5" Margin="0,0,0,8"/>
+                    <TextBlock Text="Interior wall thickness (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="InteriorWallBox" Text="0.12" Padding="5" Margin="0,0,0,8"/>
+                    <Button Content="Apply wall thickness" Click="ApplyWallThickness_Click"
+                            Padding="7" Margin="0,0,0,8"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#566579"
+                               Margin="0,0,0,16"
+                               Text="Thickness is measured perpendicular to each wall's existing centre line. Each floor can have different thicknesses. Doors and windows cut through the wall."/>
+                    <Separator Margin="0,0,0,12"/>
                     <TextBlock Text="PERIMETER" FontSize="12" FontWeight="Bold" Foreground="#566579"
                                Margin="0,0,0,12"/>
                     <TextBlock x:Name="CornersText" Text="0 corners" Margin="0,0,0,8"/>

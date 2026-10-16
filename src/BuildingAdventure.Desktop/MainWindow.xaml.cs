@@ -74,7 +74,8 @@ public partial class MainWindow : Window
             Perimeter = EditorSurface.GetOutline().ToList(),
             Rooms = EditorSurface.GetRooms().ToList(),
             Doors = EditorSurface.GetDoors().ToList(),
-            Windows = EditorSurface.GetWindows().ToList()
+            Windows = EditorSurface.GetWindows().ToList(),
+            WallThickness = EditorSurface.WallThickness
         });
         return result;
     }
@@ -151,7 +152,8 @@ public partial class MainWindow : Window
         _activeFloorIndex = 0;
         _history.Clear();
         _nameBeforeEdit = null;
-        EditorSurface.LoadOutline(Array.Empty<Point2>());
+        EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
+        LoadWallThicknessControls();
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
         RebuildFloorPicker();
         UpdateAlignmentReferences();
@@ -182,6 +184,7 @@ public partial class MainWindow : Window
             _history.Clear();
             _nameBeforeEdit = null;
             EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
+            LoadWallThicknessControls();
             EditorSurface.SetStairOverlay(_building.Staircases, 0);
             RebuildFloorPicker();
             UpdateAlignmentReferences();
@@ -316,6 +319,7 @@ public partial class MainWindow : Window
         _loading = true;
         _activeFloorIndex = index;
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, index));
+        LoadWallThicknessControls();
         EditorSurface.SetStairOverlay(_building.Staircases, index);
         UpdateAlignmentReferences();
         EditorSurface.SetTool(EditorTool.Select);
@@ -323,6 +327,68 @@ public partial class MainWindow : Window
         _loading = false;
         EditorSurface.FitToView();
         _hint = $"Editing {BuildingStoreys.FloorLabel(index)}.";
+        Refresh();
+    }
+
+    private void LoadWallThicknessControls()
+    {
+        if (ExteriorWallBox is null || InteriorWallBox is null || EditorSurface is null)
+            return;
+        var size = EditorSurface.WallThickness;
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        ExteriorWallBox.Text = size.ExteriorMetres.ToString("R", culture);
+        InteriorWallBox.Text = size.InteriorMetres.ToString("R", culture);
+    }
+
+    private void ApplyWallThickness_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryReadMetres(ExteriorWallBox.Text, out double exterior) ||
+            !TryReadMetres(InteriorWallBox.Text, out double interior))
+        {
+            _hint = "Enter valid numeric wall thickness values in metres.";
+            LoadWallThicknessControls();
+            Refresh();
+            return;
+        }
+        var desired = new WallThicknessSettings
+        {
+            ExteriorMetres = exterior, InteriorMetres = interior
+        };
+        if (!desired.Validate(out var reason))
+        {
+            _hint = reason;
+            LoadWallThicknessControls();
+            Refresh();
+            return;
+        }
+        var previous = EditorSurface.WallThickness;
+        if (Math.Abs(previous.ExteriorMetres - exterior) < 1e-9 &&
+            Math.Abs(previous.InteriorMetres - interior) < 1e-9)
+            return;
+
+        var before = CurrentDocument();
+        var updated = BuildingStoreys.Copy(before);
+        BuildingStoreys.SetFloor(updated, _activeFloorIndex,
+            new BuildingDocument
+            {
+                Perimeter = EditorSurface.GetOutline().ToList(),
+                Rooms = EditorSurface.GetRooms().ToList(),
+                Doors = EditorSurface.GetDoors().ToList(),
+                Windows = EditorSurface.GetWindows().ToList(),
+                WallThickness = desired
+            });
+        if (!BuildingStoreys.Validate(updated, out reason))
+        {
+            _hint = reason;
+            LoadWallThicknessControls();
+            Refresh();
+            return;
+        }
+
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = updated;
+        EditorSurface.SetWallThickness(desired);
+        _hint = "Wall thickness updated on this floor. Door and window openings preserved.";
         Refresh();
     }
 
@@ -619,6 +685,7 @@ public partial class MainWindow : Window
         NameBox.Text = _building.Name;
         RebuildFloorPicker();
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, _activeFloorIndex));
+        LoadWallThicknessControls();
         EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex);
         UpdateAlignmentReferences();
         EditorSurface.SetTool(EditorTool.Select);

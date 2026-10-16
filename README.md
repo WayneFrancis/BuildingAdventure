@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.8.1 — Shared wall propagation and drag-editable windows (development branch)
+## v0.9 — Wall thickness and physical openings (development branch)
 
 The editor currently supports:
 
@@ -24,6 +24,15 @@ The editor currently supports:
 - **Move Wall** tool: click and drag a wall perpendicular to its direction.
   Coincident shared vertices and affected doors follow the edit. The entire
   result is validated; invalid movements are rejected.
+- **Physical wall thickness**: set separate exterior and interior wall
+  thicknesses in metres in the WALL CONSTRUCTION panel. Defaults are
+  0.24 m exterior and 0.12 m interior. Walls render as filled,
+  double-stroked structural runs centred on the existing editing lines.
+  The editor geometry, snapping and room definitions are unchanged.
+  Doors and windows subtract real gaps from these rendered wall runs,
+  including when they span room-induced wall splits. Each floor can
+  have its own thickness, with inheritance on floor creation,
+  save/reload and full undo/redo.
 - **Multiple floors (1–4)**: use Add Floor to create an upper floor with
   the preceding story's outline but independent rooms and doors. Switch floors
   with the selector in the right panel; remove only the highest floor.
@@ -116,6 +125,7 @@ The editor currently supports:
   diagonal walls. They retain their relative position along the wall.
   An edit is still rejected if it leaves too little clearance for an opening.
 - Derived shared physical wall segments, avoiding doubled wall drawing.
+- Physical-width wall strokes with explicit door/window gaps, including split or angled walls.
 - Manually adding and removing 0.9 metre openings on existing walls.
 - Rejecting invalid rooms: outside the perimeter, self-crossing, or overlapping.
 - Undo/redo for completed edits, panning, mouse-wheel zoom, fit-to-window.
@@ -182,6 +192,7 @@ Run the geometry checks without third-party test packages:
 | Widen stairwell opening | Select stairs, set extra opening width/length, then Apply |
 | View slab openings | Switch to the upper floor; a dashed 'OPEN TO BELOW' void follows each arriving flight |
 | Remove stairs | Select / Edit, click staircase footprint, Remove selected staircase |
+| Change wall thickness | In WALL CONSTRUCTION set exterior/interior thickness in metres and choose Apply wall thickness |
 | Move a wall | Move Wall, drag a wall perpendicular to itself; Shift disables distance snap |
 | Split any existing wall | Double-click in Select / Edit; exterior walls take priority |
 | Draw room | Draw Room, click room corners inside the building, then Finish |

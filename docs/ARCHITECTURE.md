@@ -232,6 +232,36 @@ validation. Procedural generation remains **not implemented yet**.
   geometry of walls already lying on the same exterior boundary; a future
   topology layer could provide explicit persistent wall associations.
 
+## Wall construction and physical openings (v0.9)
+
+- WallThicknessSettings is stored per floor, with a 0.24 metre exterior and
+  0.12 metre interior default. Individual floors can override these two
+  dimensions, and a newly added floor inherits the previous floor's sizes.
+  Both settings are validated and included in deep copies and global history.
+  Older saved JSON automatically receives the defaults.
+- Existing polygon edges remain the structural wall centre lines and are
+  unchanged by thickness edits. This avoids perturbing adjacency, corner
+  snapping, window positions, door positions, and stairwell validation.
+- WallConstruction.SolidPieces derives continuous solid subsegments of each
+  physical wall from FloorGeometry.BuildWalls, subtracting door and window
+  intervals before rendering. Intervals cross collinear split vertices
+  correctly. Windows can only subtract material from exterior segments;
+  doors can interrupt exterior or interior segments.
+- The WPF surface renders these remaining segments as thickness-scaled
+  dark-edged structural strokes. It then draws door swing and window
+  glazing symbols at the original opening locations. No wall is painted
+  through an opening, and a floor's view can show different wall sizes
+  without changing the editing geometry.
+- The new WALL CONSTRUCTION panel validates and applies both dimensions
+  atomically, records an undo snapshot, and updates the drawing immediately.
+  Wall dimensions and floor association persist through save/load.
+
+**Scope limitation:** This is a 2D architectural wall-width representation,
+not a structural building-information model. Junction joins are strokes
+centred on editable wall lines; they do not yet use explicit inner/outer
+offset polygons, structural corner mitres, load-bearing classifications,
+ceiling heights, or 3D wall meshes.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

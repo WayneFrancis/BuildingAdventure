@@ -243,6 +243,7 @@ public static class RoomMerging
         Perimeter = source.Perimeter.ToList(),
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
         Doors = source.Doors.Select(d => d.Copy()).ToList(),
-        Windows = source.Windows.Select(w => w.Copy()).ToList()
+        Windows = source.Windows.Select(w => w.Copy()).ToList(),
+        WallThickness = source.WallThickness.Copy()
     };
 }

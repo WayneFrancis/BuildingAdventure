@@ -17,6 +17,13 @@ public static class FloorGeometry
 
     public static bool Validate(BuildingDocument document, out string reason)
     {
+        if (document.WallThickness is null)
+        {
+            reason = "Wall thickness settings are missing.";
+            return false;
+        }
+        if (!document.WallThickness.Validate(out reason))
+            return false;
         reason = "";
         if (document.Perimeter.Count == 0)
         {

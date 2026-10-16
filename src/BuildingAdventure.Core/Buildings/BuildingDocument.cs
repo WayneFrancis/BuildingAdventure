@@ -12,6 +12,7 @@ public sealed class BuildingDocument
     public List<RoomDefinition> Rooms { get; set; } = new();
     public List<DoorDefinition> Doors { get; set; } = new();
     public List<WindowDefinition> Windows { get; set; } = new();
+    public WallThicknessSettings WallThickness { get; set; } = new();
 
     // Version 2. Ground floor retains the original root properties so
     // existing v0.1-v0.4 JSON files load without conversion.

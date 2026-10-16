@@ -14,12 +14,13 @@ public sealed class FloorPlanSurface : FrameworkElement
 {
     private sealed record EditorSnapshot(List<Point2> Perimeter,
         List<RoomDefinition> Rooms, List<DoorDefinition> Doors,
-        List<WindowDefinition> Windows);
+        List<WindowDefinition> Windows, WallThicknessSettings WallThickness);
 
     private List<Point2> _outline = new();
     private List<RoomDefinition> _rooms = new();
     private List<DoorDefinition> _doors = new();
     private List<WindowDefinition> _windows = new();
+    private WallThicknessSettings _wallThickness = new();
     private readonly List<Point2> _draft = new();
     private readonly Stack<EditorSnapshot> _undo = new();
     private readonly Stack<EditorSnapshot> _redo = new();
@@ -119,6 +120,14 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue || _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
+    public WallThicknessSettings WallThickness => _wallThickness.Copy();
+
+    public void SetWallThickness(WallThicknessSettings settings)
+    {
+        _wallThickness = settings.Copy();
+        InvalidateVisual();
+    }
+
     public bool HasSelectedWindow => _selectedWindowId.HasValue;
     public WindowDefinition? SelectedWindow =>
         _windows.FirstOrDefault(w => w.Id == _selectedWindowId)?.Copy();
@@ -178,7 +187,8 @@ public sealed class FloorPlanSurface : FrameworkElement
         Perimeter = _outline.ToList(),
         Rooms = _rooms.Select(r => r.Copy()).ToList(),
         Doors = _doors.Select(d => d.Copy()).ToList(),
-        Windows = _windows.Select(w => w.Copy()).ToList()
+        Windows = _windows.Select(w => w.Copy()).ToList(),
+        WallThickness = _wallThickness.Copy()
     };
 
     public void LoadOutline(IReadOnlyList<Point2> outline) =>
@@ -190,6 +200,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _rooms = document.Rooms.Select(r => r.Copy()).ToList();
         _doors = document.Doors.Select(d => d.Copy()).ToList();
         _windows = document.Windows.Select(w => w.Copy()).ToList();
+        _wallThickness = document.WallThickness.Copy();
         _draft.Clear();
         _draftCursor = null;
         _partitionStart = null;
@@ -576,17 +587,25 @@ public sealed class FloorPlanSurface : FrameworkElement
         if (_outline.Count > 0)
         {
             bool valid = PolygonGeometry.IsValidOutline(_outline, out _);
-            dc.DrawGeometry(null,
-                new Pen(valid ? Brushes.SteelBlue : Brushes.IndianRed, 3),
-                BuildGeometry(_outline, true));
+            if (!valid)
+                dc.DrawGeometry(null, new Pen(Brushes.IndianRed, 3),
+                    BuildGeometry(_outline, true));
             DrawLengths(dc, _outline, true);
         }
 
-        foreach (var wall in FloorGeometry.BuildWalls(_outline, _rooms))
+        // Physical walls stay centred on their editable polygon lines.
+        // Each piece excludes openings in any supporting split segment.
+        foreach (var piece in WallConstruction.SolidPieces(Document()))
         {
-            if (!wall.IsExterior)
-                dc.DrawLine(new Pen(Brushes.DarkSlateGray, 2.5),
-                    ToScreen(wall.A), ToScreen(wall.B));
+            double width = (piece.IsExterior
+                ? _wallThickness.ExteriorMetres
+                : _wallThickness.InteriorMetres) * _pixelsPerMetre;
+            if (width <= 0) continue;
+            Point a = ToScreen(piece.A);
+            Point b = ToScreen(piece.B);
+            dc.DrawLine(new Pen(Brushes.DarkSlateGray, width + 2), a, b);
+            dc.DrawLine(new Pen(piece.IsExterior
+                ? Brushes.SlateGray : Brushes.LightSlateGray, width), a, b);
         }
 
         var walls = FloorGeometry.BuildWalls(_outline, _rooms);
@@ -1614,7 +1633,8 @@ public sealed class FloorPlanSurface : FrameworkElement
         Perimeter = snapshot.Perimeter.ToList(),
         Rooms = snapshot.Rooms.Select(r => r.Copy()).ToList(),
         Doors = snapshot.Doors.Select(d => d.Copy()).ToList(),
-        Windows = snapshot.Windows.Select(w => w.Copy()).ToList()
+        Windows = snapshot.Windows.Select(w => w.Copy()).ToList(),
+        WallThickness = snapshot.WallThickness.Copy()
     };
 
     private bool SnapshotMatches(EditorSnapshot snapshot) =>
@@ -2188,7 +2208,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     private EditorSnapshot Snapshot() =>
         new(_outline.ToList(), _rooms.Select(r => r.Copy()).ToList(),
             _doors.Select(d => d.Copy()).ToList(),
-            _windows.Select(w => w.Copy()).ToList());
+            _windows.Select(w => w.Copy()).ToList(),
+            _wallThickness.Copy());
 
     private void Restore(EditorSnapshot snapshot)
     {
@@ -2196,6 +2217,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _rooms = snapshot.Rooms.Select(r => r.Copy()).ToList();
         _doors = snapshot.Doors.Select(d => d.Copy()).ToList();
         _windows = snapshot.Windows.Select(w => w.Copy()).ToList();
+        _wallThickness = snapshot.WallThickness.Copy();
         InvalidateVisual();
     }
 

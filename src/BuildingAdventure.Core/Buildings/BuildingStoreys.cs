@@ -11,6 +11,7 @@ public sealed class StoreyDefinition
     public List<RoomDefinition> Rooms { get; set; } = new();
     public List<DoorDefinition> Doors { get; set; } = new();
     public List<WindowDefinition> Windows { get; set; } = new();
+    public WallThicknessSettings WallThickness { get; set; } = new();
 
     public StoreyDefinition Copy() => new()
     {
@@ -18,7 +19,8 @@ public sealed class StoreyDefinition
         Perimeter = Perimeter.ToList(),
         Rooms = Rooms.Select(r => r.Copy()).ToList(),
         Doors = Doors.Select(d => d.Copy()).ToList(),
-        Windows = Windows.Select(w => w.Copy()).ToList()
+        Windows = Windows.Select(w => w.Copy()).ToList(),
+        WallThickness = WallThickness.Copy()
     };
 }
 
@@ -75,6 +77,7 @@ public static class BuildingStoreys
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
         Doors = source.Doors.Select(d => d.Copy()).ToList(),
         Windows = source.Windows.Select(w => w.Copy()).ToList(),
+        WallThickness = source.WallThickness.Copy(),
         UpperFloors = source.UpperFloors.Select(f => f.Copy()).ToList(),
         Staircases = source.Staircases.Select(s => s.Copy()).ToList()
     };
@@ -141,7 +144,8 @@ public static class BuildingStoreys
                 Perimeter = building.Perimeter.ToList(),
                 Rooms = building.Rooms.Select(r => r.Copy()).ToList(),
                 Doors = building.Doors.Select(d => d.Copy()).ToList(),
-                Windows = building.Windows.Select(w => w.Copy()).ToList()
+                Windows = building.Windows.Select(w => w.Copy()).ToList(),
+                WallThickness = building.WallThickness.Copy()
             };
 
         var floor = building.UpperFloors[floorIndex - 1];
@@ -151,7 +155,8 @@ public static class BuildingStoreys
             Perimeter = floor.Perimeter.ToList(),
             Rooms = floor.Rooms.Select(r => r.Copy()).ToList(),
             Doors = floor.Doors.Select(d => d.Copy()).ToList(),
-            Windows = floor.Windows.Select(w => w.Copy()).ToList()
+            Windows = floor.Windows.Select(w => w.Copy()).ToList(),
+            WallThickness = floor.WallThickness.Copy()
         };
     }
 
@@ -165,6 +170,7 @@ public static class BuildingStoreys
             building.Rooms = editedFloor.Rooms.Select(r => r.Copy()).ToList();
             building.Doors = editedFloor.Doors.Select(d => d.Copy()).ToList();
             building.Windows = editedFloor.Windows.Select(w => w.Copy()).ToList();
+            building.WallThickness = editedFloor.WallThickness.Copy();
         }
         else
         {
@@ -173,6 +179,7 @@ public static class BuildingStoreys
             floor.Rooms = editedFloor.Rooms.Select(r => r.Copy()).ToList();
             floor.Doors = editedFloor.Doors.Select(d => d.Copy()).ToList();
             floor.Windows = editedFloor.Windows.Select(w => w.Copy()).ToList();
+            floor.WallThickness = editedFloor.WallThickness.Copy();
         }
     }
 
@@ -196,7 +203,8 @@ public static class BuildingStoreys
         result.UpperFloors.Add(new StoreyDefinition
         {
             Name = FloorLabel(index),
-            Perimeter = previous.Perimeter.ToList()
+            Perimeter = previous.Perimeter.ToList(),
+            WallThickness = previous.WallThickness.Copy()
         });
         result.SchemaVersion = 2;
         return true;
@@ -280,6 +288,11 @@ public static class BuildingStoreys
     public static bool Validate(BuildingDocument building, out string reason)
     {
         reason = "";
+        if (building.WallThickness is null)
+        {
+            reason = "Ground Floor: Wall thickness settings are missing.";
+            return false;
+        }
         if (building.UpperFloors is null || building.Staircases is null)
         {
             reason = "Floor or staircase collections are missing.";
@@ -309,6 +322,7 @@ public static class BuildingStoreys
                 var floor = building.UpperFloors[i - 1];
                 if (floor is null || floor.Perimeter is null ||
                     floor.Rooms is null || floor.Doors is null || floor.Windows is null ||
+                    floor.WallThickness is null ||
                     string.IsNullOrWhiteSpace(floor.Name) || floor.Name.Length > 100)
                 {
                     reason = $"Floor {i + 1} has missing or invalid information.";

@@ -2135,5 +2135,193 @@ Check("Windows move cleanly along multiple exterior segments", () =>
     Assert(FloorGeometry.Validate(updated, out reason), reason);
 });
 
+Check("Wall thickness defaults and physically meaningful limits", () =>
+{
+    var defaults = new WallThicknessSettings();
+    Equal(defaults.ExteriorMetres, 0.24);
+    Equal(defaults.InteriorMetres, 0.12);
+    Assert(defaults.Validate(out var reason), reason);
+    var invalid = defaults.Copy();
+    invalid.InteriorMetres = 0;
+    Assert(!invalid.Validate(out reason) && reason.Contains("Interior"));
+    invalid.InteriorMetres = 0.12;
+    invalid.ExteriorMetres = 1.1;
+    Assert(!invalid.Validate(out reason) && reason.Contains("Exterior"));
+    invalid.ExteriorMetres = double.NaN;
+    Assert(!invalid.Validate(out _));
+    Assert(defaults.Validate(out reason), reason);
+});
+
+Check("A full perimeter without openings renders four solid wall pieces", () =>
+{
+    var floor = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var pieces = WallConstruction.SolidPieces(floor);
+    Assert(pieces.Count == 4 && pieces.All(p => p.IsExterior));
+    Equal(pieces.Sum(p => p.Length), PolygonGeometry.Perimeter(rectangle));
+    Assert(pieces.All(p => p.Length > 0));
+});
+
+Check("Exterior doorway subtracts an actual opening from the solid wall", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0), Width = 0.9 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var pieces = WallConstruction.SolidPieces(floor);
+    Equal(pieces.Sum(p => p.Length), 36 - 0.9);
+    var top = pieces.Where(p => p.IsExterior &&
+        Math.Abs(p.A.Y) < 1e-7 && Math.Abs(p.B.Y) < 1e-7).ToList();
+    Assert(top.Count == 2);
+    Assert(top.All(p => p.A.X <= 4.55 + 1e-6 ||
+                        p.A.X >= 5.45 - 1e-6));
+});
+
+Check("Windows cut through actual exterior wall rather than just overpainting it", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(2, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var pieces = WallConstruction.SolidPieces(floor);
+    Equal(pieces.Sum(p => p.Length), 36 - 1.2);
+    Assert(!pieces.Where(p => p.IsExterior && p.A.Y == 0 && p.B.Y == 0)
+        .Any(p => p.A.X < 2 && p.B.X > 2));
+});
+
+Check("Multiple exterior wall openings subtract each width independently", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(7, 0), Width = 0.9 }],
+        Windows = [new WindowDefinition { Centre = new Point2(3, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var pieces = WallConstruction.SolidPieces(floor);
+    Equal(pieces.Sum(p => p.Length), 36 - 0.9 - 1.2);
+    Assert(pieces.Count == 6);
+});
+
+Check("Window across a room-split exterior wall cuts both wall fragments", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Left",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Right",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(5, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var pieces = WallConstruction.SolidPieces(floor);
+    // Perimeter 36 m and the 8 m partition, less the 1.2 m window.
+    Equal(pieces.Sum(p => p.Length), 36 + 8 - 1.2);
+    var top = pieces.Where(p => p.IsExterior &&
+        Math.Abs(p.A.Y) < 1e-7 && Math.Abs(p.B.Y) < 1e-7).ToList();
+    Assert(top.Count == 2);
+    Assert(top.All(p => Math.Max(p.A.X, p.B.X) <= 4.4 + 1e-6 ||
+                        Math.Min(p.A.X, p.B.X) >= 5.6 - 1e-6));
+});
+
+Check("Interior door only cuts the internal partition and preserves the exterior", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Left",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Right",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 4), Width = 0.9 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var pieces = WallConstruction.SolidPieces(floor);
+    Equal(pieces.Where(p => p.IsExterior).Sum(p => p.Length), 36);
+    Equal(pieces.Where(p => !p.IsExterior).Sum(p => p.Length), 8 - 0.9);
+});
+
+Check("Door and window openings on diagonal walls cut correct physical length", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(8, 4), new(8, 10), new(0, 10)],
+        Windows = [new WindowDefinition { Centre = new Point2(4, 2), Width = 1.6 }]
+    };
+    Assert(FloorGeometry.Validate(floor, out var reason), reason);
+    var pieces = WallConstruction.SolidPieces(floor);
+    Equal(pieces.Sum(p => p.Length),
+        PolygonGeometry.Perimeter(floor.Perimeter) - 1.6);
+});
+
+Check("Upper floors inherit thickness initially but edit independently", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        WallThickness = new WallThicknessSettings
+        {
+            ExteriorMetres = 0.35, InteriorMetres = 0.18
+        }
+    };
+    Assert(BuildingStoreys.TryAddFloor(building, out var two, out var reason), reason);
+    Equal(two.UpperFloors[0].WallThickness.ExteriorMetres, 0.35);
+    var upper = BuildingStoreys.GetFloor(two, 1);
+    upper.WallThickness.ExteriorMetres = 0.5;
+    upper.WallThickness.InteriorMetres = 0.08;
+    BuildingStoreys.SetFloor(two, 1, upper);
+    Equal(two.WallThickness.ExteriorMetres, 0.35);
+    Equal(two.UpperFloors[0].WallThickness.ExteriorMetres, 0.5);
+    var reopened = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(two));
+    Equal(reopened.WallThickness.ExteriorMetres, 0.35);
+    Equal(reopened.UpperFloors[0].WallThickness.InteriorMetres, 0.08);
+    Assert(BuildingStoreys.Validate(reopened, out reason), reason);
+});
+
+Check("Wall thickness changes participate in whole-building undo and redo", () =>
+{
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var history = new BuildingEditHistory();
+    history.RecordBefore(building, 0);
+    var updated = BuildingStoreys.Copy(building);
+    updated.WallThickness.ExteriorMetres = 0.45;
+    Assert(history.TryUndo(updated, 0, out var undone));
+    Equal(undone.Building.WallThickness.ExteriorMetres, 0.24);
+    Assert(history.TryRedo(undone.Building, 0, out var redone));
+    Equal(redone.Building.WallThickness.ExteriorMetres, 0.45);
+});
+
+Check("Older JSON documents get wall thickness defaults without schema migration", () =>
+{
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    string json = BuildingDocumentJson.Serialize(building);
+    json = System.Text.RegularExpressions.Regex.Replace(
+        json, @",\s*""wallThickness""\s*:\s*\{[^}]*\}", "");
+    var reopened = BuildingDocumentJson.Deserialize(json);
+    Equal(reopened.WallThickness.ExteriorMetres, 0.24);
+    Equal(reopened.WallThickness.InteriorMetres, 0.12);
+    Assert(FloorGeometry.Validate(reopened, out var reason), reason);
+});
+
+Check("Invalid thickness is rejected without modifying the stored building", () =>
+{
+    var floor = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var invalid = BuildingStoreys.Copy(floor);
+    invalid.WallThickness.InteriorMetres = double.NaN;
+    Assert(!BuildingStoreys.Validate(invalid, out var reason));
+    Assert(reason.Contains("thickness"));
+    Equal(floor.WallThickness.InteriorMetres, 0.12);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
