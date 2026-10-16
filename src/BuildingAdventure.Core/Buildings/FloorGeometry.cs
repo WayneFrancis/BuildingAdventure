@@ -20,7 +20,8 @@ public static class FloorGeometry
         reason = "";
         if (document.Perimeter.Count == 0)
         {
-            if (document.Rooms.Count > 0 || document.Doors.Count > 0)
+            if (document.Rooms.Count > 0 || document.Doors.Count > 0 ||
+                document.Windows.Count > 0)
             {
                 reason = "A building needs an exterior perimeter before rooms or doors can be added.";
                 return false;
@@ -96,6 +97,59 @@ public static class FloorGeometry
             if (!TryFindDoorWall(door, walls, out _))
             {
                 reason = "A door is not properly positioned on a sufficiently long wall.";
+                return false;
+            }
+        }
+
+        if (document.Windows is null || document.Windows.Count > 500)
+        {
+            reason = "A floor has an invalid number of windows.";
+            return false;
+        }
+        var exteriorWalls = walls.Where(w => w.IsExterior).ToList();
+        var windowIds = new HashSet<Guid>();
+        foreach (WindowDefinition window in document.Windows)
+        {
+            if (window is null || window.Id == Guid.Empty ||
+                !windowIds.Add(window.Id) ||
+                !double.IsFinite(window.Centre.X) || !double.IsFinite(window.Centre.Y) ||
+                !double.IsFinite(window.Width) || window.Width < 0.4 || window.Width > 4)
+            {
+                reason = "A window has invalid values.";
+                return false;
+            }
+
+            // The centre must be on the actual external perimeter, not on an
+            // interior partition. The complete 1D opening must fit its wall.
+            var pseudoDoor = new DoorDefinition
+            {
+                Id = window.Id, Centre = window.Centre, Width = window.Width
+            };
+            if (!TryFindDoorWall(pseudoDoor, exteriorWalls, out _))
+            {
+                reason = "A window must fit on an exterior wall, away from corners.";
+                return false;
+            }
+        }
+
+        for (int i = 0; i < document.Windows.Count; i++)
+        for (int j = i + 1; j < document.Windows.Count; j++)
+        {
+            if (document.Windows[i].Centre.DistanceTo(document.Windows[j].Centre) <
+                (document.Windows[i].Width + document.Windows[j].Width) / 2 + 0.1)
+            {
+                reason = "Two windows are too close together.";
+                return false;
+            }
+        }
+
+        foreach (var window in document.Windows)
+        foreach (var door in document.Doors)
+        {
+            if (window.Centre.DistanceTo(door.Centre) <
+                (window.Width + door.Width) / 2 + 0.1)
+            {
+                reason = "A window and a door are too close together.";
                 return false;
             }
         }

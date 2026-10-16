@@ -11,6 +11,7 @@ public sealed class BuildingDocument
     public List<Point2> Perimeter { get; set; } = new();
     public List<RoomDefinition> Rooms { get; set; } = new();
     public List<DoorDefinition> Doors { get; set; } = new();
+    public List<WindowDefinition> Windows { get; set; } = new();
 
     // Version 2. Ground floor retains the original root properties so
     // existing v0.1-v0.4 JSON files load without conversion.
@@ -43,8 +44,8 @@ public static class BuildingDocumentJson
 
     private static void Validate(BuildingDocument document)
     {
-        if (document.Rooms is null || document.Doors is null)
-            throw new InvalidDataException("Rooms or doors collection is missing.");
+        if (document.Rooms is null || document.Doors is null || document.Windows is null)
+            throw new InvalidDataException("Rooms, doors or windows collection is missing.");
         if (document.SchemaVersion is not (1 or 2))
             throw new InvalidDataException($"Unsupported document schema version: {document.SchemaVersion}.");
         if (string.IsNullOrWhiteSpace(document.Name) || document.Name.Length > 200)

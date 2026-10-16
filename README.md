@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.7 — Global undo/redo across all floors (development branch)
+## v0.8 — Unassigned interior highlighting and exterior windows (development branch)
 
 The editor currently supports:
 
@@ -27,6 +27,18 @@ The editor currently supports:
 - **Multiple floors (1–4)**: use Add Floor to create an upper floor with
   the preceding story's outline but independent rooms and doors. Switch floors
   with the selector in the right panel; remove only the highest floor.
+- **Unassigned interior**: space inside a floor perimeter that isn't part
+  of a defined room or stairwell slab void remains usable floor space.
+  Toggle Highlight unassigned interior to shade those areas amber.
+  The panel shows their actual remaining surface area in square metres.
+  You can use Draw Room to give part of that space a name or purpose
+  without automatically generating unwanted walls.
+- **Exterior windows**: Add Window places a glazed opening on the exterior
+  wall in the active floor, including sloped walls. Default width is 1.2 m
+  but can be set in the WINDOWS panel. Click a window in Select / Edit
+  to resize or remove it. Invalid widths and clashes with doors, other
+  windows, or wall corners are rejected. Windows track their wall during
+  corner and whole-wall edits and are saved independently per floor.
 - **Global undo/redo**: Ctrl+Z and Ctrl+Y now restore full-building snapshots
   for completed perimeter, room and door edits, stair placement/movement/
   rotation/opening changes, adding or removing a floor, and building renames
@@ -98,7 +110,7 @@ The editor currently supports:
 - Loading older v0.1 perimeter-only JSON documents.
 
 **Not yet implemented:** automatic room generation; free-standing unenclosed
-partition walls; window placement; door width editing; hidden passages;
+partition walls; wall thickness; door width editing; hidden passages;
 furnishing; and VTT export. Stairwell cutouts are represented in the 2D
 floor-slab plan; realistic 3D structural slabs, rise/run calculations,
 landings, guardrails and automatic stairwell rooms are still future work.
@@ -165,6 +177,9 @@ Run the geometry checks without third-party test packages:
 | Insert corner | Double-click a wall with Select/Edit |
 | Delete corner | Select a corner and press Delete; the adjacent walls join |
 | Add door | Add Door, then click on a sufficiently long wall |
+| Add an exterior window | Choose window width, Add Window, click on an exterior wall |
+| Resize or remove a window | Select / Edit, click the blue window, then Apply width or Delete window |
+| Highlight unassigned spaces | Tick Highlight unassigned interior in the sidebar; amber shading excludes rooms and stairwell voids |
 | Delete room or door | Select it and use the appropriate side-panel Delete button |
 | Pan | Middle-mouse drag, or Pan and left-drag |
 | Zoom | Mouse wheel, or toolbar +/- |
@@ -186,6 +201,13 @@ A doorway cannot straddle a genuine bend, and edits are rejected if they
 leave too little physical clearance. When removing a bent corner, doors
 on the two affected walls move proportionally along the new straight
 segment; unrelated doors stay where they are. Invalid edits are rejected.
+
+**Unassigned space is not a special room.** It is usable floor area
+inside the perimeter, excluding defined room footprints and floor-slab openings.
+No automatic walls or room names are added. The highlighting is a view option,
+not a change to the saved building. Windows are explicit exterior wall
+features, stored in the existing JSON schema; earlier files without a
+windows list remain compatible.
 
 **Per-floor perimeters are independent.** Add Floor starts with a copy of the
 previous floor's footprint for convenience. Select the upper floor from the
@@ -224,7 +246,7 @@ to its removed walls are deleted too. Existing files remain compatible.
 
 ## Project layout
 
-- src/BuildingAdventure.Core — polygon validation, room/wall/door geometry, JSON
+- src/BuildingAdventure.Core — polygon validation, floor-space classification, window/door geometry, JSON
 - src/BuildingAdventure.Desktop — WPF floor-plan editor and file commands
 - tests/BuildingAdventure.Tests — executable geometry checks
 - docs/ARCHITECTURE.md — design rationale and future milestones

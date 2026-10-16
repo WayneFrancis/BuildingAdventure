@@ -178,6 +178,34 @@ validation. Procedural generation remains **not implemented yet**.
   returned building is deep-copied. Changes on one floor cannot mutate
   previously saved history states or an unrelated floor.
 
+## Unassigned floor space and exterior windows (v0.8)
+
+- Unassigned usable floor space is the difference between the current
+  exterior polygon and the union of named rooms and stairwell voids.
+  This is purely a classification, not an auto-generated corridor or a
+  virtual wall. FloorSpaceAnalysis.Classify supports Outside, DefinedRoom,
+  UnassignedInterior and FloorOpening. On the WPF surface the exact
+  highlighted polygon is produced with CombinedGeometry.Exclude; its
+  GetArea gives a displayed metric in square metres after zoom scaling.
+- The Show unassigned option is purely a visualization; the document
+  remains unchanged. Draw Room is the explicit tool for creating named
+  space inside an unassigned region.
+- Windows are WindowDefinition objects (Id, Centre, Width) stored
+  independently per floor and serialized in the existing building JSON
+  schema. Older JSON documents default to an empty windows collection.
+- A window can exist only on the exterior wall. It must have adequate
+  clearance from outside corners, nearby doors and other windows.
+  WindowPlacement and the shared door-attachment geometry preserve its
+  relative location when wall corners or whole walls move. Validation
+  rejects any operation that would strand a window away from its
+  supporting exterior wall.
+- Windows participate in snapshot-based floor and global undo/redo,
+  and survive independent upper-floor editing. The WPF editor displays
+  glazed windows as blue double-stroke segments; clicking selects them
+  for width edits or removal.
+- Physical wall cross-sections, elevation/height, window glazing style,
+  full window swing or sash detail are intentionally deferred.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

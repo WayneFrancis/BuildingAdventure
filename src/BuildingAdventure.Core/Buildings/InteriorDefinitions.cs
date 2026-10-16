@@ -28,3 +28,14 @@ public sealed class DoorDefinition
 
     public DoorDefinition Copy() => new() { Id = Id, Centre = Centre, Width = Width };
 }
+
+
+/// <summary>A glazed opening on an exterior wall. Width is along the wall in metres.</summary>
+public sealed class WindowDefinition
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Point2 Centre { get; set; }
+    public double Width { get; set; } = 1.2;
+
+    public WindowDefinition Copy() => new() { Id = Id, Centre = Centre, Width = Width };
+}

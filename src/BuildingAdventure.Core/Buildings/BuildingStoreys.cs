@@ -10,13 +10,15 @@ public sealed class StoreyDefinition
     public List<Point2> Perimeter { get; set; } = new();
     public List<RoomDefinition> Rooms { get; set; } = new();
     public List<DoorDefinition> Doors { get; set; } = new();
+    public List<WindowDefinition> Windows { get; set; } = new();
 
     public StoreyDefinition Copy() => new()
     {
         Name = Name,
         Perimeter = Perimeter.ToList(),
         Rooms = Rooms.Select(r => r.Copy()).ToList(),
-        Doors = Doors.Select(d => d.Copy()).ToList()
+        Doors = Doors.Select(d => d.Copy()).ToList(),
+        Windows = Windows.Select(w => w.Copy()).ToList()
     };
 }
 
@@ -72,6 +74,7 @@ public static class BuildingStoreys
         Perimeter = source.Perimeter.ToList(),
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
         Doors = source.Doors.Select(d => d.Copy()).ToList(),
+        Windows = source.Windows.Select(w => w.Copy()).ToList(),
         UpperFloors = source.UpperFloors.Select(f => f.Copy()).ToList(),
         Staircases = source.Staircases.Select(s => s.Copy()).ToList()
     };
@@ -137,7 +140,8 @@ public static class BuildingStoreys
                 Name = building.Name,
                 Perimeter = building.Perimeter.ToList(),
                 Rooms = building.Rooms.Select(r => r.Copy()).ToList(),
-                Doors = building.Doors.Select(d => d.Copy()).ToList()
+                Doors = building.Doors.Select(d => d.Copy()).ToList(),
+                Windows = building.Windows.Select(w => w.Copy()).ToList()
             };
 
         var floor = building.UpperFloors[floorIndex - 1];
@@ -146,7 +150,8 @@ public static class BuildingStoreys
             Name = building.Name,
             Perimeter = floor.Perimeter.ToList(),
             Rooms = floor.Rooms.Select(r => r.Copy()).ToList(),
-            Doors = floor.Doors.Select(d => d.Copy()).ToList()
+            Doors = floor.Doors.Select(d => d.Copy()).ToList(),
+            Windows = floor.Windows.Select(w => w.Copy()).ToList()
         };
     }
 
@@ -159,6 +164,7 @@ public static class BuildingStoreys
             building.Perimeter = editedFloor.Perimeter.ToList();
             building.Rooms = editedFloor.Rooms.Select(r => r.Copy()).ToList();
             building.Doors = editedFloor.Doors.Select(d => d.Copy()).ToList();
+            building.Windows = editedFloor.Windows.Select(w => w.Copy()).ToList();
         }
         else
         {
@@ -166,6 +172,7 @@ public static class BuildingStoreys
             floor.Perimeter = editedFloor.Perimeter.ToList();
             floor.Rooms = editedFloor.Rooms.Select(r => r.Copy()).ToList();
             floor.Doors = editedFloor.Doors.Select(d => d.Copy()).ToList();
+            floor.Windows = editedFloor.Windows.Select(w => w.Copy()).ToList();
         }
     }
 
@@ -301,7 +308,7 @@ public static class BuildingStoreys
             {
                 var floor = building.UpperFloors[i - 1];
                 if (floor is null || floor.Perimeter is null ||
-                    floor.Rooms is null || floor.Doors is null ||
+                    floor.Rooms is null || floor.Doors is null || floor.Windows is null ||
                     string.IsNullOrWhiteSpace(floor.Name) || floor.Name.Length > 100)
                 {
                     reason = $"Floor {i + 1} has missing or invalid information.";

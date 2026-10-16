@@ -7,17 +7,19 @@ using BuildingAdventure.Core.Geometry;
 
 namespace BuildingAdventure.Desktop.Controls;
 
-public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MergeRooms, MoveWall, AddDoor, PlaceStairs, Pan }
+public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MergeRooms, MoveWall, AddDoor, AddWindow, PlaceStairs, Pan }
 
 /// <summary>Interactive metre-based editor for a single building floor.</summary>
 public sealed class FloorPlanSurface : FrameworkElement
 {
     private sealed record EditorSnapshot(List<Point2> Perimeter,
-        List<RoomDefinition> Rooms, List<DoorDefinition> Doors);
+        List<RoomDefinition> Rooms, List<DoorDefinition> Doors,
+        List<WindowDefinition> Windows);
 
     private List<Point2> _outline = new();
     private List<RoomDefinition> _rooms = new();
     private List<DoorDefinition> _doors = new();
+    private List<WindowDefinition> _windows = new();
     private readonly List<Point2> _draft = new();
     private readonly Stack<EditorSnapshot> _undo = new();
     private readonly Stack<EditorSnapshot> _redo = new();
@@ -29,6 +31,7 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private Guid? _selectedRoomId;
     private Guid? _selectedDoorId;
+    private Guid? _selectedWindowId;
     private Guid? _selectedStairId;
     private List<StaircaseDefinition> _staircases = new();
     private int _stairFloorIndex;
@@ -75,6 +78,9 @@ public sealed class FloorPlanSurface : FrameworkElement
     /// <summary>Checks the complete multi-storey layout for a candidate flight.</summary>
     public Func<StaircaseDefinition, (bool Valid, string Reason)>? StairValidator { get; set; }
 
+    public Func<double?>? WindowWidthProvider { get; set; }
+    public bool HighlightUnassigned { get; set; }
+
     /// <summary>Refresh the placement ghost when dimension input changes.</summary>
     public void RefreshStairPreview() => InvalidateVisual();
 
@@ -104,6 +110,9 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool CanUndo => _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue || _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
+    public bool HasSelectedWindow => _selectedWindowId.HasValue;
+    public WindowDefinition? SelectedWindow =>
+        _windows.FirstOrDefault(w => w.Id == _selectedWindowId)?.Copy();
     public Guid? SelectedStaircaseId => _selectedStairId;
     public StaircaseDefinition? SelectedStaircase =>
         _staircases.FirstOrDefault(s => s.Id == _selectedStairId)?.Copy();
@@ -139,13 +148,28 @@ public sealed class FloorPlanSurface : FrameworkElement
     public IReadOnlyList<Point2> GetOutline() => _outline.ToList().AsReadOnly();
     public IReadOnlyList<RoomDefinition> GetRooms() => _rooms.Select(r => r.Copy()).ToList().AsReadOnly();
     public IReadOnlyList<DoorDefinition> GetDoors() => _doors.Select(d => d.Copy()).ToList().AsReadOnly();
+    public IReadOnlyList<WindowDefinition> GetWindows() =>
+        _windows.Select(w => w.Copy()).ToList().AsReadOnly();
+
+    public double UnassignedAreaMetres
+    {
+        get
+        {
+            if (_outline.Count < 3 ||
+                !PolygonGeometry.IsValidOutline(_outline, out _)) return 0;
+            return CreateUnassignedGeometry(
+                BuildingStoreys.GetOpenings(_staircases, _stairFloorIndex))
+                .GetArea() / (_pixelsPerMetre * _pixelsPerMetre);
+        }
+    }
     public RoomDefinition? SelectedRoom => _rooms.FirstOrDefault(r => r.Id == _selectedRoomId)?.Copy();
 
     private BuildingDocument Document() => new()
     {
         Perimeter = _outline.ToList(),
         Rooms = _rooms.Select(r => r.Copy()).ToList(),
-        Doors = _doors.Select(d => d.Copy()).ToList()
+        Doors = _doors.Select(d => d.Copy()).ToList(),
+        Windows = _windows.Select(w => w.Copy()).ToList()
     };
 
     public void LoadOutline(IReadOnlyList<Point2> outline) =>
@@ -156,6 +180,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = document.Perimeter.ToList();
         _rooms = document.Rooms.Select(r => r.Copy()).ToList();
         _doors = document.Doors.Select(d => d.Copy()).ToList();
+        _windows = document.Windows.Select(w => w.Copy()).ToList();
         _draft.Clear();
         _draftCursor = null;
         _partitionStart = null;
@@ -165,6 +190,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _selectedVertex = -1;
         _selectedRoomId = null;
         _selectedDoorId = null;
+        _selectedWindowId = null;
         _selectedStairId = null;
         _stairPlacementHover = null;
         _draggingStair = false;
@@ -205,6 +231,7 @@ public sealed class FloorPlanSurface : FrameworkElement
                 : "Click the first room, then an adjoining second room to merge them.",
             EditorTool.MoveWall => "Drag a wall perpendicular to itself. Connected corners and doors will follow.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
+            EditorTool.AddWindow => "Click an exterior wall to add a window. Windows must fit between corners and doors.",
             EditorTool.PlaceStairs => "Move the cursor to preview stairs; click to place. Rotate or resize in the side panel.",
             EditorTool.Select => "Drag stairs to move them, or drag the circular handle on selected stairs to rotate. Shift snaps rotation to 15°.",
             _ => "Drag to pan; use the mouse wheel to zoom."
@@ -377,6 +404,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = updated.Perimeter;
         _rooms = updated.Rooms;
         _doors = updated.Doors;
+        _windows = updated.Windows;
         if (!Validate(out var buildingReason))
         {
             Restore(previous);
@@ -496,6 +524,12 @@ public sealed class FloorPlanSurface : FrameworkElement
                 null, WithStairwellHoles(_outline, openings));
         }
 
+        if (HighlightUnassigned && _outline.Count >= 3 &&
+            PolygonGeometry.IsValidOutline(_outline, out _))
+            dc.DrawGeometry(new SolidColorBrush(
+                Color.FromArgb(150, 254, 222, 147)), null,
+                CreateUnassignedGeometry(openings));
+
         for (int index = 0; index < _rooms.Count; index++)
         {
             var room = _rooms[index];
@@ -552,6 +586,27 @@ public sealed class FloorPlanSurface : FrameworkElement
             Pen doorPen = new(door.Id == _selectedDoorId ? Brushes.OrangeRed : Brushes.SaddleBrown, 2);
             dc.DrawLine(doorPen, ToScreen(hinge), ToScreen(openEnd));
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
+        }
+
+        var exteriorWalls = walls.Where(w => w.IsExterior).ToList();
+        foreach (var window in _windows)
+        {
+            var supporting = new DoorDefinition
+            {
+                Id = window.Id, Centre = window.Centre, Width = window.Width
+            };
+            if (!FloorGeometry.TryFindDoorWall(supporting, exteriorWalls, out var wall) ||
+                wall is null || wall.Length < 0.001) continue;
+            double dx = (wall.B.X - wall.A.X) / wall.Length;
+            double dy = (wall.B.Y - wall.A.Y) / wall.Length;
+            Point a = ToScreen(new Point2(window.Centre.X - dx * window.Width / 2,
+                                          window.Centre.Y - dy * window.Width / 2));
+            Point b = ToScreen(new Point2(window.Centre.X + dx * window.Width / 2,
+                                          window.Centre.Y + dy * window.Width / 2));
+            dc.DrawLine(new Pen(Brushes.White, 7), a, b);
+            dc.DrawLine(new Pen(window.Id == _selectedWindowId
+                ? Brushes.OrangeRed : Brushes.DeepSkyBlue, 4), a, b);
+            dc.DrawLine(new Pen(Brushes.DarkSlateBlue, 1), a, b);
         }
 
         foreach (var opening in openings)
@@ -668,6 +723,20 @@ public sealed class FloorPlanSurface : FrameworkElement
             DrawText(dc, "Choose Draw Perimeter and click to place the first corner.",
                      new Point(20, 22), 15, Brushes.SlateGray);
         }
+    }
+
+    private Geometry CreateUnassignedGeometry(
+        IReadOnlyList<StairwellOpening> openings)
+    {
+        Geometry available = BuildGeometry(_outline, true);
+        foreach (var room in _rooms)
+            if (room.Outline.Count >= 3)
+                available = new CombinedGeometry(GeometryCombineMode.Exclude,
+                    available, BuildGeometry(room.Outline, true));
+        foreach (var voidArea in openings)
+            available = new CombinedGeometry(GeometryCombineMode.Exclude,
+                available, BuildGeometry(voidArea.Outline, true));
+        return available;
     }
 
     private Geometry WithStairwellHoles(IReadOnlyList<Point2> outline,
@@ -895,6 +964,12 @@ public sealed class FloorPlanSurface : FrameworkElement
             e.Handled = true;
             return;
         }
+        if (Tool == EditorTool.AddWindow)
+        {
+            TryAddWindow(position);
+            e.Handled = true;
+            return;
+        }
 
         if (Tool == EditorTool.PlaceStairs)
         {
@@ -974,8 +1049,17 @@ public sealed class FloorPlanSurface : FrameworkElement
                 _dragOriginalPoint = SelectedVertices()![_selectedVertex];
                 CaptureMouse();
             }
+            else if (TrySelectWindow(position))
+            {
+                _selectedDoorId = null;
+                _selectedStairId = null;
+                _selectedVertex = -1;
+                _selectedRoomId = null;
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
+            }
             else if (TrySelectDoor(position))
             {
+                _selectedWindowId = null;
                 _selectedStairId = null;
                 _selectedVertex = -1;
                 _selectedRoomId = null;
@@ -983,6 +1067,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             }
             else if (TrySelectStair(position))
             {
+                _selectedWindowId = null;
                 _selectedVertex = -1;
                 _selectedDoorId = null;
                 _selectedRoomId = null;
@@ -1005,6 +1090,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             else
             {
                 _selectedStairId = null;
+                _selectedWindowId = null;
                 Point2 point = ToWorld(position);
                 var room = _rooms.LastOrDefault(r => PolygonGeometry.ContainsPoint(r.Outline, point));
                 _selectedRoomId = room?.Id;
@@ -1068,6 +1154,9 @@ public sealed class FloorPlanSurface : FrameworkElement
             // at drag start so diagonal walls rotate without losing doors.
             _doors = DoorPlacement.ForMovedVertex(
                 _beforeDrag.Perimeter, _beforeDrag.Rooms, _beforeDrag.Doors,
+                _dragOriginalPoint, movedPoint);
+            _windows = WindowPlacement.ForMovedVertex(
+                _beforeDrag.Perimeter, _beforeDrag.Rooms, _beforeDrag.Windows,
                 _dragOriginalPoint, movedPoint);
 
             InvalidateVisual();
@@ -1261,6 +1350,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = combined.Perimeter;
         _rooms = combined.Rooms;
         _doors = combined.Doors;
+        _windows = combined.Windows;
         if (!Validate(out var buildingReason))
         {
             Restore(previous);
@@ -1361,6 +1451,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _outline = document.Perimeter;
         _rooms = document.Rooms;
         _doors = document.Doors;
+        _windows = document.Windows;
         if (!Validate(out var buildingReason))
         {
             Restore(previous);
@@ -1427,6 +1518,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             _outline = moved.Perimeter;
             _rooms = moved.Rooms;
             _doors = moved.Doors;
+            _windows = moved.Windows;
             if (Validate(out var buildingReason))
             {
                 _wallMoveAccepted = Math.Abs(amount) > 1e-7;
@@ -1452,7 +1544,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     {
         Perimeter = snapshot.Perimeter.ToList(),
         Rooms = snapshot.Rooms.Select(r => r.Copy()).ToList(),
-        Doors = snapshot.Doors.Select(d => d.Copy()).ToList()
+        Doors = snapshot.Doors.Select(d => d.Copy()).ToList(),
+        Windows = snapshot.Windows.Select(w => w.Copy()).ToList()
     };
 
     private bool SnapshotMatches(EditorSnapshot snapshot) =>
@@ -1461,6 +1554,9 @@ public sealed class FloorPlanSurface : FrameworkElement
         _rooms.Zip(snapshot.Rooms).All(pair =>
             pair.First.Outline.SequenceEqual(pair.Second.Outline)) &&
         _doors.Zip(snapshot.Doors).All(pair =>
+            pair.First.Centre.Equals(pair.Second.Centre)) &&
+        _windows.Count == snapshot.Windows.Count &&
+        _windows.Zip(snapshot.Windows).All(pair =>
             pair.First.Centre.Equals(pair.Second.Centre));
 
     private bool IsOverStairRotationHandle(Point position)
@@ -1546,6 +1642,87 @@ public sealed class FloorPlanSurface : FrameworkElement
         InvalidateVisual();
     }
 
+    public void DeleteSelectedWindow()
+    {
+        if (!_selectedWindowId.HasValue) return;
+        var previous = Snapshot();
+        _windows.RemoveAll(w => w.Id == _selectedWindowId.Value);
+        _selectedWindowId = null;
+        PushUndo(previous);
+        RaiseChanged();
+        Say("Window removed.");
+    }
+
+    public void SetSelectedWindowWidth(double width)
+    {
+        var window = _windows.FirstOrDefault(w => w.Id == _selectedWindowId);
+        if (window is null || Math.Abs(window.Width - width) < 1e-9) return;
+        var previous = Snapshot();
+        window.Width = width;
+        if (!Validate(out var reason))
+        {
+            Restore(previous);
+            Say($"Cannot resize window: {reason}");
+            return;
+        }
+        PushUndo(previous);
+        RaiseChanged();
+        Say("Window width updated.");
+    }
+
+    private void TryAddWindow(Point position)
+    {
+        var walls = FloorGeometry.BuildWalls(_outline, _rooms)
+            .Where(w => w.IsExterior);
+        WallSegment? nearestWall = null;
+        Point2 centre = default;
+        double bestDistance = 12;
+        Point2 mouse = ToWorld(position);
+        foreach (var wall in walls)
+        {
+            Point2 projected = PolygonGeometry.ClosestPointOnSegment(mouse, wall.A, wall.B);
+            double pixels = mouse.DistanceTo(projected) * _pixelsPerMetre;
+            if (pixels >= bestDistance) continue;
+            centre = projected;
+            nearestWall = wall;
+            bestDistance = pixels;
+        }
+        if (nearestWall is null)
+        {
+            Say("Click near an exterior wall to place a window.");
+            return;
+        }
+
+        double width = WindowWidthProvider?.Invoke() ?? 1.2;
+        var previous = Snapshot();
+        var window = new WindowDefinition { Centre = centre, Width = width };
+        _windows.Add(window);
+        if (!Validate(out var reason))
+        {
+            Restore(previous);
+            Say($"Cannot place window: {reason}");
+            return;
+        }
+        PushUndo(previous);
+        _selectedWindowId = window.Id;
+        _selectedDoorId = null;
+        _selectedRoomId = null;
+        _selectedVertex = -1;
+        RaiseChanged();
+        Say("Window placed. Select it to resize or remove it.");
+    }
+
+    private bool TrySelectWindow(Point position)
+    {
+        foreach (var window in _windows)
+        {
+            if ((ToScreen(window.Centre) - position).Length > 11) continue;
+            _selectedWindowId = window.Id;
+            return true;
+        }
+        return false;
+    }
+
     private void TryAddDoor(Point position)
     {
         var walls = FloorGeometry.BuildWalls(_outline, _rooms);
@@ -1579,6 +1756,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         }
         PushUndo(previous);
         _selectedDoorId = door.Id;
+        _selectedWindowId = null;
         _selectedRoomId = null;
         _selectedVertex = -1;
         RaiseChanged();
@@ -1625,6 +1803,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             _selectedVertex = selected;
             _selectedPerimeterVertex = false;
             _selectedDoorId = null;
+            _selectedWindowId = null;
             _selectedStairId = null;
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             return true;
@@ -1636,6 +1815,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             _selectedPerimeterVertex = true;
             _selectedRoomId = null;
             _selectedDoorId = null;
+            _selectedWindowId = null;
             _selectedStairId = null;
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             return true;
@@ -1645,6 +1825,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             if (!TryVertexHit(_rooms[i].Outline, position, out selected)) continue;
             _selectedRoomId = _rooms[i].Id;
             _selectedDoorId = null;
+            _selectedWindowId = null;
             _selectedStairId = null;
             _selectedVertex = selected;
             _selectedPerimeterVertex = false;
@@ -1795,13 +1976,15 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private EditorSnapshot Snapshot() =>
         new(_outline.ToList(), _rooms.Select(r => r.Copy()).ToList(),
-            _doors.Select(d => d.Copy()).ToList());
+            _doors.Select(d => d.Copy()).ToList(),
+            _windows.Select(w => w.Copy()).ToList());
 
     private void Restore(EditorSnapshot snapshot)
     {
         _outline = snapshot.Perimeter.ToList();
         _rooms = snapshot.Rooms.Select(r => r.Copy()).ToList();
         _doors = snapshot.Doors.Select(d => d.Copy()).ToList();
+        _windows = snapshot.Windows.Select(w => w.Copy()).ToList();
         InvalidateVisual();
     }
 
@@ -1819,6 +2002,7 @@ public sealed class FloorPlanSurface : FrameworkElement
     {
         _selectedRoomId = null;
         _selectedDoorId = null;
+        _selectedWindowId = null;
         _selectedVertex = -1;
         _mergePrimaryRoomId = null;
     }

@@ -242,6 +242,7 @@ public static class RoomMerging
         SchemaVersion = source.SchemaVersion,
         Perimeter = source.Perimeter.ToList(),
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
-        Doors = source.Doors.Select(d => d.Copy()).ToList()
+        Doors = source.Doors.Select(d => d.Copy()).ToList(),
+        Windows = source.Windows.Select(w => w.Copy()).ToList()
     };
 }

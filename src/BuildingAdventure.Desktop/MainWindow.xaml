@@ -47,6 +47,7 @@
             <Button x:Name="MergeRoomsButton" Content="Merge Rooms" Click="MergeRoomsTool_Click" Padding="9,4"/>
             <Button x:Name="MoveWallButton" Content="Move Wall" Click="MoveWallTool_Click" Padding="9,4"/>
             <Button x:Name="DoorButton" Content="Add Door" Click="DoorTool_Click" Padding="9,4"/>
+            <Button x:Name="WindowButton" Content="Add Window" Click="WindowTool_Click" Padding="9,4"/>
             <Button x:Name="PlaceStairsButton" Content="Place Stairs" Click="PlaceStairsTool_Click" Padding="9,4"/>
             <Button x:Name="PanButton" Content="Pan" Click="PanTool_Click" Padding="9,4"/>
             <Separator/>
@@ -147,6 +148,11 @@
                                Margin="0,0,0,12"/>
                     <TextBlock x:Name="CornersText" Text="0 corners" Margin="0,0,0,8"/>
                     <TextBlock x:Name="AreaText" Text="Area: —" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="HighlightUnassignedCheckBox" Content="Highlight unassigned interior"
+                              IsChecked="True" Checked="UnassignedToggleChanged"
+                              Unchecked="UnassignedToggleChanged" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="UnassignedAreaText" Text="Unassigned area: —"
+                               Margin="0,0,0,8" Foreground="#7B550F"/>
                     <TextBlock x:Name="SlabAreaText" Text="Slab area: —" Margin="0,0,0,8"/>
                     <TextBlock x:Name="LengthText" Text="Wall length: —" Margin="0,0,0,16"/>
                     <CheckBox x:Name="SnapCheckBox" Content="Snap to 0.5 m grid" IsChecked="True"
@@ -183,6 +189,20 @@
                             Click="ApplyRoom_Click" Padding="8" Margin="0,0,0,10"/>
                     <Button x:Name="DeleteRoomButton" Content="Delete selected room" IsEnabled="False"
                             Click="DeleteRoom_Click" Padding="8" Margin="0,0,0,10"/>
+                    <TextBlock Text="WINDOWS" FontSize="12" FontWeight="Bold"
+                               Foreground="#566579" Margin="0,9,0,9"/>
+                    <TextBlock Text="Window width (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="WindowWidthBox" Text="1.2" Padding="5" Margin="0,0,0,8"/>
+                    <WrapPanel Margin="0,0,0,12">
+                        <Button x:Name="ApplyWindowButton" Content="Apply width"
+                                Click="ApplyWindow_Click" IsEnabled="False"
+                                Padding="6,4" Margin="0,0,6,0"/>
+                        <Button x:Name="DeleteWindowButton" Content="Delete window"
+                                Click="DeleteWindow_Click" IsEnabled="False" Padding="6,4"/>
+                    </WrapPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="#566579"
+                               Text="Use Add Window on exterior walls only; windows are blue. Select an existing window to change its width or delete it."
+                               Margin="0,0,0,14"/>
                     <Button x:Name="DeleteDoorButton" Content="Delete selected door" IsEnabled="False"
                             Click="DeleteDoor_Click" Padding="8" Margin="0,0,0,14"/>
                     <Separator/>
@@ -195,7 +215,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Draw Room outlines new spaces. Split Room cuts a selected room between two boundary points. Merge Rooms combines two adjoining rooms: click the first room, then the second."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Move Wall drags an entire wall. In Select / Edit, dragging a corner snaps to nearby corners or wall edges; hold Shift for precise unsnapped placement. Add Door inserts a 0.9 m doorway."/>
+                               Text="Move Wall drags an entire wall. Select / Edit supports snapping to corners and edges. Add Door creates a doorway; Add Window creates an exterior glazing opening. Unassigned floor areas remain usable space."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
                                Text="Stairwell slab openings and translucent adjacent-floor references are supported. Structural beams, real 3D floor thickness, furniture and automatic generation are future milestones."/>
                 </StackPanel>

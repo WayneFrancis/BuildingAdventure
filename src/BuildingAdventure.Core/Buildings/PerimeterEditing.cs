@@ -130,6 +130,8 @@ public static class PerimeterEditing
 
         result.Doors = DoorPlacement.ForRemovedCorner(
             source.Doors, previous, removed, next);
+        result.Windows = WindowPlacement.ForRemovedCorner(
+            source.Windows, previous, removed, next);
 
         if (!FloorGeometry.Validate(result, out reason))
             return false;
@@ -167,6 +169,7 @@ public static class PerimeterEditing
         Name = source.Name,
         Perimeter = source.Perimeter.ToList(),
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
-        Doors = source.Doors.Select(d => d.Copy()).ToList()
+        Doors = source.Doors.Select(d => d.Copy()).ToList(),
+        Windows = source.Windows.Select(w => w.Copy()).ToList()
     };
 }

@@ -189,6 +189,17 @@ public static class InteriorEditing
                 displaced.TryGetValue(p, out var moved) ? moved : p).ToList();
 
         result.Doors = RepositionDoors(source, wall, displaced, offsetX, offsetY);
+        // Windows use the same attachment movement but remain separate data.
+        var asDoors = Copy(source);
+        asDoors.Doors = source.Windows.Select(w => new DoorDefinition
+        {
+            Id = w.Id, Centre = w.Centre, Width = w.Width
+        }).ToList();
+        result.Windows = RepositionDoors(asDoors, wall, displaced, offsetX, offsetY)
+            .Select(d => new WindowDefinition
+            {
+                Id = d.Id, Centre = d.Centre, Width = d.Width
+            }).ToList();
 
         if (!FloorGeometry.Validate(result, out reason))
             return false;
@@ -313,6 +324,7 @@ public static class InteriorEditing
         Name = source.Name,
         Perimeter = source.Perimeter.ToList(),
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
-        Doors = source.Doors.Select(d => d.Copy()).ToList()
+        Doors = source.Doors.Select(d => d.Copy()).ToList(),
+        Windows = source.Windows.Select(w => w.Copy()).ToList()
     };
 }

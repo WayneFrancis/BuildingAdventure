@@ -1720,5 +1720,214 @@ Check("Global history preserves JSON round-trip after cross-floor undo", () =>
     Assert(BuildingStoreys.FloorCount(roundTripped) == 2);
 });
 
+Check("Unassigned interior means usable floor without a named room", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var floor = new RoomDefinition
+    {
+        Name = "Bedroom",
+        Outline = [new(0, 0), new(4, 0), new(4, 8), new(0, 8)]
+    };
+    doc.Rooms.Add(floor);
+    Assert(FloorSpaceAnalysis.Classify(doc, new Point2(2, 4)) ==
+        FloorSpaceAnalysis.SpaceKind.DefinedRoom);
+    Assert(FloorSpaceAnalysis.Classify(doc, new Point2(6, 4)) ==
+        FloorSpaceAnalysis.SpaceKind.UnassignedInterior);
+    Assert(FloorSpaceAnalysis.Classify(doc, new Point2(12, 4)) ==
+        FloorSpaceAnalysis.SpaceKind.Outside);
+});
+
+Check("Stairwell void is not classified as unassigned usable space", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var stair = new StaircaseDefinition { Centre = new Point2(5, 4) };
+    var voids = BuildingStoreys.GetOpenings([stair], 1);
+    Assert(FloorSpaceAnalysis.Classify(doc, new Point2(5, 4), voids) ==
+        FloorSpaceAnalysis.SpaceKind.FloorOpening);
+    Assert(FloorSpaceAnalysis.Classify(doc, new Point2(9, 4), voids) ==
+        FloorSpaceAnalysis.SpaceKind.UnassignedInterior);
+});
+
+Check("Window added to exterior wall survives save and load", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(WindowPlacement.TryAddWindow(doc, new Point2(5, 0), 1.2,
+        out var changed, out var reason), reason);
+    Assert(changed.Windows.Count == 1 && doc.Windows.Count == 0);
+    var reopened = BuildingDocumentJson.Deserialize(
+        BuildingDocumentJson.Serialize(changed));
+    Assert(reopened.Windows.Count == 1);
+    Equal(reopened.Windows[0].Centre.X, 5);
+    Equal(reopened.Windows[0].Width, 1.2);
+});
+
+Check("Window on an exterior diagonal remains valid", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(8, 4), new(8, 10), new(0, 10)]
+    };
+    Assert(WindowPlacement.TryAddWindow(doc, new Point2(4, 2), 1.6,
+        out var changed, out var reason), reason);
+    Assert(FloorGeometry.Validate(changed, out reason), reason);
+});
+
+Check("Interior partitions cannot contain exterior windows", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Left",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Right",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(!WindowPlacement.TryAddWindow(doc, new Point2(5, 4), 1.2,
+        out _, out var reason));
+    Assert(reason.Contains("exterior"));
+});
+
+Check("Windows must avoid corners and overlapping doors", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(!WindowPlacement.TryAddWindow(doc, new Point2(0.4, 0), 1.2,
+        out _, out _));
+    doc.Doors.Add(new DoorDefinition { Centre = new Point2(5, 0) });
+    Assert(!WindowPlacement.TryAddWindow(doc, new Point2(6, 0), 1.2,
+        out _, out var reason));
+    Assert(reason.Contains("door"));
+});
+
+Check("Exterior windows cannot overlap one another", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(WindowPlacement.TryAddWindow(doc, new Point2(3, 0), 1.2,
+        out var first, out var reason), reason);
+    Assert(!WindowPlacement.TryAddWindow(first, new Point2(4, 0), 1.2,
+        out _, out reason));
+    Assert(reason.Contains("windows"));
+});
+
+Check("Window follows a rotated perimeter wall when a vertex moves", () =>
+{
+    var win = new WindowDefinition { Centre = new Point2(5, 0), Width = 1.2 };
+    var moved = WindowPlacement.ForMovedVertex(rectangle, [], [win],
+        new Point2(10, 0), new Point2(10, 2));
+    Assert(moved.Count == 1 && moved[0].Id == win.Id);
+    Equal(moved[0].Centre.X, 5);
+    Equal(moved[0].Centre.Y, 1);
+    Equal(win.Centre.Y, 0);
+    var adjusted = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(10, 2), new(10, 8), new(0, 8)],
+        Windows = moved
+    };
+    Assert(FloorGeometry.Validate(adjusted, out var reason), reason);
+});
+
+Check("Splitting a continuous exterior wall does not invalidate its window", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(5, 0) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(doc, true, null, 0,
+        new Point2(5, 0), out var split, out var reason), reason);
+    Assert(split.Windows.Count == 1);
+    Assert(FloorGeometry.Validate(split, out reason), reason);
+});
+
+Check("Windows follow wall movement without changing their IDs", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(5, 0) }]
+    };
+    var wall = FloorGeometry.BuildWalls(doc.Perimeter, doc.Rooms)
+        .Single(w => w.IsExterior && w.A.Y == 0 && w.B.Y == 0);
+    Assert(InteriorEditing.TryMoveWall(doc, wall, 1, out var moved, out var reason), reason);
+    Assert(moved.Windows.Count == 1 && moved.Windows[0].Id == doc.Windows[0].Id);
+    Assert(moved.Windows[0].Centre.DistanceTo(doc.Windows[0].Centre) > 0.01);
+    Assert(FloorGeometry.Validate(moved, out reason), reason);
+});
+
+Check("Window width is validated before changing stored geometry", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(1.1, 0) }]
+    };
+    Assert(FloorGeometry.Validate(doc, out var reason), reason);
+    var proposed = BuildingStoreys.Copy(doc);
+    proposed.Windows[0].Width = 3;
+    Assert(!FloorGeometry.Validate(proposed, out reason));
+    Equal(doc.Windows[0].Width, 1.2);
+});
+
+Check("Windows survive independent upper-floor save and global history snapshots", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var upper = BuildingStoreys.GetFloor(two, 1);
+    upper.Windows.Add(new WindowDefinition
+    {
+        Centre = new Point2(5, 0), Width = 1.5
+    });
+    var history = new BuildingEditHistory();
+    history.RecordBefore(two, 1);
+    BuildingStoreys.SetFloor(two, 1, upper);
+    var opened = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(two));
+    Assert(opened.Windows.Count == 0);
+    Assert(opened.UpperFloors[0].Windows.Count == 1);
+    Assert(history.TryUndo(two, 0, out var undone));
+    Assert(undone.Building.UpperFloors[0].Windows.Count == 0);
+    Assert(history.TryRedo(undone.Building, undone.FloorIndex, out var redone));
+    Assert(redone.Building.UpperFloors[0].Windows.Count == 1);
+});
+
+Check("Older building files with no window property remain valid", () =>
+{
+    var oldJson = """{"schemaVersion":1,"name":"Original","perimeter":[{"x":0,"y":0},{"x":10,"y":0},{"x":10,"y":8},{"x":0,"y":8}],"rooms":[],"doors":[]}""";
+    var loaded = BuildingDocumentJson.Deserialize(oldJson);
+    Assert(loaded.Windows.Count == 0);
+    Assert(FloorGeometry.Validate(loaded, out var reason), reason);
+});
+
+Check("Removing a perimeter corner repositions an exterior window", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(5, 0), new(10, 2), new(10, 8), new(0, 8)],
+        Windows = [new WindowDefinition { Centre = new Point2(2.5, 0) }]
+    };
+    Assert(FloorGeometry.Validate(doc, out var reason), reason);
+    Assert(PerimeterEditing.TryRemoveCorner(doc, true, null, 1,
+        out var changed, out reason), reason);
+    Assert(changed.Perimeter.Count == 4 && changed.Windows.Count == 1);
+    Assert(changed.Windows[0].Id == doc.Windows[0].Id);
+    Assert(changed.Windows[0].Centre.Y > 0.01);
+    Assert(FloorGeometry.Validate(changed, out reason), reason);
+});
+
+Check("Completely assigned floor has no unassigned interior points", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = [new RoomDefinition { Name = "Great Hall", Outline = rectangle.ToList() }]
+    };
+    Assert(FloorGeometry.Validate(doc, out var reason), reason);
+    Assert(FloorSpaceAnalysis.Classify(doc, new Point2(5, 4)) ==
+        FloorSpaceAnalysis.SpaceKind.DefinedRoom);
+    Assert(FloorSpaceAnalysis.Classify(doc, new Point2(12, 4)) ==
+        FloorSpaceAnalysis.SpaceKind.Outside);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

@@ -24,6 +24,10 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         EditorSurface.UsesGlobalHistory = true;
+        EditorSurface.HighlightUnassigned = true;
+        EditorSurface.WindowWidthProvider = () =>
+            TryReadMetres(WindowWidthBox.Text, out double width) &&
+            double.IsFinite(width) ? width : double.NaN;
         EditorSurface.Changed += (_, _) => Refresh();
         EditorSurface.DocumentEditCommitted += previousFloor =>
         {
@@ -37,6 +41,7 @@ public partial class MainWindow : Window
         {
             UpdateSelectedRoomControls();
             UpdateSelectedStairControls();
+            UpdateSelectedWindowControls();
         };
         EditorSurface.Hint += message => { _hint = message; Refresh(); };
         EditorSurface.StairPlacementRequested += PlaceStairAt;
@@ -68,7 +73,8 @@ public partial class MainWindow : Window
         {
             Perimeter = EditorSurface.GetOutline().ToList(),
             Rooms = EditorSurface.GetRooms().ToList(),
-            Doors = EditorSurface.GetDoors().ToList()
+            Doors = EditorSurface.GetDoors().ToList(),
+            Windows = EditorSurface.GetWindows().ToList()
         });
         return result;
     }
@@ -99,9 +105,15 @@ public partial class MainWindow : Window
         SlabAreaText.Text = outline.Count < 3 ? "Slab area: —"
             : $"Slab area excluding voids: {slabArea:N2} m²";
         LengthText.Text = outline.Count >= 3 ? $"Exterior walls: {PolygonGeometry.Perimeter(outline):N2} m" : "Exterior walls: —";
-        RoomsText.Text = $"{EditorSurface.GetRooms().Count} rooms, {EditorSurface.GetDoors().Count} doors";
+        RoomsText.Text = $"{EditorSurface.GetRooms().Count} rooms, " +
+            $"{EditorSurface.GetDoors().Count} doors, {EditorSurface.GetWindows().Count} windows";
+        UnassignedAreaText.Text = outline.Count >= 3
+            ? $"Unassigned usable floor: {EditorSurface.UnassignedAreaMetres:N2} m²"
+            : "Unassigned usable floor: —";
         DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
         DeleteDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
+        DeleteWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
+        ApplyWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
         DeleteStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         ApplyStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
@@ -122,6 +134,7 @@ public partial class MainWindow : Window
         MergeRoomsButton.FontWeight = EditorSurface.Tool == EditorTool.MergeRooms ? FontWeights.Bold : FontWeights.Normal;
         MoveWallButton.FontWeight = EditorSurface.Tool == EditorTool.MoveWall ? FontWeights.Bold : FontWeights.Normal;
         DoorButton.FontWeight = EditorSurface.Tool == EditorTool.AddDoor ? FontWeights.Bold : FontWeights.Normal;
+        WindowButton.FontWeight = EditorSurface.Tool == EditorTool.AddWindow ? FontWeights.Bold : FontWeights.Normal;
         PlaceStairsButton.FontWeight = EditorSurface.Tool == EditorTool.PlaceStairs ? FontWeights.Bold : FontWeights.Normal;
         PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
         HintText.Text = _hint;
@@ -247,6 +260,43 @@ public partial class MainWindow : Window
 
     private void DeleteRoom_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedRoom();
     private void DeleteDoor_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedDoor();
+    private void DeleteWindow_Click(object sender, RoutedEventArgs e) =>
+        EditorSurface.DeleteSelectedWindow();
+
+    private void WindowTool_Click(object sender, RoutedEventArgs e) =>
+        EditorSurface.SetTool(EditorTool.AddWindow);
+
+    private void UpdateSelectedWindowControls()
+    {
+        if (EditorSurface is null || WindowWidthBox is null ||
+            ApplyWindowButton is null || DeleteWindowButton is null) return;
+        var selected = EditorSurface.SelectedWindow;
+        ApplyWindowButton.IsEnabled = DeleteWindowButton.IsEnabled = selected is not null;
+        if (selected is not null)
+            WindowWidthBox.Text = selected.Width.ToString(
+                "R", System.Globalization.CultureInfo.CurrentCulture);
+    }
+
+    private void ApplyWindow_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryReadMetres(WindowWidthBox.Text, out double width) ||
+            !double.IsFinite(width))
+        {
+            _hint = "Enter a valid numeric window width.";
+            Refresh();
+            return;
+        }
+        EditorSurface.SetSelectedWindowWidth(width);
+        UpdateSelectedWindowControls();
+    }
+
+    private void UnassignedToggleChanged(object sender, RoutedEventArgs e)
+    {
+        if (EditorSurface is null || HighlightUnassignedCheckBox is null) return;
+        EditorSurface.HighlightUnassigned = HighlightUnassignedCheckBox.IsChecked == true;
+        EditorSurface.InvalidateVisual();
+        Refresh();
+    }
 
     private void RebuildFloorPicker()
     {
@@ -670,6 +720,7 @@ public partial class MainWindow : Window
         {
             if (EditorSurface.SelectedStaircaseId.HasValue)
                 DeleteStairs_Click(this, new RoutedEventArgs());
+            else if (EditorSurface.HasSelectedWindow) EditorSurface.DeleteSelectedWindow();
             else if (EditorSurface.HasSelectedDoor) EditorSurface.DeleteSelectedDoor();
             else EditorSurface.DeleteSelectedVertex();
         }
