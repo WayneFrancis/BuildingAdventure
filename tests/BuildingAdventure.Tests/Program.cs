@@ -216,5 +216,113 @@ Check("Reject a door too close to a wall corner", () =>
     Assert(!FloorGeometry.Validate(document, out _));
 });
 
+Check("Door tracks wall as horizontal edge rotates to diagonal", () =>
+{
+    var originalDoors = new List<DoorDefinition>
+    {
+        new() { Centre = new Point2(5, 0), Width = 0.9 }
+    };
+    Point2 oldCorner = new(10, 0);
+    Point2 newCorner = new(10, 2);
+    var doors = DoorPlacement.ForMovedVertex(
+        rectangle, [], originalDoors, oldCorner, newCorner);
+
+    Equal(doors[0].Centre.X, 5);
+    Equal(doors[0].Centre.Y, 1);
+    Equal(originalDoors[0].Centre.Y, 0); // No mutation of source snapshot.
+
+    var changedOutline = new List<Point2> { new(0, 0), newCorner, new(10, 8), new(0, 8) };
+    var document = new BuildingDocument { Perimeter = changedOutline, Doors = doors };
+    Assert(FloorGeometry.Validate(document, out var reason), reason);
+
+    var reloaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(document));
+    Equal(reloaded.Doors[0].Centre.Y, 1);
+});
+
+Check("Door tracks an existing diagonal wall rotated further", () =>
+{
+    var diagonal = new List<Point2>
+    {
+        new(0, 0), new(8, 4), new(8, 10), new(0, 10)
+    };
+    var originalDoors = new List<DoorDefinition>
+    {
+        new() { Centre = new Point2(4, 2) }
+    };
+    var newCorner = new Point2(8, 6);
+    var doors = DoorPlacement.ForMovedVertex(
+        diagonal, [], originalDoors, new Point2(8, 4), newCorner);
+
+    Equal(doors[0].Centre.X, 4);
+    Equal(doors[0].Centre.Y, 3);
+    var document = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), newCorner, new(8, 10), new(0, 10)],
+        Doors = doors
+    };
+    Assert(FloorGeometry.Validate(document, out var reason), reason);
+});
+
+Check("Door on unrelated wall does not move", () =>
+{
+    var originalDoor = new DoorDefinition { Centre = new Point2(5, 8) };
+    var doors = DoorPlacement.ForMovedVertex(
+        rectangle, [], [originalDoor], new Point2(10, 0), new Point2(10, 2));
+    Assert(doors.Count == 1);
+    Equal(doors[0].Centre.X, 5);
+    Equal(doors[0].Centre.Y, 8);
+});
+
+Check("Door follows angled shared wall between two rooms", () =>
+{
+    var first = new RoomDefinition
+    {
+        Name = "Shop",
+        Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)]
+    };
+    var second = new RoomDefinition
+    {
+        Name = "Residence",
+        Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)]
+    };
+    var oldRooms = new List<RoomDefinition> { first, second };
+    var newRooms = oldRooms.Select(r => r.Copy()).ToList();
+    var oldPoint = new Point2(5, 0);
+    var newPoint = new Point2(4, 2);
+    foreach (var room in newRooms)
+        room.Outline = room.Outline
+            .Select(p => p == oldPoint ? newPoint : p).ToList();
+
+    var doors = DoorPlacement.ForMovedVertex(
+        rectangle, oldRooms,
+        [new DoorDefinition { Centre = new Point2(5, 4) }],
+        oldPoint, newPoint);
+
+    Equal(doors[0].Centre.X, 4.5);
+    Equal(doors[0].Centre.Y, 5);
+    var document = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = newRooms,
+        Doors = doors
+    };
+    Assert(FloorGeometry.Validate(document, out var reason), reason);
+});
+
+Check("Invalid door clearance still rejects extreme wall shortening", () =>
+{
+    var oldDoor = new DoorDefinition { Centre = new Point2(5, 0), Width = 0.9 };
+    var newCorner = new Point2(0.8, 0);
+    var doors = DoorPlacement.ForMovedVertex(
+        rectangle, [], [oldDoor], new Point2(10, 0), newCorner);
+    var document = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), newCorner, new(10, 8), new(0, 8)],
+        Doors = doors
+    };
+    Assert(!FloorGeometry.Validate(document, out _),
+        "Shortened walls must not accept a door with insufficient clearance.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

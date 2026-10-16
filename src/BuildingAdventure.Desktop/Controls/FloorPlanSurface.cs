@@ -616,6 +616,14 @@ public sealed class FloorPlanSurface : FrameworkElement
                     IsSamePoint(p, _dragOriginalPoint) ? movedPoint : p).ToList();
                 return copy;
             }).ToList();
+
+            // Door positions are relative to their supporting wall, not
+            // permanently fixed XY coordinates. Recompute from the state
+            // at drag start so diagonal walls rotate without losing doors.
+            _doors = DoorPlacement.ForMovedVertex(
+                _beforeDrag.Perimeter, _beforeDrag.Rooms, _beforeDrag.Doors,
+                _dragOriginalPoint, movedPoint);
+
             InvalidateVisual();
             return;
         }

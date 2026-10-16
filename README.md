@@ -13,6 +13,9 @@ The editor currently supports:
 - Selecting and naming rooms, and assigning room types (shop, workshop, kitchen,
   living room, bedroom, hall, storeroom, and others).
 - Dragging room and building vertices; coincident shared junctions move together.
+- Doors follow their supporting walls as endpoints move or rotate, including
+  diagonal walls. They retain their relative position along the wall.
+  An edit is still rejected if it leaves too little clearance for an opening.
 - Derived shared physical wall segments, avoiding doubled wall drawing.
 - Manually adding and removing 0.9 metre openings on existing walls.
 - Rejecting invalid rooms: outside the perimeter, self-crossing, or overlapping.
