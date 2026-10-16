@@ -13,6 +13,11 @@ The editor currently supports:
   then switch to Select / Edit and drag it into an angled wall or extension.
   Splitting a straight wall preserves doors and propagates matching vertices
   into any rooms sharing that exterior edge.
+- **Remove Corner** tool: click an existing exterior or interior room corner
+  to join its two adjacent walls into one segment, including angled walls.
+  Doors on those walls follow the replacement segment where possible. Shared
+  room boundary vertices are removed together when geometrically appropriate.
+  A corner can also be selected and removed with Delete.
 - Drawing interior rooms as polygons, with grid, corner and edge snapping.
 - Selecting and naming rooms, and assigning room types (shop, workshop, kitchen,
   living room, bedroom, hall, storeroom, and others).
@@ -65,12 +70,13 @@ Run the geometry checks without third-party test packages:
 | --- | --- |
 | Draw building | Draw Perimeter, click exterior corners, then Finish |
 | Add perimeter segments | Split Perimeter, click a wall, then Select / Edit and drag new corner |
+| Join two wall segments | Remove Corner, click the shared corner |
 | Split any existing wall | Double-click in Select / Edit; exterior walls take priority |
 | Draw room | Draw Room, click room corners inside the building, then Finish |
 | Rename/type room | Select/Edit, click its interior, edit details, click Apply room details |
 | Move corner | Select/Edit, drag an existing corner |
 | Insert corner | Double-click a wall with Select/Edit |
-| Delete corner | Select a corner and press Delete |
+| Delete corner | Select a corner and press Delete; the adjacent walls join |
 | Add door | Add Door, then click on a sufficiently long wall |
 | Delete room or door | Select it and use the appropriate side-panel Delete button |
 | Pan | Middle-mouse drag, or Pan and left-drag |
@@ -84,11 +90,15 @@ Run the geometry checks without third-party test packages:
 **Important:** Draw Perimeter replaces the whole exterior outline, while
 Split Perimeter changes an existing outline in place. You can also double-click
 a wall in Select / Edit to insert a corner. A split alone does not change
-building area; drag the new corner to create the new wall segments.
+building area; drag the new corner to create the new wall segments. Select
+Remove Corner and click the shared vertex to merge the adjacent wall
+segments back into a single wall (or select a vertex and press Delete).
 
 If a door crosses a split corner on a still-straight wall, it remains valid.
 A doorway cannot straddle a genuine bend, and edits are rejected if they
-leave too little physical clearance.
+leave too little physical clearance. When removing a bent corner, doors
+on the two affected walls move proportionally along the new straight
+segment; unrelated doors stay where they are. Invalid edits are rejected.
 
 Rooms are separate enclosed polygons inside the exterior footprint. Shared room
 edges render as one interior wall and can be snapped together. Room boundaries

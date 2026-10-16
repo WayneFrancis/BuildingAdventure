@@ -78,6 +78,57 @@ public static class DoorPlacement
         return result;
     }
 
+    /// <summary>
+    /// Join two consecutive wall segments into one straight segment.
+    /// Doors on either old segment keep their fraction of the original
+    /// combined wall length. Unrelated doors are left untouched.
+    ///
+    /// If the new wall would be too short or would cause invalid door
+    /// clearance, the caller's final FloorGeometry.Validate rejects it.
+    /// </summary>
+    public static List<DoorDefinition> ForRemovedCorner(
+        IReadOnlyList<DoorDefinition> originalDoors,
+        Point2 previous, Point2 corner, Point2 next)
+    {
+        var result = originalDoors.Select(d => d.Copy()).ToList();
+        double firstLength = previous.DistanceTo(corner);
+        double secondLength = corner.DistanceTo(next);
+        double combinedLength = firstLength + secondLength;
+        if (combinedLength <= Tolerance) return result;
+
+        foreach (var door in result)
+        {
+            Point2 nearestFirst = PolygonGeometry.ClosestPointOnSegment(
+                door.Centre, previous, corner);
+            Point2 nearestSecond = PolygonGeometry.ClosestPointOnSegment(
+                door.Centre, corner, next);
+
+            double distanceFirst = door.Centre.DistanceTo(nearestFirst);
+            double distanceSecond = door.Centre.DistanceTo(nearestSecond);
+            if (Math.Min(distanceFirst, distanceSecond) > DoorOnWallTolerance)
+                continue;
+
+            double alongWall;
+            if (distanceFirst <= distanceSecond)
+            {
+                alongWall = ProjectionParameter(door.Centre, previous, corner) *
+                            firstLength;
+            }
+            else
+            {
+                alongWall = firstLength +
+                            ProjectionParameter(door.Centre, corner, next) *
+                            secondLength;
+            }
+
+            double t = alongWall / combinedLength;
+            door.Centre = new Point2(
+                previous.X + (next.X - previous.X) * t,
+                previous.Y + (next.Y - previous.Y) * t);
+        }
+        return result;
+    }
+
     private static IEnumerable<(Point2 A, Point2 B)> EnumerateEdges(
         IReadOnlyList<Point2> perimeter, IReadOnlyList<RoomDefinition> rooms)
     {

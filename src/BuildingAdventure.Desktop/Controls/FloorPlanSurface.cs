@@ -7,7 +7,7 @@ using BuildingAdventure.Core.Geometry;
 
 namespace BuildingAdventure.Desktop.Controls;
 
-public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, DrawRoom, AddDoor, Pan }
+public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, AddDoor, Pan }
 
 /// <summary>Interactive metre-based editor for a single building floor.</summary>
 public sealed class FloorPlanSurface : FrameworkElement
@@ -100,6 +100,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         {
             EditorTool.DrawPerimeter => "Click exterior corners; click the starting point or Finish to close.",
             EditorTool.SplitPerimeter => "Click any exterior wall to insert a corner. Select / Edit to drag it into a new shape.",
+            EditorTool.RemoveCorner => "Click an exterior or room corner to merge its two adjoining walls.",
             EditorTool.DrawRoom => "Click room corners inside the building, then click the first or Finish.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
             EditorTool.Select => "Click a room to select it, drag a corner, or double-click a wall to add a corner.",
@@ -225,32 +226,36 @@ public sealed class FloorPlanSurface : FrameworkElement
         Say("Door deleted.");
     }
 
+    /// <summary>
+    /// Remove the selected polygon corner, merging its two incident walls.
+    /// The core operation also updates connected rooms and door positions.
+    /// </summary>
     public void DeleteSelectedVertex()
     {
-        var vertices = SelectedVertices();
-        if (_selectedVertex < 0 || vertices is null || _selectedVertex >= vertices.Count)
+        if (_selectedVertex < 0)
         {
-            Say("Select a corner before deleting it.");
+            Say("Select a corner, or choose Remove Corner and click one.");
             return;
         }
-        if (vertices.Count <= 3)
-        {
-            Say("A closed shape needs at least three corners.");
-            return;
-        }
+
+        bool exterior = _selectedPerimeterVertex;
+        Guid? roomId = exterior ? null : _selectedRoomId;
         var previous = Snapshot();
-        vertices.RemoveAt(_selectedVertex);
-        if (!Validate(out var reason))
+
+        if (!PerimeterEditing.TryRemoveCorner(Document(), exterior, roomId,
+                _selectedVertex, out var updated, out var reason))
         {
-            Restore(previous);
-            Say($"Cannot delete corner: {reason}");
+            Say($"Cannot remove corner: {reason}");
             return;
         }
-        PushUndo(previous);
+
+        _outline = updated.Perimeter;
+        _rooms = updated.Rooms;
+        _doors = updated.Doors;
         _selectedVertex = -1;
-        InvalidateVisual();
-        Changed?.Invoke(this, EventArgs.Empty);
-        Say("Corner deleted.");
+        PushUndo(previous);
+        RaiseChanged();
+        Say("Corner removed; the adjacent walls are now one segment.");
     }
 
     public void Undo()
@@ -391,12 +396,14 @@ public sealed class FloorPlanSurface : FrameworkElement
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
         }
 
-        if (Tool is EditorTool.Select or EditorTool.SplitPerimeter)
+        if (Tool is EditorTool.Select or EditorTool.SplitPerimeter or EditorTool.RemoveCorner)
         {
             DrawVertices(dc, _outline, _selectedPerimeterVertex, Brushes.SteelBlue);
             foreach (var room in _rooms)
-                if (room.Id == _selectedRoomId)
-                    DrawVertices(dc, room.Outline, !_selectedPerimeterVertex, Brushes.DarkSlateBlue);
+                if (Tool == EditorTool.RemoveCorner || room.Id == _selectedRoomId)
+                    DrawVertices(dc, room.Outline,
+                        room.Id == _selectedRoomId && !_selectedPerimeterVertex,
+                        Brushes.DarkSlateBlue);
         }
 
         if (_draft.Count > 0)
@@ -558,6 +565,13 @@ public sealed class FloorPlanSurface : FrameworkElement
         if (Tool == EditorTool.SplitPerimeter)
         {
             TryInsertCorner(position, perimeterOnly: true);
+            e.Handled = true;
+            return;
+        }
+
+        if (Tool == EditorTool.RemoveCorner)
+        {
+            TryRemoveCornerAt(position);
             e.Handled = true;
             return;
         }
@@ -773,6 +787,45 @@ public sealed class FloorPlanSurface : FrameworkElement
             return true;
         }
         return false;
+    }
+
+    private void TryRemoveCornerAt(Point position)
+    {
+        // The exterior has priority at a shared corner; this keeps the tool
+        // intuitive when a room touches the building's outer wall.
+        if (TryVertexHit(_outline, position, out int index))
+        {
+            _selectedPerimeterVertex = true;
+            _selectedRoomId = null;
+            _selectedDoorId = null;
+            _selectedVertex = index;
+            DeleteSelectedVertex();
+            return;
+        }
+
+        var selectedRoom = _rooms.FirstOrDefault(r => r.Id == _selectedRoomId);
+        if (selectedRoom is not null &&
+            TryVertexHit(selectedRoom.Outline, position, out index))
+        {
+            _selectedPerimeterVertex = false;
+            _selectedVertex = index;
+            _selectedDoorId = null;
+            DeleteSelectedVertex();
+            return;
+        }
+
+        foreach (var room in _rooms)
+        {
+            if (!TryVertexHit(room.Outline, position, out index)) continue;
+            _selectedPerimeterVertex = false;
+            _selectedRoomId = room.Id;
+            _selectedDoorId = null;
+            _selectedVertex = index;
+            DeleteSelectedVertex();
+            return;
+        }
+
+        Say("Click within 10 screen pixels of an existing corner to remove it.");
     }
 
     private bool TryInsertCorner(Point position, bool perimeterOnly)

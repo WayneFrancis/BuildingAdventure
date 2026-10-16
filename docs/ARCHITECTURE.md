@@ -30,6 +30,12 @@ validation. Procedural generation remains **not implemented yet**.
 - Splitting an exterior/room edge propagates the same new vertex to all
   coincident room and exterior edges. This preserves shared-edge topology and
   does not change the actual outline until the new point is dragged.
+- Removing a corner joins its two incident segments. Matching shared
+  room/perimeter vertices are removed together when both adjacent edges are
+  coincident with the affected old edges. Door centres on those segments
+  are remapped by proportional original wall-path distance to the joined
+  segment. All resulting geometry is validated before accepting the edit.
+  A failed merge changes no saved or in-memory drawing state.
 - A clockwise or counterclockwise ordered list of vertices defines the boundary.
 - All geometric constraints run in the renderer-independent core library.
 

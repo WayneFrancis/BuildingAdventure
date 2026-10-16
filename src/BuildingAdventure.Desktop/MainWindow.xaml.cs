@@ -66,6 +66,7 @@ public partial class MainWindow : Window
         SelectButton.FontWeight = EditorSurface.Tool == EditorTool.Select ? FontWeights.Bold : FontWeights.Normal;
         DrawButton.FontWeight = EditorSurface.Tool == EditorTool.DrawPerimeter ? FontWeights.Bold : FontWeights.Normal;
         SplitButton.FontWeight = EditorSurface.Tool == EditorTool.SplitPerimeter ? FontWeights.Bold : FontWeights.Normal;
+        RemoveCornerButton.FontWeight = EditorSurface.Tool == EditorTool.RemoveCorner ? FontWeights.Bold : FontWeights.Normal;
         RoomButton.FontWeight = EditorSurface.Tool == EditorTool.DrawRoom ? FontWeights.Bold : FontWeights.Normal;
         DoorButton.FontWeight = EditorSurface.Tool == EditorTool.AddDoor ? FontWeights.Bold : FontWeights.Normal;
         PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
@@ -188,6 +189,7 @@ public partial class MainWindow : Window
     private void SelectTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.Select);
     private void DrawTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.DrawPerimeter);
     private void SplitPerimeter_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.SplitPerimeter);
+    private void RemoveCornerTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.RemoveCorner);
     private void RoomTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.DrawRoom);
     private void DoorTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.AddDoor);
     private void PanTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.Pan);

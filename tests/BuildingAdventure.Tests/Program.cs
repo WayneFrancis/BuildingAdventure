@@ -444,5 +444,132 @@ Check("Splitting room wall propagates to another room sharing that wall", () =>
     Assert(FloorGeometry.Validate(split, out reason), reason);
 });
 
+Check("Remove a split perimeter corner to restore one straight wall", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(original, true, null, 0,
+        new Point2(5, 0), out var split, out var splitReason), splitReason);
+    Assert(split.Perimeter.Count == 5);
+
+    Assert(PerimeterEditing.TryRemoveCorner(split, true, null, 1,
+        out var joined, out var joinReason), joinReason);
+    Assert(joined.Perimeter.SequenceEqual(rectangle));
+    Equal(PolygonGeometry.Area(joined.Perimeter), 80);
+    Equal(joined.Doors[0].Centre.X, 5);
+    Equal(joined.Doors[0].Centre.Y, 0);
+    Assert(split.Perimeter.Count == 5, "The input document must be untouched.");
+    Assert(FloorGeometry.Validate(joined, out joinReason), joinReason);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(joined));
+    Assert(loaded.Perimeter.Count == 4 && loaded.Doors.Count == 1);
+});
+
+Check("Remove angled corner joins two walls and repositions doors", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(5, 1), new(10, 0), new(10, 8), new(0, 8)],
+        Doors =
+        [
+            new DoorDefinition { Centre = new Point2(2.5, 0.5) },
+            new DoorDefinition { Centre = new Point2(7.5, 0.5) }
+        ]
+    };
+    Assert(FloorGeometry.Validate(original, out var reason), reason);
+
+    Assert(PerimeterEditing.TryRemoveCorner(original, true, null, 1,
+        out var joined, out reason), reason);
+    Assert(joined.Perimeter.SequenceEqual(rectangle));
+    Equal(joined.Doors[0].Centre.X, 2.5);
+    Equal(joined.Doors[0].Centre.Y, 0);
+    Equal(joined.Doors[1].Centre.X, 7.5);
+    Equal(joined.Doors[1].Centre.Y, 0);
+    Assert(FloorGeometry.Validate(joined, out reason), reason);
+});
+
+Check("Removing perimeter corner removes matching shared room vertex", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name = "Shop",
+                Outline = [new(0, 0), new(10, 0), new(10, 4), new(0, 4)]
+            }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(original, true, null, 0,
+        new Point2(5, 0), out var split, out var reason), reason);
+    Assert(split.Rooms[0].Outline.Count == 5);
+
+    Assert(PerimeterEditing.TryRemoveCorner(split, true, null, 1,
+        out var joined, out reason), reason);
+    Assert(joined.Perimeter.Count == 4);
+    Assert(joined.Rooms[0].Outline.Count == 4);
+    Assert(FloorGeometry.Validate(joined, out reason), reason);
+});
+
+Check("Removing interior shared corner joins adjoining room walls", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Shop",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Residence",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 4) }]
+    };
+    Assert(PerimeterEditing.TrySplitWall(original, false, original.Rooms[0].Id, 1,
+        new Point2(5, 4), out var split, out var reason), reason);
+    Assert(PerimeterEditing.TryRemoveCorner(split, false, split.Rooms[0].Id, 2,
+        out var joined, out reason), reason);
+    Assert(joined.Rooms[0].Outline.Count == 4);
+    Assert(joined.Rooms[1].Outline.Count == 4);
+    Assert(FloorGeometry.Validate(joined, out reason), reason);
+});
+
+Check("Do not remove a corner from a triangle", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(5, 0), new(2, 4)]
+    };
+    Assert(!PerimeterEditing.TryRemoveCorner(original, true, null, 1,
+        out _, out var reason));
+    Assert(reason.Contains("three corners"));
+});
+
+Check("Reject removing a corner if it would cut across an existing room", () =>
+{
+    var original = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name = "Shop",
+                Outline = [new(0, 0), new(5, 0), new(5, 2), new(0, 2)]
+            }
+        ]
+    };
+    Assert(FloorGeometry.Validate(original, out var reason), reason);
+    Assert(!PerimeterEditing.TryRemoveCorner(original, true, null, 1,
+        out _, out reason));
+    Assert(!string.IsNullOrWhiteSpace(reason));
+    Assert(original.Perimeter.SequenceEqual(rectangle));
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

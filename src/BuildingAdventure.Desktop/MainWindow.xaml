@@ -19,7 +19,7 @@
                 <MenuItem x:Name="UndoMenu" Header="_Undo" Click="Undo_Click" InputGestureText="Ctrl+Z"/>
                 <MenuItem x:Name="RedoMenu" Header="_Redo" Click="Redo_Click" InputGestureText="Ctrl+Y"/>
                 <Separator/>
-                <MenuItem Header="Delete selected corner" Click="Delete_Click" InputGestureText="Delete"/>
+                <MenuItem Header="Remove selected corner (join walls)" Click="Delete_Click" InputGestureText="Delete"/>
                 <MenuItem Header="Delete selected room" Click="DeleteRoom_Click"/>
                 <MenuItem Header="Delete selected door" Click="DeleteDoor_Click"/>
                 <MenuItem Header="Cancel drawing" Click="Cancel_Click" InputGestureText="Esc"/>
@@ -41,6 +41,7 @@
             <Button x:Name="SelectButton" Content="Select / Edit" Click="SelectTool_Click" Padding="9,4"/>
             <Button x:Name="DrawButton" Content="Draw Perimeter" Click="DrawTool_Click" Padding="9,4"/>
             <Button x:Name="SplitButton" Content="Split Perimeter" Click="SplitPerimeter_Click" Padding="9,4"/>
+            <Button x:Name="RemoveCornerButton" Content="Remove Corner" Click="RemoveCornerTool_Click" Padding="9,4"/>
             <Button x:Name="RoomButton" Content="Draw Room" Click="RoomTool_Click" Padding="9,4"/>
             <Button x:Name="DoorButton" Content="Add Door" Click="DoorTool_Click" Padding="9,4"/>
             <Button x:Name="PanButton" Content="Pan" Click="PanTool_Click" Padding="9,4"/>
@@ -76,7 +77,7 @@
                               Checked="SnapChanged" Unchecked="SnapChanged" Margin="0,0,0,18"/>
                     <Button x:Name="FinishButton" Content="Finish drawing" Click="Finish_Click"
                             Padding="8" Margin="0,0,0,10"/>
-                    <Button Content="Delete selected corner" Click="Delete_Click"
+                    <Button Content="Remove selected corner" Click="Delete_Click"
                             Padding="8" Margin="0,0,0,14"/>
                     <Separator/>
                     <TextBlock Text="ROOMS" FontSize="12" FontWeight="Bold" Foreground="#566579"
@@ -114,11 +115,11 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Draw Perimeter creates or replaces the entire exterior. For an existing building, use Split Perimeter instead of redrawing."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Split Perimeter: click an exterior wall to add a corner, then choose Select / Edit and drag the new corner to make extra angled wall segments. Double-clicking a wall in Select / Edit also splits it."/>
+                               Text="Split Perimeter adds a corner to an exterior wall. Remove Corner merges its two adjacent wall segments. Both tools support angled walls."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Draw Room: outline each room inside the perimeter. Snap to building and other room walls. Rooms cannot overlap."/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="Add Door: click a wall to create a 0.9 metre opening. Click the opening to select it. Hold Shift to disable snapping; Esc cancels drawing."/>
+                               Text="Select / Edit: select a corner and press Delete to merge its adjoining walls, or double-click a wall to split it. Add Door places a 0.9 m opening."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
                                Text="Automatic room generation, stairs, furniture and multiple stories are future milestones."/>
                 </StackPanel>

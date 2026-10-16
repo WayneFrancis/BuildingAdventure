@@ -60,6 +60,87 @@ public static class PerimeterEditing
         return true;
     }
 
+    /// <summary>
+    /// Remove a polygon corner and join its two neighboring wall segments.
+    /// Coincident corners in other polygons are removed only when both of
+    /// their incident edges lie on the two original wall segments. This
+    /// prevents blindly deleting unrelated interior junctions.
+    ///
+    /// Doors on the affected walls are repositioned along the replacement
+    /// segment, and the entire candidate must pass floor validation.
+    /// </summary>
+    public static bool TryRemoveCorner(BuildingDocument source,
+        bool exterior, Guid? roomId, int vertexIndex,
+        out BuildingDocument result, out string reason)
+    {
+        result = Copy(source);
+        reason = "";
+
+        List<Point2>? target = exterior
+            ? result.Perimeter
+            : result.Rooms.FirstOrDefault(r => r.Id == roomId)?.Outline;
+
+        if (target is null || vertexIndex < 0 || vertexIndex >= target.Count)
+        {
+            reason = "Select a valid corner to remove.";
+            return false;
+        }
+        if (target.Count <= 3)
+        {
+            reason = "A closed perimeter or room must have at least three corners.";
+            return false;
+        }
+
+        Point2 previous = target[(vertexIndex + target.Count - 1) % target.Count];
+        Point2 removed = target[vertexIndex];
+        Point2 next = target[(vertexIndex + 1) % target.Count];
+
+        // Capture which corners belong to the same connected old wall before
+        // changing any geometry. Rooms may traverse shared edges in reverse.
+        var affected = new List<(List<Point2> Polygon, int Index)> { (target, vertexIndex) };
+        IEnumerable<List<Point2>> otherPolygons =
+            new[] { result.Perimeter }.Concat(result.Rooms.Select(r => r.Outline));
+        foreach (var polygon in otherPolygons)
+        {
+            if (ReferenceEquals(polygon, target)) continue;
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                if (polygon[i].DistanceTo(removed) > VertexTolerance) continue;
+
+                Point2 before = polygon[(i + polygon.Count - 1) % polygon.Count];
+                Point2 after = polygon[(i + 1) % polygon.Count];
+                bool oneOnPrevious = OnOldWall(before, previous, removed) ||
+                                     OnOldWall(after, previous, removed);
+                bool oneOnNext = OnOldWall(before, removed, next) ||
+                                 OnOldWall(after, removed, next);
+                if (!oneOnPrevious || !oneOnNext) continue;
+
+                if (polygon.Count <= 3)
+                {
+                    reason = "A connected room would have fewer than three corners.";
+                    return false;
+                }
+
+                affected.Add((polygon, i));
+            }
+        }
+
+        foreach (var (polygon, index) in affected)
+            polygon.RemoveAt(index);
+
+        result.Doors = DoorPlacement.ForRemovedCorner(
+            source.Doors, previous, removed, next);
+
+        if (!FloorGeometry.Validate(result, out reason))
+            return false;
+
+        return true;
+    }
+
+    private static bool OnOldWall(Point2 point, Point2 first, Point2 second) =>
+        PolygonGeometry.ClosestPointOnSegment(point, first, second)
+            .DistanceTo(point) <= VertexTolerance;
+
     private static void InsertPoint(List<Point2> polygon, Point2 point)
     {
         // Iterate backwards so insertions cannot invalidate earlier indices.
