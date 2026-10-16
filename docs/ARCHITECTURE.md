@@ -85,6 +85,27 @@ validation. Procedural generation remains **not implemented yet**.
 - Up to four floors are currently supported; only the highest floor can be
   removed. Removing it also removes stair flights leading to that floor.
 
+## Interactive stairs (v0.5.1)
+
+- The WPF viewport obtains a proposed stair template from the parent window's
+  current input fields, snaps the centre to the world grid when requested, and
+  paints a green or red footprint preview using the same whole-building
+  validator that accepts/rejects commits. Invalid placement doesn't modify
+  the document.
+- In Select / Edit mode stair hit testing starts a drag preserving the local
+  cursor grab offset. The viewport previews a candidate staircase on every
+  mouse move and commits only on a valid release. On invalid release it
+  preserves the original staircase coordinates and reports why.
+- The main window owns staircase mutations because a stair spans two floors.
+  Core TryAddStaircase and TryUpdateStaircase return validated independent
+  copies, retaining IDs and floor connections when editing existing stairs.
+  The viewport overlay preserves selection after a committed update.
+- Rotation and size are editable after placement, including arbitrary
+  rotation angles. The sidebar supports exact centre coordinates and quick
+  15-degree rotation steps. Existing JSON schema version 2 is unchanged.
+- Stair creation, movement and property edits are not yet in the global
+  undo/redo history. Future work should unify them with floor-edit commands.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

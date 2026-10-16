@@ -146,6 +146,54 @@ public static class BuildingStoreys
         return true;
     }
 
+    /// <summary>Place a new staircase using whole-building validation.</summary>
+    public static bool TryAddStaircase(BuildingDocument source,
+        StaircaseDefinition proposed, out BuildingDocument result, out string reason)
+    {
+        result = Copy(source);
+        reason = "";
+        if (proposed is null || proposed.Id == Guid.Empty ||
+            result.Staircases.Any(s => s.Id == proposed.Id))
+        {
+            reason = "The new staircase needs a unique identifier.";
+            return false;
+        }
+        result.Staircases.Add(proposed.Copy());
+        return Validate(result, out reason);
+    }
+
+    /// <summary>
+    /// Update an existing staircase's size, rotation or centre without
+    /// changing its floor connection or identity. No caller-owned object
+    /// is mutated if validation fails.
+    /// </summary>
+    public static bool TryUpdateStaircase(BuildingDocument source,
+        StaircaseDefinition proposed, out BuildingDocument result, out string reason)
+    {
+        result = Copy(source);
+        reason = "";
+        if (proposed is null)
+        {
+            reason = "No staircase was provided.";
+            return false;
+        }
+
+        int index = result.Staircases.FindIndex(s => s.Id == proposed.Id);
+        if (index < 0)
+        {
+            reason = "The selected staircase was not found.";
+            return false;
+        }
+        if (result.Staircases[index].LowerFloorIndex != proposed.LowerFloorIndex)
+        {
+            reason = "A staircase cannot be reassigned to another pair of floors.";
+            return false;
+        }
+
+        result.Staircases[index] = proposed.Copy();
+        return Validate(result, out reason);
+    }
+
     public static string FloorLabel(int index) => index switch
     {
         0 => "Ground Floor",

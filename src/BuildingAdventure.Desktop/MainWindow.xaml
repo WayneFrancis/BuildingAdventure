@@ -86,21 +86,34 @@
                                Foreground="#566579" Margin="0,0,0,10"/>
                     <TextBlock x:Name="StairsText" Text="0 stair flights" Margin="0,0,0,8"/>
                     <TextBlock Text="Length (m)" Margin="0,0,0,4"/>
-                    <TextBox x:Name="StairLengthBox" Text="3.6" Padding="5" Margin="0,0,0,8"/>
+                    <TextBox x:Name="StairLengthBox" Text="3.6" Padding="5" Margin="0,0,0,8"
+                             TextChanged="StairSettingsChanged"/>
                     <TextBlock Text="Width (m)" Margin="0,0,0,4"/>
-                    <TextBox x:Name="StairWidthBox" Text="1.4" Padding="5" Margin="0,0,0,8"/>
-                    <TextBlock Text="Rotation (degrees)" Margin="0,0,0,4"/>
-                    <ComboBox x:Name="StairRotationBox" SelectedIndex="0" Padding="5" Margin="0,0,0,10">
-                        <ComboBoxItem Content="0"/>
-                        <ComboBoxItem Content="90"/>
-                        <ComboBoxItem Content="180"/>
-                        <ComboBoxItem Content="270"/>
-                    </ComboBox>
+                    <TextBox x:Name="StairWidthBox" Text="1.4" Padding="5" Margin="0,0,0,8"
+                             TextChanged="StairSettingsChanged"/>
+                    <TextBlock Text="Rotation (degrees, any angle)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="StairRotationBox" Text="0" Padding="5" Margin="0,0,0,7"
+                             TextChanged="StairSettingsChanged"/>
+                    <WrapPanel Margin="0,0,0,12">
+                        <Button Content="Rotate −15°" Click="RotateStairLeft_Click"
+                                Padding="7,4" Margin="0,0,7,0"/>
+                        <Button Content="Rotate +15°" Click="RotateStairRight_Click"
+                                Padding="7,4"/>
+                    </WrapPanel>
+                    <TextBlock Text="Selected staircase centre X (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="StairXBox" IsEnabled="False" Padding="5"
+                             Margin="0,0,0,8"/>
+                    <TextBlock Text="Selected staircase centre Y (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="StairYBox" IsEnabled="False" Padding="5"
+                             Margin="0,0,0,10"/>
+                    <Button x:Name="ApplyStairsButton" Content="Apply stair changes"
+                            IsEnabled="False" Click="ApplyStairs_Click" Padding="7"
+                            Margin="0,0,0,8"/>
                     <Button x:Name="DeleteStairsButton" Content="Remove selected staircase"
                             IsEnabled="False" Click="DeleteStairs_Click" Padding="7"
                             Margin="0,0,0,10"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,17"
-                               Text="Place Stairs: select a lower floor, then click within its footprint. The stair reservation must fit the floor above too."/>
+                               Text="Place Stairs shows a green/red preview. Click to place, then drag stairs in Select / Edit to reposition. Select stairs to edit dimensions, angle or X/Y coordinates. Shift bypasses grid snapping."/>
                     <Separator Margin="0,0,0,12"/>
                     <TextBlock Text="PERIMETER" FontSize="12" FontWeight="Bold" Foreground="#566579"
                                Margin="0,0,0,12"/>

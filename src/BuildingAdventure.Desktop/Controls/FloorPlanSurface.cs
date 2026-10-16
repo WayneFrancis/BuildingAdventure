@@ -32,6 +32,13 @@ public sealed class FloorPlanSurface : FrameworkElement
     private Guid? _selectedStairId;
     private List<StaircaseDefinition> _staircases = new();
     private int _stairFloorIndex;
+    private bool _draggingStair;
+    private StaircaseDefinition? _dragStartStair;
+    private StaircaseDefinition? _dragPreviewStair;
+    private Point2 _stairGrabOffset;
+    private bool _stairPreviewValid;
+    private string _stairPreviewReason = "";
+    private Point2? _stairPlacementHover;
     private int _selectedVertex = -1;
     private bool _selectedPerimeterVertex;
     private bool _panning;
@@ -50,6 +57,16 @@ public sealed class FloorPlanSurface : FrameworkElement
     public event EventHandler? SelectionChanged;
     public event Action<string>? Hint;
     public event Action<Point2>? StairPlacementRequested;
+    public event Action<StaircaseDefinition>? StairEditRequested;
+
+    /// <summary>Returns proposed dimensions and floor connection for new stairs.</summary>
+    public Func<StaircaseDefinition?>? StairTemplateProvider { get; set; }
+
+    /// <summary>Checks the complete multi-storey layout for a candidate flight.</summary>
+    public Func<StaircaseDefinition, (bool Valid, string Reason)>? StairValidator { get; set; }
+
+    /// <summary>Refresh the placement ghost when dimension input changes.</summary>
+    public void RefreshStairPreview() => InvalidateVisual();
 
     /// <summary>Optional whole-building constraint check for the edited floor.</summary>
     public Func<BuildingDocument, (bool Valid, string Reason)>? AdditionalValidator { get; set; }
@@ -70,17 +87,25 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool CanRedo => _redo.Count > 0 && _draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue;
     public bool HasSelectedDoor => _selectedDoorId.HasValue;
     public Guid? SelectedStaircaseId => _selectedStairId;
+    public StaircaseDefinition? SelectedStaircase =>
+        _staircases.FirstOrDefault(s => s.Id == _selectedStairId)?.Copy();
 
     /// <summary>
     /// Display all flights touching the active floor. Staircase changes are
     /// owned by the main window's multi-floor document, not the local undo
     /// history of an individual floor.
     /// </summary>
-    public void SetStairOverlay(IReadOnlyList<StaircaseDefinition> staircases, int floorIndex)
+    public void SetStairOverlay(IReadOnlyList<StaircaseDefinition> staircases,
+        int floorIndex, Guid? selectId = null)
     {
         _staircases = staircases.Select(s => s.Copy()).ToList();
         _stairFloorIndex = floorIndex;
-        _selectedStairId = null;
+        _selectedStairId = _staircases.Any(s => s.Id == selectId &&
+            (s.LowerFloorIndex == floorIndex || s.LowerFloorIndex + 1 == floorIndex))
+            ? selectId : null;
+        _draggingStair = false;
+        _dragStartStair = null;
+        _dragPreviewStair = null;
         InvalidateVisual();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -114,6 +139,9 @@ public sealed class FloorPlanSurface : FrameworkElement
         _selectedRoomId = null;
         _selectedDoorId = null;
         _selectedStairId = null;
+        _stairPlacementHover = null;
+        _draggingStair = false;
+        _dragPreviewStair = null;
         _undo.Clear();
         _redo.Clear();
         InvalidateVisual();
@@ -129,6 +157,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             _draftCursor = null;
             _partitionStart = null;
             _mergePrimaryRoomId = null;
+            _stairPlacementHover = null;
         }
         Tool = tool;
         if (tool == EditorTool.MergeRooms &&
@@ -148,8 +177,8 @@ public sealed class FloorPlanSurface : FrameworkElement
                 : "Click the first room, then an adjoining second room to merge them.",
             EditorTool.MoveWall => "Drag a wall perpendicular to itself. Connected corners and doors will follow.",
             EditorTool.AddDoor => "Click an existing wall to add a 0.9 m doorway.",
-            EditorTool.PlaceStairs => "Click inside the current floor to place a stair flight to the floor above.",
-            EditorTool.Select => "Click a room to select it, drag a corner, or double-click a wall to add a corner.",
+            EditorTool.PlaceStairs => "Move the cursor to preview stairs; click to place. Rotate or resize in the side panel.",
+            EditorTool.Select => "Drag stairs to reposition them. Click selected stairs to edit their dimensions or rotation.",
             _ => "Drag to pan; use the mouse wheel to zoom."
         });
         InvalidateVisual();
@@ -164,7 +193,26 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     public void CancelDrawing()
     {
-        if (_draft.Count == 0 && !_partitionStart.HasValue && !_mergePrimaryRoomId.HasValue) return;
+        if (_draggingStair)
+        {
+            _draggingStair = false;
+            _dragPreviewStair = null;
+            _dragStartStair = null;
+            ReleaseMouseCapture();
+            Cursor = DefaultCursor();
+            InvalidateVisual();
+            Say("Staircase movement cancelled.");
+            return;
+        }
+        if (_draft.Count == 0 && !_partitionStart.HasValue &&
+            !_mergePrimaryRoomId.HasValue && Tool != EditorTool.PlaceStairs) return;
+        _stairPlacementHover = null;
+        if (Tool == EditorTool.PlaceStairs)
+        {
+            SetTool(EditorTool.Select);
+            Say("Staircase placement cancelled.");
+            return;
+        }
         _draft.Clear();
         _draftCursor = null;
         _partitionStart = null;
@@ -516,6 +564,19 @@ public sealed class FloorPlanSurface : FrameworkElement
             }
         }
 
+        if (_draggingStair && _dragPreviewStair is not null)
+            DrawStairGhost(dc, _dragPreviewStair, _stairPreviewValid);
+        else if (Tool == EditorTool.PlaceStairs && _stairPlacementHover.HasValue)
+        {
+            var template = StairTemplateProvider?.Invoke();
+            if (template is not null)
+            {
+                template.Centre = _stairPlacementHover.Value;
+                var check = StairValidator?.Invoke(template) ?? (true, "");
+                DrawStairGhost(dc, template, check.Item1);
+            }
+        }
+
         if (Tool is EditorTool.Select or EditorTool.SplitPerimeter or EditorTool.RemoveCorner or EditorTool.MoveWall or EditorTool.SplitRoom or EditorTool.MergeRooms)
         {
             DrawVertices(dc, _outline, _selectedPerimeterVertex, Brushes.SteelBlue);
@@ -556,6 +617,27 @@ public sealed class FloorPlanSurface : FrameworkElement
             DrawText(dc, "Choose Draw Perimeter and click to place the first corner.",
                      new Point(20, 22), 15, Brushes.SlateGray);
         }
+    }
+
+    private void DrawStairGhost(DrawingContext dc, StaircaseDefinition stair, bool valid)
+    {
+        Brush stroke = valid ? Brushes.ForestGreen : Brushes.Firebrick;
+        Brush fill = valid
+            ? new SolidColorBrush(Color.FromArgb(95, 62, 176, 108))
+            : new SolidColorBrush(Color.FromArgb(95, 230, 75, 75));
+
+        var footprint = BuildingStoreys.StairFootprint(stair);
+        dc.DrawGeometry(fill, new Pen(stroke, 2.5)
+            { DashStyle = DashStyles.Dash }, BuildGeometry(footprint, true));
+
+        double radians = stair.RotationDegrees * Math.PI / 180;
+        double dx = -Math.Sin(radians), dy = Math.Cos(radians);
+        Point centre = ToScreen(stair.Centre);
+        dc.DrawLine(new Pen(stroke, 2), centre,
+            ToScreen(new Point2(stair.Centre.X + dx * stair.Length * 0.3,
+                                 stair.Centre.Y + dy * stair.Length * 0.3)));
+        DrawText(dc, valid ? "Valid stairs" : "Invalid position",
+            new Point(centre.X + 10, centre.Y + 10), 11, stroke);
     }
 
     private void DrawVertices(DrawingContext dc, IReadOnlyList<Point2> outline,
@@ -695,7 +777,22 @@ public sealed class FloorPlanSurface : FrameworkElement
 
         if (Tool == EditorTool.PlaceStairs)
         {
-            StairPlacementRequested?.Invoke(ToWorld(position));
+            var candidate = StairTemplateProvider?.Invoke();
+            if (candidate is null)
+            {
+                Say("Enter valid stair dimensions, rotation, and select a floor with a floor above.");
+                e.Handled = true;
+                return;
+            }
+            candidate.Centre = SnapStairCentre(ToWorld(position));
+            var validation = StairValidator?.Invoke(candidate) ?? (true, "");
+            if (!validation.Item1)
+            {
+                Say("Cannot place stairs: " + validation.Item2);
+                e.Handled = true;
+                return;
+            }
+            StairPlacementRequested?.Invoke(candidate.Centre);
             e.Handled = true;
             return;
         }
@@ -762,6 +859,20 @@ public sealed class FloorPlanSurface : FrameworkElement
                 _selectedVertex = -1;
                 _selectedDoorId = null;
                 _selectedRoomId = null;
+                _dragStartStair = SelectedStaircase;
+                if (_dragStartStair is not null)
+                {
+                    var pointer = ToWorld(position);
+                    _stairGrabOffset = new Point2(
+                        pointer.X - _dragStartStair.Centre.X,
+                        pointer.Y - _dragStartStair.Centre.Y);
+                    _draggingStair = true;
+                    _dragPreviewStair = _dragStartStair.Copy();
+                    _stairPreviewValid = true;
+                    _stairPreviewReason = "";
+                    CaptureMouse();
+                    Cursor = Cursors.SizeAll;
+                }
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
             }
             else
@@ -789,6 +900,12 @@ public sealed class FloorPlanSurface : FrameworkElement
             _origin = new Point(_origin.X + delta.X, _origin.Y + delta.Y);
             _lastMouse = position;
             InvalidateVisual();
+            return;
+        }
+
+        if (_draggingStair && _dragStartStair is not null)
+        {
+            PreviewStairDrag(position);
             return;
         }
 
@@ -834,6 +951,21 @@ public sealed class FloorPlanSurface : FrameworkElement
             _draftCursor = ToWorld(position);
             InvalidateVisual();
         }
+        else if (Tool == EditorTool.PlaceStairs)
+        {
+            _stairPlacementHover = SnapStairCentre(ToWorld(position));
+            InvalidateVisual();
+        }
+    }
+
+    protected override void OnMouseLeave(MouseEventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (Tool == EditorTool.PlaceStairs && !_draggingStair)
+        {
+            _stairPlacementHover = null;
+            InvalidateVisual();
+        }
     }
 
     protected override void OnMouseUp(MouseButtonEventArgs e)
@@ -846,6 +978,27 @@ public sealed class FloorPlanSurface : FrameworkElement
             Cursor = DefaultCursor();
             InvalidateVisual();
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        if (_draggingStair && e.ChangedButton == MouseButton.Left)
+        {
+            PreviewStairDrag(e.GetPosition(this));
+            _draggingStair = false;
+            ReleaseMouseCapture();
+            Cursor = DefaultCursor();
+            if (_stairPreviewValid && _dragPreviewStair is not null &&
+                _dragStartStair is not null &&
+                _dragPreviewStair.Centre.DistanceTo(_dragStartStair.Centre) > 1e-7)
+            {
+                StairEditRequested?.Invoke(_dragPreviewStair.Copy());
+            }
+            else if (!_stairPreviewValid)
+                Say("Staircase cannot move here: " + _stairPreviewReason);
+            _dragStartStair = null;
+            _dragPreviewStair = null;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
         }
 
         if (_movingWallNow && e.ChangedButton == MouseButton.Left)
@@ -1148,6 +1301,30 @@ public sealed class FloorPlanSurface : FrameworkElement
             pair.First.Outline.SequenceEqual(pair.Second.Outline)) &&
         _doors.Zip(snapshot.Doors).All(pair =>
             pair.First.Centre.Equals(pair.Second.Centre));
+
+    private Point2 SnapStairCentre(Point2 point)
+    {
+        if (!SnapToGrid || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            return point;
+        return new Point2(
+            Math.Round(point.X * 2, MidpointRounding.AwayFromZero) / 2,
+            Math.Round(point.Y * 2, MidpointRounding.AwayFromZero) / 2);
+    }
+
+    private void PreviewStairDrag(Point position)
+    {
+        if (_dragStartStair is null) return;
+        var pointer = ToWorld(position);
+        var candidate = _dragStartStair.Copy();
+        candidate.Centre = SnapStairCentre(new Point2(
+            pointer.X - _stairGrabOffset.X,
+            pointer.Y - _stairGrabOffset.Y));
+        var check = StairValidator?.Invoke(candidate) ?? (true, "");
+        _dragPreviewStair = candidate;
+        _stairPreviewValid = check.Item1;
+        _stairPreviewReason = check.Item2;
+        InvalidateVisual();
+    }
 
     private void TryAddDoor(Point position)
     {

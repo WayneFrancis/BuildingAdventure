@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.5 — Multiple floors and linked staircases (development branch)
+## v0.5.1 — Interactive staircase placement and editing (development branch)
 
 The editor currently supports:
 
@@ -27,11 +27,21 @@ The editor currently supports:
 - **Multiple floors (1–4)**: use Add Floor to create an upper floor with
   the preceding story's outline but independent rooms and doors. Switch floors
   with the selector in the right panel; remove only the highest floor.
-- **Linked staircases**: choose dimensions and one of four orientations in the
-  right panel, select the lower floor, click Place Stairs, and click a valid
-  location. Each flight is displayed on both connected floors as an UP/DOWN
-  reservation. Stairs must fit within both floor boundaries and cannot cross
-  internal partition walls. Select a staircase to remove it.
+- **Linked staircases with live placement preview**: select the lower floor,
+  enter dimensions and an arbitrary rotation angle, choose Place Stairs, and
+  move the cursor around the plan. The footprint previews in green where valid
+  and red where invalid. Click once to place, then the editor automatically
+  returns to Select / Edit with the new staircase selected.
+- **Reposition existing stairs**: in Select / Edit, click and drag a staircase,
+  including when viewing the floor above. An offset is preserved from where
+  you grabbed it, with optional 0.5 m snapping (hold Shift to bypass). The
+  new location is validated on both floors on release.
+- **Edit stair properties**: select existing stairs to populate the side
+  panel with length, width, rotation, and precise X/Y centre coordinates.
+  Click Apply stair changes to resize, rotate or reposition the same flight,
+  or use the ±15° rotation buttons for one-click rotation.
+  Stairs stay vertically aligned on both floors and cannot cross
+  internal partition walls.
 - **Merge Rooms** tool: select a room and click Merge Rooms, then click an
   adjoining room (or click the two rooms in succession). The shared partition
   disappears and the first room retains its name, type, and ID. Doors on the
@@ -62,8 +72,8 @@ furnishing; and VTT export. Staircases are reserved and displayed on both
 floors but do not yet generate stairwell rooms, ceiling holes, elevations,
 stairs geometry or automatic upper-floor circulation. Undo history for
 perimeter/room edits is local to the active floor and resets on switching
-floors; floor/stair additions and removals currently use direct controls
-rather than global undo.
+floors; staircase placement, movement and property changes currently use
+direct controls rather than global undo.
 Move Wall currently moves a chosen segment perpendicular to itself, not an
 unrestricted wall rotation or a whole chain of connected non-collinear walls. Doors are simple openings and are not
 yet a complete circulation/accessibility model.
@@ -107,7 +117,11 @@ Run the geometry checks without third-party test packages:
 | Add an upper floor | Add Floor in the right panel (copies only exterior footprint) |
 | Change floors | Select a floor in the right-hand floor selector |
 | Remove upper floor | Remove Top Floor in the right panel |
-| Add stairs | Select lower floor, set width/length/rotation, Place Stairs, then click inside both footprints |
+| Add stairs | Select lower floor, set width/length/rotation, Place Stairs; green/red live ghost guides placement |
+| Move stairs | Select / Edit, drag staircase on either connected floor; Shift bypasses grid snapping |
+| Rotate or resize stairs | Select stairs, enter dimensions and arbitrary angle, Apply stair changes |
+| Rotate quickly | Use Rotate −15° or Rotate +15° (updates a selected flight immediately) |
+| Position precisely | Select stairs, enter centre X/Y coordinates in metres, then Apply |
 | Remove stairs | Select / Edit, click staircase footprint, Remove selected staircase |
 | Move a wall | Move Wall, drag a wall perpendicular to itself; Shift disables distance snap |
 | Split any existing wall | Double-click in Select / Edit; exterior walls take priority |

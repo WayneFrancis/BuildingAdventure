@@ -1080,5 +1080,140 @@ Check("Cannot place stairs without a second floor", () =>
     Assert(!BuildingStoreys.Validate(ground, out _));
 });
 
+Check("Repositioning stairs preserves identity and alignment across both floors", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var flight = new StaircaseDefinition { Centre = new Point2(3, 3), LowerFloorIndex = 0 };
+    Assert(BuildingStoreys.TryAddStaircase(building, flight, out var placed, out reason), reason);
+    var changed = flight.Copy();
+    changed.Centre = new Point2(7, 5);
+    Assert(BuildingStoreys.TryUpdateStaircase(placed, changed,
+        out var moved, out reason), reason);
+    Assert(moved.Staircases.Count == 1 && moved.Staircases[0].Id == flight.Id);
+    Equal(moved.Staircases[0].Centre.X, 7);
+    Equal(moved.Staircases[0].Centre.Y, 5);
+    Equal(placed.Staircases[0].Centre.X, 3);
+    Equal(placed.Staircases[0].Centre.Y, 3);
+    Assert(BuildingStoreys.Validate(moved, out reason), reason);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(moved));
+    Assert(loaded.Staircases.Count == 1 && loaded.Staircases[0].Id == flight.Id);
+    Equal(loaded.Staircases[0].Centre.X, 7);
+});
+
+Check("Resize and arbitrary-angle rotation of placed stairs", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var flight = new StaircaseDefinition { Centre = new Point2(5, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(building, flight, out var placed, out reason), reason);
+    var changed = flight.Copy();
+    changed.Length = 4.5;
+    changed.Width = 1.8;
+    changed.RotationDegrees = 37;
+    Assert(BuildingStoreys.TryUpdateStaircase(placed, changed,
+        out var updated, out reason), reason);
+    Equal(PolygonGeometry.Area(BuildingStoreys.StairFootprint(updated.Staircases[0])), 8.1);
+    Equal(updated.Staircases[0].RotationDegrees, 37);
+    Equal(placed.Staircases[0].RotationDegrees, 0);
+});
+
+Check("Reject moved stairs crossing outside the upper floor, preserving originals", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var smallUpper = BuildingStoreys.GetFloor(building, 1);
+    smallUpper.Perimeter = [new(0, 0), new(6, 0), new(6, 8), new(0, 8)];
+    BuildingStoreys.SetFloor(building, 1, smallUpper);
+    var flight = new StaircaseDefinition { Centre = new Point2(3, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(building, flight,
+        out var placed, out reason), reason);
+    var changed = flight.Copy();
+    changed.Centre = new Point2(8, 4);
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, changed,
+        out var rejected, out reason));
+    Assert(reason.Contains("First Floor"));
+    Equal(placed.Staircases[0].Centre.X, 3);
+    Equal(rejected.Staircases[0].Centre.X, 8); // Candidate is separate from source.
+});
+
+Check("Reject staircase rotation that collides with an interior wall", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var flight = new StaircaseDefinition
+    {
+        Centre = new Point2(3.5, 4), Width = 1.2, Length = 3.6,
+        RotationDegrees = 0
+    };
+    Assert(BuildingStoreys.TryAddStaircase(building, flight,
+        out var placed, out reason), reason);
+    var rotated = flight.Copy();
+    rotated.RotationDegrees = 90;
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, rotated, out _, out reason));
+    Assert(reason.Contains("interior wall"));
+    Equal(placed.Staircases[0].RotationDegrees, 0);
+});
+
+Check("Stair updates preserve other staircases and floors", () =>
+{
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(building, out var withUpper, out var reason), reason);
+    building = withUpper;
+    var first = new StaircaseDefinition { Centre = new Point2(3, 3) };
+    var second = new StaircaseDefinition { Centre = new Point2(7, 5) };
+    Assert(BuildingStoreys.TryAddStaircase(building, first, out var withFirst, out reason), reason);
+    building = withFirst;
+    Assert(BuildingStoreys.TryAddStaircase(building, second, out var withSecond, out reason), reason);
+    building = withSecond;
+    var moved = first.Copy();
+    moved.Centre = new Point2(4, 3);
+    Assert(BuildingStoreys.TryUpdateStaircase(building, moved,
+        out var result, out reason), reason);
+    Assert(result.Staircases.Count == 2);
+    Equal(result.Staircases.Single(s => s.Id == second.Id).Centre.X, 7);
+    Equal(result.UpperFloors[0].Perimeter[1].X, 10);
+});
+
+Check("Stair update rejects unknown identifiers and a changed floor pair", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var existing = new StaircaseDefinition { Centre = new Point2(5, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(building, existing,
+        out var placed, out reason), reason);
+    var absent = existing.Copy();
+    absent.Id = Guid.NewGuid();
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, absent, out _, out reason));
+    Assert(reason.Contains("not found"));
+    var changedFloor = existing.Copy();
+    changedFloor.LowerFloorIndex = 1;
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, changedFloor, out _, out reason));
+    Assert(reason.Contains("pair of floors"));
+});
+
+Check("Stair creation rejects duplicate identities", () =>
+{
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(building, out var withUpper, out var reason), reason);
+    building = withUpper;
+    var stair = new StaircaseDefinition { Centre = new Point2(5, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(building, stair, out var placed, out reason), reason);
+    building = placed;
+    Assert(!BuildingStoreys.TryAddStaircase(building, stair, out _, out reason));
+    Assert(reason.Contains("unique"));
+    Assert(building.Staircases.Count == 1);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

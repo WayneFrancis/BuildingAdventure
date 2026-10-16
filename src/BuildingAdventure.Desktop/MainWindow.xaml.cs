@@ -21,11 +21,17 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        StairRotationBox.SelectedIndex = 0;
         EditorSurface.Changed += (_, _) => Refresh();
-        EditorSurface.SelectionChanged += (_, _) => UpdateSelectedRoomControls();
+        EditorSurface.SelectionChanged += (_, _) =>
+        {
+            UpdateSelectedRoomControls();
+            UpdateSelectedStairControls();
+        };
         EditorSurface.Hint += message => { _hint = message; Refresh(); };
         EditorSurface.StairPlacementRequested += PlaceStairAt;
+        EditorSurface.StairEditRequested += ApplyStairEdit;
+        EditorSurface.StairTemplateProvider = GetStairTemplate;
+        EditorSurface.StairValidator = ValidateStairCandidate;
         EditorSurface.AdditionalValidator = editedFloor =>
         {
             var candidate = BuildingStoreys.Copy(_building);
@@ -79,6 +85,7 @@ public partial class MainWindow : Window
         DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
         DeleteDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
         DeleteStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
+        ApplyStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
         AddFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
         RemoveFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) > 1;
@@ -297,51 +304,160 @@ public partial class MainWindow : Window
         double.TryParse(input, System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out value);
 
-    private void PlaceStairAt(Point2 centre)
+    private StaircaseDefinition? GetStairTemplate()
     {
-        if (_activeFloorIndex >= BuildingStoreys.FloorCount(_building) - 1)
-        {
-            _hint = "Add an upper floor, then select its lower floor to place stairs.";
-            Refresh();
-            return;
-        }
-        if (!TryReadMetres(StairLengthBox.Text, out double length) ||
+        if (StairLengthBox is null || StairWidthBox is null ||
+            StairRotationBox is null || EditorSurface is null ||
+            _activeFloorIndex >= BuildingStoreys.FloorCount(_building) - 1 ||
+            !TryReadMetres(StairLengthBox.Text, out double length) ||
             !TryReadMetres(StairWidthBox.Text, out double width) ||
-            StairRotationBox.SelectedItem is not ComboBoxItem rotationItem ||
-            !double.TryParse(rotationItem.Content?.ToString(),
-                out double rotation))
-        {
-            _hint = "Enter numeric staircase dimensions and rotation.";
-            Refresh();
-            return;
-        }
+            !TryReadMetres(StairRotationBox.Text, out double angle) ||
+            !double.IsFinite(length) || !double.IsFinite(width) ||
+            !double.IsFinite(angle))
+            return null;
 
-        if (EditorSurface.SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-            centre = new Point2(
-                Math.Round(centre.X * 2, MidpointRounding.AwayFromZero) / 2,
-                Math.Round(centre.Y * 2, MidpointRounding.AwayFromZero) / 2);
-
-        var candidate = CurrentDocument();
-        candidate.Staircases.Add(new StaircaseDefinition
+        return new StaircaseDefinition
         {
             LowerFloorIndex = _activeFloorIndex,
-            Centre = centre,
             Length = length,
             Width = width,
-            RotationDegrees = rotation
-        });
-        if (!BuildingStoreys.Validate(candidate, out var error))
+            RotationDegrees = angle
+        };
+    }
+
+    private (bool Valid, string Reason) ValidateStairCandidate(StaircaseDefinition stair)
+    {
+        var source = CurrentDocument();
+        bool valid;
+        string reason;
+        if (source.Staircases.Any(s => s.Id == stair.Id))
+            valid = BuildingStoreys.TryUpdateStaircase(source, stair, out _, out reason);
+        else
+            valid = BuildingStoreys.TryAddStaircase(source, stair, out _, out reason);
+        return (valid, reason);
+    }
+
+    private void UpdateSelectedStairControls()
+    {
+        if (EditorSurface is null || StairLengthBox is null ||
+            StairWidthBox is null || StairRotationBox is null ||
+            StairXBox is null || StairYBox is null ||
+            ApplyStairsButton is null)
+            return;
+
+        var stair = EditorSurface.SelectedStaircase;
+        bool selected = stair is not null;
+        StairXBox.IsEnabled = StairYBox.IsEnabled =
+            ApplyStairsButton.IsEnabled = selected;
+        if (stair is null)
         {
-            _hint = $"Cannot place stairs: {error}";
+            StairXBox.Text = "";
+            StairYBox.Text = "";
+            return;
+        }
+
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        StairLengthBox.Text = stair.Length.ToString("R", culture);
+        StairWidthBox.Text = stair.Width.ToString("R", culture);
+        StairRotationBox.Text = stair.RotationDegrees.ToString("R", culture);
+        StairXBox.Text = stair.Centre.X.ToString("R", culture);
+        StairYBox.Text = stair.Centre.Y.ToString("R", culture);
+    }
+
+    private void StairSettingsChanged(object sender, TextChangedEventArgs e)
+    {
+        if (EditorSurface is not null)
+            EditorSurface.RefreshStairPreview();
+    }
+
+    private void PlaceStairAt(Point2 centre)
+    {
+        var stair = GetStairTemplate();
+        if (stair is null)
+        {
+            _hint = "Select a lower floor and enter valid stair length, width and rotation.";
+            Refresh();
+            return;
+        }
+        stair.Centre = centre;
+        if (!BuildingStoreys.TryAddStaircase(CurrentDocument(), stair,
+                out var updated, out var reason))
+        {
+            _hint = $"Cannot place stairs: {reason}";
             Refresh();
             return;
         }
 
-        _building = candidate;
-        EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex);
-        _hint = $"Stairs connect {BuildingStoreys.FloorLabel(_activeFloorIndex)} to " +
-                $"{BuildingStoreys.FloorLabel(_activeFloorIndex + 1)}.";
+        _building = updated;
+        EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex, stair.Id);
+        EditorSurface.SetTool(EditorTool.Select);
+        _hint = "Staircase placed. Drag it to move, or edit its dimensions and rotation on the right.";
         Refresh();
+    }
+
+    private void ApplyStairEdit(StaircaseDefinition proposed)
+    {
+        if (!BuildingStoreys.TryUpdateStaircase(CurrentDocument(), proposed,
+                out var updated, out var reason))
+        {
+            _hint = $"Cannot change staircase: {reason}";
+            Refresh();
+            return;
+        }
+
+        _building = updated;
+        EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex, proposed.Id);
+        _hint = "Staircase updated on both floors.";
+        Refresh();
+    }
+
+    private void ApplyStairs_Click(object sender, RoutedEventArgs e)
+    {
+        var stair = EditorSurface.SelectedStaircase;
+        if (stair is null) return;
+
+        if (!TryReadMetres(StairLengthBox.Text, out double length) ||
+            !TryReadMetres(StairWidthBox.Text, out double width) ||
+            !TryReadMetres(StairRotationBox.Text, out double rotation) ||
+            !TryReadMetres(StairXBox.Text, out double x) ||
+            !TryReadMetres(StairYBox.Text, out double y) ||
+            !double.IsFinite(x) || !double.IsFinite(y))
+        {
+            _hint = "Please enter valid numeric staircase size, rotation, X and Y values.";
+            Refresh();
+            return;
+        }
+
+        stair.Length = length;
+        stair.Width = width;
+        stair.RotationDegrees = rotation;
+        stair.Centre = new Point2(x, y);
+        ApplyStairEdit(stair);
+    }
+
+    private void RotateStairLeft_Click(object sender, RoutedEventArgs e) =>
+        RotateStairs(-15);
+
+    private void RotateStairRight_Click(object sender, RoutedEventArgs e) =>
+        RotateStairs(15);
+
+    private void RotateStairs(double degrees)
+    {
+        if (!TryReadMetres(StairRotationBox.Text, out double current) ||
+            !double.IsFinite(current))
+        {
+            _hint = "Enter a valid angle before rotating the staircase.";
+            Refresh();
+            return;
+        }
+
+        double rotation = ((current + degrees) % 360 + 360) % 360;
+        StairRotationBox.Text = rotation.ToString(
+            "0.###", System.Globalization.CultureInfo.CurrentCulture);
+        if (EditorSurface.SelectedStaircaseId.HasValue)
+            ApplyStairs_Click(this, new RoutedEventArgs());
+        else
+            EditorSurface.RefreshStairPreview();
     }
 
     private void DeleteStairs_Click(object sender, RoutedEventArgs e)
