@@ -32,6 +32,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     private Guid? _selectedStairId;
     private List<StaircaseDefinition> _staircases = new();
     private int _stairFloorIndex;
+    private List<AdjacentFloorPlan> _referenceFloors = new();
+    private double _referenceOpacity = 0.40;
     private bool _draggingStair;
     private bool _rotatingStair;
     private double _rotationStartPointerAngle;
@@ -112,6 +114,14 @@ public sealed class FloorPlanSurface : FrameworkElement
         InvalidateVisual();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
+    /// <summary>Overlay adjacent floors strictly as non-editable geometry.</summary>
+    public void SetFloorReferences(IReadOnlyList<AdjacentFloorPlan> floors, double opacity)
+    {
+        _referenceFloors = floors.ToList();
+        _referenceOpacity = Math.Clamp(opacity, 0.05, 0.85);
+        InvalidateVisual();
+    }
+
     public IReadOnlyList<Point2> GetOutline() => _outline.ToList().AsReadOnly();
     public IReadOnlyList<RoomDefinition> GetRooms() => _rooms.Select(r => r.Copy()).ToList().AsReadOnly();
     public IReadOnlyList<DoorDefinition> GetDoors() => _doors.Select(d => d.Copy()).ToList().AsReadOnly();
@@ -454,6 +464,9 @@ public sealed class FloorPlanSurface : FrameworkElement
         base.OnRender(dc);
         dc.DrawRectangle(Brushes.White, null, new Rect(RenderSize));
         DrawGrid(dc);
+        DrawFloorReferences(dc);
+
+        var openings = BuildingStoreys.GetOpenings(_staircases, _stairFloorIndex);
         Brush[] fills =
         [
             new SolidColorBrush(Color.FromArgb(105, 146, 194, 237)),
@@ -466,7 +479,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         if (_outline.Count >= 3)
         {
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(48, 157, 179, 200)),
-                null, BuildGeometry(_outline, true));
+                null, WithStairwellHoles(_outline, openings));
         }
 
         for (int index = 0; index < _rooms.Count; index++)
@@ -476,7 +489,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             bool selected = room.Id == _selectedRoomId;
             dc.DrawGeometry(fills[index % fills.Length],
                 selected ? new Pen(Brushes.DodgerBlue, 1.4) : null,
-                BuildGeometry(room.Outline, true));
+                WithStairwellHoles(room.Outline, openings));
             Point2 labelPoint = FindRoomLabelPoint(room.Outline);
             Point centre = ToScreen(labelPoint);
             DrawText(dc, room.Name, new Point(centre.X + 5, centre.Y - 12),
@@ -525,6 +538,22 @@ public sealed class FloorPlanSurface : FrameworkElement
             Pen doorPen = new(door.Id == _selectedDoorId ? Brushes.OrangeRed : Brushes.SaddleBrown, 2);
             dc.DrawLine(doorPen, ToScreen(hinge), ToScreen(openEnd));
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
+        }
+
+        foreach (var opening in openings)
+        {
+            // White interior and a dashed boundary indicate missing upper
+            // floor slab, not another room or a wall.
+            var shape = BuildGeometry(opening.Outline, true);
+            dc.DrawGeometry(Brushes.White,
+                new Pen(Brushes.DarkOrange, 2.2)
+                { DashStyle = DashStyles.Dash },
+                shape);
+            double x = opening.Outline.Average(p => p.X);
+            double y = opening.Outline.Average(p => p.Y);
+            Point label = ToScreen(new Point2(x, y));
+            DrawText(dc, "OPEN TO BELOW", new Point(label.X + 5, label.Y + 15),
+                10, Brushes.DarkRed);
         }
 
         foreach (var stair in _staircases.Where(stair =>
@@ -624,6 +653,55 @@ public sealed class FloorPlanSurface : FrameworkElement
         {
             DrawText(dc, "Choose Draw Perimeter and click to place the first corner.",
                      new Point(20, 22), 15, Brushes.SlateGray);
+        }
+    }
+
+    private Geometry WithStairwellHoles(IReadOnlyList<Point2> outline,
+        IReadOnlyList<StairwellOpening> openings)
+    {
+        Geometry current = BuildGeometry(outline, true);
+        foreach (var opening in openings)
+            current = new CombinedGeometry(GeometryCombineMode.Exclude,
+                current, BuildGeometry(opening.Outline, true));
+        return current;
+    }
+
+    private void DrawFloorReferences(DrawingContext dc)
+    {
+        foreach (var reference in _referenceFloors)
+        {
+            if (reference.Floor.Perimeter.Count < 3) continue;
+            bool above = reference.IsAbove;
+            Color baseColor = above
+                ? Color.FromRgb(20, 146, 143)
+                : Color.FromRgb(151, 90, 178);
+            byte outlineAlpha = (byte)Math.Round(220 * _referenceOpacity);
+            byte fillAlpha = (byte)Math.Round(28 * _referenceOpacity);
+            var lineBrush = new SolidColorBrush(Color.FromArgb(
+                outlineAlpha, baseColor.R, baseColor.G, baseColor.B));
+            var fillBrush = new SolidColorBrush(Color.FromArgb(
+                fillAlpha, baseColor.R, baseColor.G, baseColor.B));
+            var outlinePen = new Pen(lineBrush, 2)
+            {
+                DashStyle = DashStyles.Dash
+            };
+            dc.DrawGeometry(fillBrush, outlinePen,
+                BuildGeometry(reference.Floor.Perimeter, true));
+
+            foreach (var wall in FloorGeometry.BuildWalls(
+                reference.Floor.Perimeter, reference.Floor.Rooms))
+            {
+                if (wall.IsExterior) continue;
+                dc.DrawLine(new Pen(lineBrush, 1.3)
+                    { DashStyle = DashStyles.Dash },
+                    ToScreen(wall.A), ToScreen(wall.B));
+            }
+
+            // Show the overlay name near its exterior corner instead of
+            // blocking central room labels.
+            var corner = ToScreen(reference.Floor.Perimeter[0]);
+            DrawText(dc, above ? "ABOVE" : "BELOW",
+                new Point(corner.X + 5, corner.Y - 21), 11, lineBrush);
         }
     }
 

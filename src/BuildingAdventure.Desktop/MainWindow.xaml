@@ -76,6 +76,20 @@
                                Margin="0,0,0,10"/>
                     <ComboBox x:Name="FloorPicker" SelectionChanged="FloorPicker_SelectionChanged"
                               Padding="5" Margin="0,0,0,9"/>
+                    <TextBlock Text="ALIGN ADJACENT FLOORS" FontSize="11"
+                               FontWeight="Bold" Foreground="#566579" Margin="0,4,0,7"/>
+                    <WrapPanel Margin="0,0,0,7">
+                        <CheckBox x:Name="ShowBelowCheckBox" Content="Below" Margin="0,0,15,0"
+                                  Checked="AlignmentChanged" Unchecked="AlignmentChanged"/>
+                        <CheckBox x:Name="ShowAboveCheckBox" Content="Above"
+                                  Checked="AlignmentChanged" Unchecked="AlignmentChanged"/>
+                    </WrapPanel>
+                    <TextBlock Text="Reference visibility" Margin="0,0,0,4"
+                               Foreground="#566579"/>
+                    <Slider x:Name="AlignmentOpacitySlider" Minimum="0.15" Maximum="0.85"
+                            Value="0.45" TickFrequency="0.1" IsSnapToTickEnabled="False"
+                            ValueChanged="AlignmentOpacityChanged"
+                            Margin="0,0,0,10"/>
                     <WrapPanel Margin="0,0,0,10">
                         <Button x:Name="AddFloorButton" Content="Add Floor" Click="AddFloor_Click"
                                 Padding="7,5" Margin="0,0,7,0"/>
@@ -87,12 +101,20 @@
                     <TextBlock Text="STAIRCASES" FontSize="12" FontWeight="Bold"
                                Foreground="#566579" Margin="0,0,0,10"/>
                     <TextBlock x:Name="StairsText" Text="0 stair flights" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="OpeningText" Text="0 stairwell openings above ground"
+                               Margin="0,0,0,10"/>
                     <TextBlock Text="Length (m)" Margin="0,0,0,4"/>
                     <TextBox x:Name="StairLengthBox" Text="3.6" Padding="5" Margin="0,0,0,8"
                              TextChanged="StairSettingsChanged"/>
                     <TextBlock Text="Width (m)" Margin="0,0,0,4"/>
                     <TextBox x:Name="StairWidthBox" Text="1.4" Padding="5" Margin="0,0,0,8"
                              TextChanged="StairSettingsChanged"/>
+                    <TextBlock Text="Extra stairwell opening width (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="OpeningWidthBox" Text="0" Padding="5"
+                             TextChanged="StairSettingsChanged" Margin="0,0,0,8"/>
+                    <TextBlock Text="Extra stairwell opening length (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="OpeningLengthBox" Text="0" Padding="5"
+                             TextChanged="StairSettingsChanged" Margin="0,0,0,8"/>
                     <TextBlock Text="Rotation (degrees, any angle)" Margin="0,0,0,4"/>
                     <TextBox x:Name="StairRotationBox" Text="0" Padding="5" Margin="0,0,0,7"
                              TextChanged="StairSettingsChanged"/>
@@ -117,12 +139,13 @@
                             IsEnabled="False" Click="DeleteStairs_Click" Padding="7"
                             Margin="0,0,0,10"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,17"
-                               Text="In Select / Edit: drag a staircase to move it, or drag its orange circular rotation handle to turn it freely. Hold Shift while rotating to snap to 15° increments. Changes must fit both floors."/>
+                               Text="Stairwell openings are cut out of the upper floor slab and follow the stairs. Increase opening clearance if needed; both stair and opening must fit the connected floors without crossing walls."/>
                     <Separator Margin="0,0,0,12"/>
                     <TextBlock Text="PERIMETER" FontSize="12" FontWeight="Bold" Foreground="#566579"
                                Margin="0,0,0,12"/>
                     <TextBlock x:Name="CornersText" Text="0 corners" Margin="0,0,0,8"/>
                     <TextBlock x:Name="AreaText" Text="Area: —" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="SlabAreaText" Text="Slab area: —" Margin="0,0,0,8"/>
                     <TextBlock x:Name="LengthText" Text="Wall length: —" Margin="0,0,0,16"/>
                     <CheckBox x:Name="SnapCheckBox" Content="Snap to 0.5 m grid" IsChecked="True"
                               Checked="SnapChanged" Unchecked="SnapChanged" Margin="0,0,0,18"/>
@@ -172,7 +195,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="Move Wall drags an entire wall. In Select / Edit, dragging a corner snaps to nearby corners or wall edges; hold Shift for precise unsnapped placement. Add Door inserts a 0.9 m doorway."/>
                     <TextBlock TextWrapping="Wrap" FontStyle="Italic" Foreground="#566579"
-                               Text="Floors 1–4 and linked stair footprints are supported. Stair reservations are overlays, not automatically carved stairwell rooms. Furniture and automatic generation are future milestones."/>
+                               Text="Stairwell slab openings and translucent adjacent-floor references are supported. Structural beams, real 3D floor thickness, furniture and automatic generation are future milestones."/>
                 </StackPanel>
             </ScrollViewer>
         </Border>

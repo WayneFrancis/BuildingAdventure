@@ -1351,5 +1351,189 @@ Check("Different floors can have independent differently shaped perimeters", () 
     Equal(PolygonGeometry.Area(loaded.UpperFloors[0].Perimeter), 58);
 });
 
+Check("Stairwell cutout exists only in upper slab and reduces its usable area", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var stairs = new StaircaseDefinition
+    {
+        Centre = new Point2(5, 4), Length = 3.6, Width = 1.4,
+        OpeningExtraLength = 0.4, OpeningExtraWidth = 0.6
+    };
+    Assert(BuildingStoreys.TryAddStaircase(building, stairs,
+        out var linked, out reason), reason);
+    Assert(BuildingStoreys.GetOpenings(linked, 0).Count == 0);
+    var openings = BuildingStoreys.GetOpenings(linked, 1);
+    Assert(openings.Count == 1);
+    Assert(openings[0].StaircaseId == stairs.Id && openings[0].FloorIndex == 1);
+    Equal(PolygonGeometry.Area(openings[0].Outline), 8);
+    Equal(BuildingStoreys.SlabArea(linked, 0), 80);
+    Equal(BuildingStoreys.SlabArea(linked, 1), 72);
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(linked));
+    Equal(loaded.Staircases[0].OpeningExtraWidth, 0.6);
+    Equal(loaded.Staircases[0].OpeningExtraLength, 0.4);
+});
+
+Check("Stairwell opening rotates and moves with its staircase", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(source, out var building, out var reason), reason);
+    var original = new StaircaseDefinition
+    {
+        Centre = new Point2(4, 3), OpeningExtraWidth = 0.4
+    };
+    Assert(BuildingStoreys.TryAddStaircase(building, original,
+        out var placed, out reason), reason);
+    var changed = original.Copy();
+    changed.Centre = new Point2(6, 5);
+    changed.RotationDegrees = 30;
+    Assert(BuildingStoreys.TryUpdateStaircase(placed, changed,
+        out var moved, out reason), reason);
+    var opening = BuildingStoreys.GetOpenings(moved, 1).Single();
+    var centre = new Point2(opening.Outline.Average(p => p.X),
+                            opening.Outline.Average(p => p.Y));
+    Equal(centre.X, 6);
+    Equal(centre.Y, 5);
+    Equal(PolygonGeometry.Area(opening.Outline), 1.8 * 3.6);
+    Equal(placed.Staircases[0].Centre.X, 4);
+    Equal(placed.Staircases[0].RotationDegrees, 0);
+});
+
+Check("Stairwell extra clearance must fit the upper floor even when stairs fit", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var stair = new StaircaseDefinition { Centre = new Point2(1.5, 4), Width = 1.4 };
+    Assert(BuildingStoreys.TryAddStaircase(building, stair,
+        out var placed, out reason), reason);
+    var enlarged = stair.Copy();
+    enlarged.OpeningExtraWidth = 2; // Reaches outside x=0.
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, enlarged,
+        out _, out reason));
+    Assert(reason.Contains("stairwell opening"));
+    Equal(placed.Staircases[0].OpeningExtraWidth, 0);
+});
+
+Check("Stairwell opening cannot cut through partition wall above", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var upper = BuildingStoreys.GetFloor(building, 1);
+    upper.Rooms =
+    [
+        new RoomDefinition { Name = "West",
+            Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+        new RoomDefinition { Name = "East",
+            Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+    ];
+    BuildingStoreys.SetFloor(building, 1, upper);
+    var stairs = new StaircaseDefinition { Centre = new Point2(3.5, 4), Width = 1.2 };
+    Assert(BuildingStoreys.TryAddStaircase(building, stairs,
+        out var placed, out reason), reason);
+    var expanded = stairs.Copy();
+    expanded.OpeningExtraWidth = 2; // The stairs fit, but opening crosses x=5.
+    Assert(!BuildingStoreys.TryUpdateStaircase(placed, expanded,
+        out _, out reason));
+    Assert(reason.Contains("stairwell opening crosses an interior wall"));
+});
+
+Check("Overlapping stairwell openings are rejected even when flights do not overlap", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var building, out var reason), reason);
+    var left = new StaircaseDefinition { Centre = new Point2(3, 4), OpeningExtraWidth = 0.8 };
+    var right = new StaircaseDefinition { Centre = new Point2(5, 4), OpeningExtraWidth = 0.8 };
+    Assert(BuildingStoreys.TryAddStaircase(building, left,
+        out var once, out reason), reason);
+    Assert(!BuildingStoreys.TryAddStaircase(once, right, out _, out reason));
+    Assert(reason.Contains("overlap"));
+    Assert(once.Staircases.Count == 1);
+});
+
+Check("Older version 2 staircase files gain zero-clearance aligned openings", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(source, out var building, out var reason), reason);
+    var stairs = new StaircaseDefinition { Centre = new Point2(5, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(building, stairs,
+        out var placed, out reason), reason);
+    string serialized = BuildingDocumentJson.Serialize(placed);
+    // Simulate a pre-opening v2 file without either new JSON field.
+    serialized = System.Text.RegularExpressions.Regex.Replace(
+        serialized,
+        @",\s*""openingExtraWidth""\s*:\s*0\s*,\s*""openingExtraLength""\s*:\s*0",
+        "");
+    var legacy = BuildingDocumentJson.Deserialize(serialized);
+    Assert(legacy.Staircases.Count == 1);
+    Equal(legacy.Staircases[0].OpeningExtraWidth, 0);
+    Equal(legacy.Staircases[0].OpeningExtraLength, 0);
+    Equal(BuildingStoreys.SlabArea(legacy, 1), 80 - 3.6 * 1.4);
+});
+
+Check("Adjacent floor references return detached matching floor plans", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    var first = BuildingStoreys.GetFloor(three, 1);
+    first.Perimeter = [new(0, 0), new(7, 0), new(7, 8), new(0, 8)];
+    BuildingStoreys.SetFloor(three, 1, first);
+
+    var overlays = BuildingStoreys.AdjacentFloors(three, 1, true, true);
+    Assert(overlays.Count == 2);
+    Assert(overlays[0].FloorIndex == 0 && !overlays[0].IsAbove);
+    Assert(overlays[1].FloorIndex == 2 && overlays[1].IsAbove);
+    Equal(PolygonGeometry.Area(overlays[0].Floor.Perimeter), 80);
+    Equal(PolygonGeometry.Area(overlays[1].Floor.Perimeter), 80);
+    overlays[0].Floor.Perimeter[0] = new Point2(-10, 0);
+    Assert(three.Perimeter[0] == new Point2(0, 0));
+    Assert(BuildingStoreys.AdjacentFloors(three, 1, false, true).Count == 1);
+    Assert(BuildingStoreys.AdjacentFloors(three, 0, true, false).Count == 0);
+    Assert(BuildingStoreys.Validate(three, out reason), reason);
+});
+
+Check("Stair openings on each floor come from flights arriving there", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(source, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    var upToFirst = new StaircaseDefinition { LowerFloorIndex = 0, Centre = new Point2(3, 4) };
+    var upToSecond = new StaircaseDefinition { LowerFloorIndex = 1, Centre = new Point2(7, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(three, upToFirst, out var withFirst, out reason), reason);
+    Assert(BuildingStoreys.TryAddStaircase(withFirst, upToSecond, out var full, out reason), reason);
+    Assert(BuildingStoreys.GetOpenings(full, 0).Count == 0);
+    Assert(BuildingStoreys.GetOpenings(full, 1).Single().StaircaseId == upToFirst.Id);
+    Assert(BuildingStoreys.GetOpenings(full, 2).Single().StaircaseId == upToSecond.Id);
+});
+
+Check("Zero-clearance legacy stairs with intersecting reservations remain loadable", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var left = new StaircaseDefinition { Centre = new Point2(4, 4) };
+    var right = new StaircaseDefinition { Centre = new Point2(4.5, 4) };
+    two.Staircases.Add(left);
+    two.Staircases.Add(right);
+    Assert(BuildingStoreys.Validate(two, out reason), reason);
+    var reopened = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(two));
+    Assert(reopened.Staircases.Count == 2);
+    var altered = right.Copy();
+    altered.OpeningExtraWidth = 0.5;
+    Assert(!BuildingStoreys.TryUpdateStaircase(two, altered, out _, out reason));
+    Assert(reason.Contains("overlap"));
+});
+
+Check("Invalid negative stairwell clearance cannot be saved", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var stairs = new StaircaseDefinition
+    {
+        Centre = new Point2(5, 4), OpeningExtraLength = -0.1
+    };
+    Assert(!BuildingStoreys.TryAddStaircase(two, stairs, out _, out reason));
+    Assert(reason.Contains("Invalid staircase"));
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

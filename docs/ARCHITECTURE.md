@@ -127,6 +127,31 @@ validation. Procedural generation remains **not implemented yet**.
   edits independently. Stair flights are checked against both outlines;
   a floor change may be rejected if it would invalidate an existing flight.
 
+## Stairwell slab openings and alignment guides (v0.6)
+
+- A staircase owns its linked opening in the slab of the floor immediately
+  above it. This is a derived 2D cutout rather than an independent movable
+  object. Default opening size equals the staircase footprint, maintaining
+  compatibility with earlier v2 JSON files. Optional OpeningExtraWidth and
+  OpeningExtraLength enlarge the upper opening without changing the stairs.
+- BuildingStoreys.GetOpenings returns derived polygon rectangles by floor,
+  and SlabArea subtracts their areas from the floor footprint. The viewport
+  uses WPF CombinedGeometry Exclude for the floor and room fill surfaces,
+  paints the void boundary, and labels it OPEN TO BELOW. The stairs still
+  display on both connected floors.
+- Validation checks enlarged opening clearance inside the upper floor,
+  prohibits crossing interior walls, and rejects overlapping enlarged voids.
+  Existing v2 buildings with old overlapping stair reservations but no
+  explicit extra clearance can still be loaded.
+- Reference overlays use BuildingStoreys.AdjacentFloors, which returns
+  detached snapshots of the floors immediately above and/or below. The
+  viewport paints the referenced perimeter and interior walls with dashed,
+  translucent strokes behind the active floor. Reference opacity and floor
+  visibility are view-only UI settings, not part of building JSON.
+- Global undo/redo across staircase changes and floor operations is not
+  part of this milestone. The same stair validation applies to mouse drags,
+  rotations, numeric property edits and future outline edits.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

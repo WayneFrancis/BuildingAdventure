@@ -4,7 +4,7 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.5.2 — Drag-to-rotate stairs and independent floor outlines (development branch)
+## v0.6 — Stairwell openings and floor alignment guides (development branch)
 
 The editor currently supports:
 
@@ -27,6 +27,18 @@ The editor currently supports:
 - **Multiple floors (1–4)**: use Add Floor to create an upper floor with
   the preceding story's outline but independent rooms and doors. Switch floors
   with the selector in the right panel; remove only the highest floor.
+- **True 2D stairwell slab openings**: each stair flight now cuts a linked
+  opening in the floor above (not the lower floor). The room and floor
+  surface fills exclude these voids. Openings follow staircase translation,
+  rotation and dimension changes. Extra opening width/length can be specified
+  independently; these larger clearances are validated against the upper
+  perimeter, room partitions and other expanded openings.
+- **Adjacent-floor alignment overlay**: check Above, Below, or both in the
+  FLOORS panel to see reference outlines and partitions as translucent dashed
+  guides. Adjust their visibility with the slider. Reference geometry is
+  never editable and stays in the same world coordinates across floors.
+- **Usable slab area**: the current floor displays its gross footprint area
+  as well as floor area less computed stairwell voids.
 - **Linked staircases with live placement preview**: select the lower floor,
   enter dimensions and an arbitrary rotation angle, choose Place Stairs, and
   move the cursor around the plan. The footprint previews in green where valid
@@ -78,9 +90,9 @@ The editor currently supports:
 
 **Not yet implemented:** automatic room generation; free-standing unenclosed
 partition walls; window placement; door width editing; hidden passages;
-furnishing; and VTT export. Staircases are reserved and displayed on both
-floors but do not yet generate stairwell rooms, ceiling holes, elevations,
-stairs geometry or automatic upper-floor circulation. Undo history for
+furnishing; and VTT export. Stairwell cutouts are represented in the 2D
+floor-slab plan; realistic 3D structural slabs, rise/run calculations,
+landings, guardrails and automatic stairwell rooms are still future work. Undo history for
 perimeter/room edits is local to the active floor and resets on switching
 floors; staircase placement, movement and property changes currently use
 direct controls rather than global undo.
@@ -126,6 +138,7 @@ Run the geometry checks without third-party test packages:
 | Merge adjacent rooms | Select a room, Merge Rooms, click the second room; or click both in Merge Rooms mode |
 | Add an upper floor | Add Floor in the right panel (copies only exterior footprint) |
 | Change floors | Select a floor in the right-hand floor selector |
+| Compare floor alignment | Turn on Above and/or Below; adjust Reference visibility |
 | Remove upper floor | Remove Top Floor in the right panel |
 | Add stairs | Select lower floor, set width/length/rotation, Place Stairs; green/red live ghost guides placement |
 | Move stairs | Select / Edit, drag staircase on either connected floor; Shift bypasses grid snapping |
@@ -133,6 +146,8 @@ Run the geometry checks without third-party test packages:
 | Rotate or resize stairs | Select stairs, enter dimensions and arbitrary angle, Apply stair changes |
 | Rotate quickly | Use Rotate −15° or Rotate +15° (updates a selected flight immediately) |
 | Position precisely | Select stairs, enter centre X/Y coordinates in metres, then Apply |
+| Widen stairwell opening | Select stairs, set extra opening width/length, then Apply |
+| View slab openings | Switch to the upper floor; a dashed 'OPEN TO BELOW' void follows each arriving flight |
 | Remove stairs | Select / Edit, click staircase footprint, Remove selected staircase |
 | Move a wall | Move Wall, drag a wall perpendicular to itself; Shift disables distance snap |
 | Split any existing wall | Double-click in Select / Edit; exterior walls take priority |
@@ -170,6 +185,15 @@ floor picker, then use Split Perimeter to add vertices, Select / Edit to drag
 them, or Remove Corner to simplify that story alone. You can make the upper
 floor smaller, larger or differently shaped (subject to normal polygon
 validation and keeping existing stairs inside both connected floor outlines).
+
+Each staircase carries optional **OpeningExtraWidth** and
+**OpeningExtraLength** dimensions (0 by default for existing files). The cutout
+is centred and rotated with its stairs; the upper-floor slab and filled rooms
+are geometrically excluded from that rectangle. The opening has no separate
+floating position to become detached. Stairwells cannot cut through interior
+walls or leave the upper floor. Legacy v2 files with zero extra clearance
+remain readable. The global undo history for stair and floor changes is still
+planned for a later milestone.
 
 A multi-floor document uses JSON schema version 2 while preserving ground
 floor fields from previous files. Its upperFloors array stores independent

@@ -34,6 +34,11 @@ public sealed class StaircaseDefinition
     public double Width { get; set; } = 1.4;
     public double RotationDegrees { get; set; }
 
+    // Additional void clearance around the stairs on the upper floor.
+    // Defaults to zero to preserve all existing v2 staircase placements.
+    public double OpeningExtraWidth { get; set; }
+    public double OpeningExtraLength { get; set; }
+
     public StaircaseDefinition Copy() => new()
     {
         Id = Id,
@@ -41,9 +46,19 @@ public sealed class StaircaseDefinition
         Centre = Centre,
         Length = Length,
         Width = Width,
-        RotationDegrees = RotationDegrees
+        RotationDegrees = RotationDegrees,
+        OpeningExtraWidth = OpeningExtraWidth,
+        OpeningExtraLength = OpeningExtraLength
     };
 }
+
+/// <summary>A floor slab void computed from a linked staircase.</summary>
+public sealed record StairwellOpening(Guid StaircaseId, int FloorIndex,
+    List<Point2> Outline);
+
+/// <summary>A reference floor displayed only as a translucent guide.</summary>
+public sealed record AdjacentFloorPlan(int FloorIndex, bool IsAbove,
+    BuildingDocument Floor);
 
 public static class BuildingStoreys
 {
@@ -60,6 +75,57 @@ public static class BuildingStoreys
         UpperFloors = source.UpperFloors.Select(f => f.Copy()).ToList(),
         Staircases = source.Staircases.Select(s => s.Copy()).ToList()
     };
+
+    /// <summary>
+    /// An opening exists in the upper slab of each stair flight, not in the
+    /// slab it starts from. The opening follows its stair's centre and angle.
+    /// </summary>
+    public static List<StairwellOpening> GetOpenings(
+        IReadOnlyList<StaircaseDefinition> staircases, int floorIndex) =>
+        floorIndex <= 0
+            ? new List<StairwellOpening>()
+            : staircases
+                .Where(s => s.LowerFloorIndex == floorIndex - 1)
+                .Select(s => new StairwellOpening(s.Id, floorIndex,
+                    StairOpeningFootprint(s)))
+                .ToList();
+
+    public static List<StairwellOpening> GetOpenings(
+        BuildingDocument building, int floorIndex)
+    {
+        CheckFloorIndex(building, floorIndex);
+        return GetOpenings(building.Staircases, floorIndex);
+    }
+
+    public static double SlabArea(BuildingDocument building, int floorIndex)
+    {
+        var floor = GetFloor(building, floorIndex);
+        return PolygonGeometry.Area(floor.Perimeter) -
+            GetOpenings(building, floorIndex)
+                .Sum(opening => PolygonGeometry.Area(opening.Outline));
+    }
+
+    public static List<AdjacentFloorPlan> AdjacentFloors(BuildingDocument building,
+        int floorIndex, bool includeBelow, bool includeAbove)
+    {
+        CheckFloorIndex(building, floorIndex);
+        var adjacent = new List<AdjacentFloorPlan>();
+        if (includeBelow && floorIndex > 0)
+            adjacent.Add(new AdjacentFloorPlan(
+                floorIndex - 1, false, GetFloor(building, floorIndex - 1)));
+        if (includeAbove && floorIndex + 1 < FloorCount(building))
+            adjacent.Add(new AdjacentFloorPlan(
+                floorIndex + 1, true, GetFloor(building, floorIndex + 1)));
+        return adjacent;
+    }
+
+    public static List<Point2> StairOpeningFootprint(StaircaseDefinition stair)
+    {
+        var enlarged = stair.Copy();
+        enlarged.Width += stair.OpeningExtraWidth;
+        enlarged.Length += stair.OpeningExtraLength;
+        return StairFootprint(enlarged);
+    }
 
     /// <summary>Returns a separate single-floor document suitable for the existing editor.</summary>
     public static BuildingDocument GetFloor(BuildingDocument building, int floorIndex)
@@ -264,13 +330,18 @@ public static class BuildingStoreys
                 !double.IsFinite(stair.Centre.X) || !double.IsFinite(stair.Centre.Y) ||
                 !double.IsFinite(stair.Width) || stair.Width < 0.7 || stair.Width > 5 ||
                 !double.IsFinite(stair.Length) || stair.Length < 1.8 || stair.Length > 12 ||
-                !double.IsFinite(stair.RotationDegrees))
+                !double.IsFinite(stair.RotationDegrees) ||
+                !double.IsFinite(stair.OpeningExtraWidth) ||
+                stair.OpeningExtraWidth < 0 || stair.OpeningExtraWidth > 4 ||
+                !double.IsFinite(stair.OpeningExtraLength) ||
+                stair.OpeningExtraLength < 0 || stair.OpeningExtraLength > 6)
             {
                 reason = "Invalid staircase location, floor connection, or dimensions.";
                 return false;
             }
 
             var footprint = StairFootprint(stair);
+            var opening = StairOpeningFootprint(stair);
             if (!PolygonGeometry.IsValidOutline(footprint, out var error))
             {
                 reason = "Invalid staircase footprint: " + error;
@@ -298,6 +369,70 @@ public static class BuildingStoreys
                     }
                 }
             }
+
+            // The upstairs slab has the opening, which may be bigger than
+            // the staircase itself. Validate the complete void clearance
+            // against that floor's exterior and interior walls.
+            var upperFloor = GetFloor(building, stair.LowerFloorIndex + 1);
+            if (!FloorGeometry.IsWithinPolygon(opening, upperFloor.Perimeter))
+            {
+                reason = $"The stairwell opening does not fit inside {FloorLabel(stair.LowerFloorIndex + 1)}.";
+                return false;
+            }
+            foreach (var wall in FloorGeometry.BuildWalls(upperFloor.Perimeter, upperFloor.Rooms))
+            {
+                if (wall.IsExterior) continue;
+                if (WallCrossesFootprintInterior(wall, opening))
+                {
+                    reason = $"The stairwell opening crosses an interior wall on {FloorLabel(stair.LowerFloorIndex + 1)}.";
+                    return false;
+                }
+            }
+        }
+
+        // Voids must not overlap: unioning several different holes would
+        // otherwise misstate usable slab area and create ambiguous openings.
+        for (int floorIndex = 1; floorIndex < FloorCount(building); floorIndex++)
+        {
+            var openings = GetOpenings(building, floorIndex);
+            for (int i = 0; i < openings.Count; i++)
+            for (int j = i + 1; j < openings.Count; j++)
+            {
+                // Legacy v2 files could contain intersecting stair footprints.
+                // Keep those files loadable when neither flight asks for
+                // additional clearance; new expanded openings must not clash.
+                var first = building.Staircases.First(s =>
+                    s.Id == openings[i].StaircaseId);
+                var second = building.Staircases.First(s =>
+                    s.Id == openings[j].StaircaseId);
+                bool hasExtraClearance =
+                    first.OpeningExtraWidth > 0 || first.OpeningExtraLength > 0 ||
+                    second.OpeningExtraWidth > 0 || second.OpeningExtraLength > 0;
+                if (!hasExtraClearance ||
+                    !ConvexPolygonsOverlap(openings[i].Outline, openings[j].Outline))
+                    continue;
+                reason = $"Stairwell openings overlap on {FloorLabel(floorIndex)}.";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Separating-axis theorem for rotated rectangular holes.
+    private static bool ConvexPolygonsOverlap(
+        IReadOnlyList<Point2> first, IReadOnlyList<Point2> second)
+    {
+        foreach (var polygon in new[] { first, second })
+        for (int i = 0; i < polygon.Count; i++)
+        {
+            var a = polygon[i];
+            var b = polygon[(i + 1) % polygon.Count];
+            double axisX = -(b.Y - a.Y), axisY = b.X - a.X;
+            var f = first.Select(p => p.X * axisX + p.Y * axisY).ToList();
+            var s = second.Select(p => p.X * axisX + p.Y * axisY).ToList();
+            if (f.Max() <= s.Min() + 1e-7 ||
+                s.Max() <= f.Min() + 1e-7)
+                return false;
         }
         return true;
     }

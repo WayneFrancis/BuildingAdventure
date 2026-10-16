@@ -42,6 +42,7 @@ public partial class MainWindow : Window
         EditorSurface.SetTool(EditorTool.DrawPerimeter);
         RebuildFloorPicker();
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
+        UpdateAlignmentReferences();
         _lastSavedJson = CurrentJson();
         Loaded += (_, _) => { EditorSurface.Focus(); Refresh(); };
         Closing += (_, e) => { if (!ConfirmDiscard()) e.Cancel = true; };
@@ -80,6 +81,12 @@ public partial class MainWindow : Window
         var outline = EditorSurface.GetOutline();
         CornersText.Text = $"{outline.Count} corners";
         AreaText.Text = outline.Count >= 3 ? $"Area: {PolygonGeometry.Area(outline):N2} m²" : "Area: —";
+        double slabArea = outline.Count < 3 ? 0
+            : PolygonGeometry.Area(outline) -
+              BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex)
+                  .Sum(o => PolygonGeometry.Area(o.Outline));
+        SlabAreaText.Text = outline.Count < 3 ? "Slab area: —"
+            : $"Slab area excluding voids: {slabArea:N2} m²";
         LengthText.Text = outline.Count >= 3 ? $"Exterior walls: {PolygonGeometry.Perimeter(outline):N2} m" : "Exterior walls: —";
         RoomsText.Text = $"{EditorSurface.GetRooms().Count} rooms, {EditorSurface.GetDoors().Count} doors";
         DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
@@ -87,6 +94,7 @@ public partial class MainWindow : Window
         DeleteStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         ApplyStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
+        OpeningText.Text = $"{BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex).Count} opening(s) in this slab";
         AddFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
         RemoveFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) > 1;
         UndoButton.IsEnabled = UndoMenu.IsEnabled = EditorSurface.CanUndo;
@@ -118,6 +126,7 @@ public partial class MainWindow : Window
         EditorSurface.LoadOutline(Array.Empty<Point2>());
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
         RebuildFloorPicker();
+        UpdateAlignmentReferences();
         NameBox.Text = "Untitled Building";
         _filePath = null;
         _loading = false;
@@ -145,6 +154,7 @@ public partial class MainWindow : Window
             EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
             EditorSurface.SetStairOverlay(_building.Staircases, 0);
             RebuildFloorPicker();
+            UpdateAlignmentReferences();
             NameBox.Text = document.Name;
             _filePath = dialog.FileName;
             _loading = false;
@@ -240,6 +250,7 @@ public partial class MainWindow : Window
         _activeFloorIndex = index;
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, index));
         EditorSurface.SetStairOverlay(_building.Staircases, index);
+        UpdateAlignmentReferences();
         EditorSurface.SetTool(EditorTool.Select);
         FloorPicker.SelectedIndex = index;
         _loading = false;
@@ -247,6 +258,26 @@ public partial class MainWindow : Window
         _hint = $"Editing {BuildingStoreys.FloorLabel(index)}.";
         Refresh();
     }
+
+    private void UpdateAlignmentReferences()
+    {
+        if (EditorSurface is null || ShowBelowCheckBox is null ||
+            ShowAboveCheckBox is null || AlignmentOpacitySlider is null)
+            return;
+
+        var references = BuildingStoreys.AdjacentFloors(
+            _building, _activeFloorIndex,
+            ShowBelowCheckBox.IsChecked == true,
+            ShowAboveCheckBox.IsChecked == true);
+        EditorSurface.SetFloorReferences(references, AlignmentOpacitySlider.Value);
+    }
+
+    private void AlignmentChanged(object sender, RoutedEventArgs e) =>
+        UpdateAlignmentReferences();
+
+    private void AlignmentOpacityChanged(object sender,
+        RoutedPropertyChangedEventArgs<double> e) =>
+        UpdateAlignmentReferences();
 
     private void FloorPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -307,12 +338,16 @@ public partial class MainWindow : Window
     private StaircaseDefinition? GetStairTemplate()
     {
         if (StairLengthBox is null || StairWidthBox is null ||
+            OpeningWidthBox is null || OpeningLengthBox is null ||
             StairRotationBox is null || EditorSurface is null ||
             _activeFloorIndex >= BuildingStoreys.FloorCount(_building) - 1 ||
             !TryReadMetres(StairLengthBox.Text, out double length) ||
             !TryReadMetres(StairWidthBox.Text, out double width) ||
+            !TryReadMetres(OpeningWidthBox.Text, out double extraWidth) ||
+            !TryReadMetres(OpeningLengthBox.Text, out double extraLength) ||
             !TryReadMetres(StairRotationBox.Text, out double angle) ||
             !double.IsFinite(length) || !double.IsFinite(width) ||
+            !double.IsFinite(extraWidth) || !double.IsFinite(extraLength) ||
             !double.IsFinite(angle))
             return null;
 
@@ -321,6 +356,8 @@ public partial class MainWindow : Window
             LowerFloorIndex = _activeFloorIndex,
             Length = length,
             Width = width,
+            OpeningExtraWidth = extraWidth,
+            OpeningExtraLength = extraLength,
             RotationDegrees = angle
         };
     }
@@ -342,7 +379,8 @@ public partial class MainWindow : Window
         if (StairValidationText is not null)
             StairValidationText.Text = "";
         if (EditorSurface is null || StairLengthBox is null ||
-            StairWidthBox is null || StairRotationBox is null ||
+            StairWidthBox is null || OpeningWidthBox is null ||
+            OpeningLengthBox is null || StairRotationBox is null ||
             StairXBox is null || StairYBox is null ||
             ApplyStairsButton is null)
             return;
@@ -361,6 +399,8 @@ public partial class MainWindow : Window
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         StairLengthBox.Text = stair.Length.ToString("R", culture);
         StairWidthBox.Text = stair.Width.ToString("R", culture);
+        OpeningWidthBox.Text = stair.OpeningExtraWidth.ToString("R", culture);
+        OpeningLengthBox.Text = stair.OpeningExtraLength.ToString("R", culture);
         StairRotationBox.Text = stair.RotationDegrees.ToString("R", culture);
         StairXBox.Text = stair.Centre.X.ToString("R", culture);
         StairYBox.Text = stair.Centre.Y.ToString("R", culture);
@@ -434,6 +474,8 @@ public partial class MainWindow : Window
 
         if (!TryReadMetres(StairLengthBox.Text, out double length) ||
             !TryReadMetres(StairWidthBox.Text, out double width) ||
+            !TryReadMetres(OpeningWidthBox.Text, out double extraWidth) ||
+            !TryReadMetres(OpeningLengthBox.Text, out double extraLength) ||
             !TryReadMetres(StairRotationBox.Text, out double rotation) ||
             !TryReadMetres(StairXBox.Text, out double x) ||
             !TryReadMetres(StairYBox.Text, out double y) ||
@@ -445,6 +487,8 @@ public partial class MainWindow : Window
 
         stair.Length = length;
         stair.Width = width;
+        stair.OpeningExtraWidth = extraWidth;
+        stair.OpeningExtraLength = extraLength;
         stair.RotationDegrees = rotation;
         stair.Centre = new Point2(x, y);
         ApplyStairEdit(stair);
