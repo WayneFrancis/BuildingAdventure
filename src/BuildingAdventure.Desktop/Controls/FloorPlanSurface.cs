@@ -195,6 +195,16 @@ public sealed class FloorPlanSurface : FrameworkElement
         InvalidateVisual();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
+    public void SelectStairById(Guid id)
+    {
+        if (!_staircases.Any(s => s.Id == id &&
+            (s.LowerFloorIndex == _stairFloorIndex ||
+             s.LowerFloorIndex + 1 == _stairFloorIndex))) return;
+        _selectedStairId = id;
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+    }
+
     /// <summary>Overlay adjacent floors strictly as non-editable geometry.</summary>
     public void SetFloorReferences(IReadOnlyList<AdjacentFloorPlan> floors, double opacity)
     {
@@ -797,11 +807,19 @@ public sealed class FloorPlanSurface : FrameworkElement
                 BuildGeometry(footprint, true));
 
             Point middle = ToScreen(stair.Centre);
+            bool stacked = _staircases.Any(other => other.Id != stair.Id &&
+                (other.LowerFloorIndex == _stairFloorIndex ||
+                 other.LowerFloorIndex + 1 == _stairFloorIndex) &&
+                other.LowerFloorIndex != stair.LowerFloorIndex &&
+                other.Centre.DistanceTo(stair.Centre) < 0.25);
+            if (stacked)
+                middle.Offset(goingUp ? -10 : 10, goingUp ? -21 : 21);
             string label = goingUp
                 ? $"UP to {BuildingStoreys.FloorLabel(stair.LowerFloorIndex + 1)}"
                 : $"DOWN to {BuildingStoreys.FloorLabel(stair.LowerFloorIndex)}";
             DrawText(dc, label, new Point(middle.X + 5, middle.Y - 8),
-                12, Brushes.DarkSlateBlue);
+                stacked ? 11 : 12,
+                goingUp ? Brushes.DarkBlue : Brushes.DarkMagenta);
 
             // Direction arrow along the staircase's local long axis.
             double angle = stair.RotationDegrees * Math.PI / 180;
@@ -2442,18 +2460,16 @@ public sealed class FloorPlanSurface : FrameworkElement
     private bool TrySelectStair(Point position)
     {
         var world = ToWorld(position);
-        for (int i = _staircases.Count - 1; i >= 0; i--)
-        {
-            var stair = _staircases[i];
-            if (stair.LowerFloorIndex != _stairFloorIndex &&
-                stair.LowerFloorIndex + 1 != _stairFloorIndex)
-                continue;
-            if (!PolygonGeometry.ContainsPoint(BuildingStoreys.StairFootprint(stair), world))
-                continue;
-            _selectedStairId = stair.Id;
-            return true;
-        }
-        return false;
+        var matches = _staircases.Where(stair =>
+            (stair.LowerFloorIndex == _stairFloorIndex ||
+             stair.LowerFloorIndex + 1 == _stairFloorIndex) &&
+            PolygonGeometry.ContainsPoint(BuildingStoreys.StairFootprint(stair), world))
+            .OrderBy(stair => stair.LowerFloorIndex).ToList();
+        if (matches.Count == 0) return false;
+        // Repeated clicks through stacked flights cycle the active one.
+        int current = matches.FindIndex(s => s.Id == _selectedStairId);
+        _selectedStairId = matches[(current + 1) % matches.Count].Id;
+        return true;
     }
 
     private bool TrySelectDoor(Point position)

@@ -130,6 +130,8 @@ public static class BuildingGenerator
         var random = new Random(seed);
         int addedRooms = 0;
         int addedFootprints = 0;
+        var skippedFloors = new List<int>();
+        var roomsPerFloor = new List<string>();
         foreach (int index in indices)
         {
             var floor = BuildingStoreys.GetFloor(proposed, index);
@@ -162,70 +164,109 @@ public static class BuildingGenerator
             int top = (int)Math.Ceiling(minY * 2);
             int bottom = (int)Math.Floor(maxY * 2);
 
-            // A preview adds up to three useful rectangular rooms per
-            // selected floor. Future grammar/routing passes will provide
-            // hallway connectivity and furnishing; this pass does not
-            // pretend that rooms are fully architecturally connected.
+            // First try varied room proportions; if random placement misses
+            // remaining space, enumerate smaller candidate rectangles on the
+            // same half-metre lattice. This avoids "zero rooms" where a
+            // geometrically usable area still exists.
+            int thisFloorRooms = 0;
             int targetRooms = 1 + random.Next(3);
+            bool TryPlace(int x, int y, int width, int height)
+            {
+                List<Point2> shape =
+                [
+                    new(x / 2.0, y / 2.0),
+                    new((x + width) / 2.0, y / 2.0),
+                    new((x + width) / 2.0, (y + height) / 2.0),
+                    new(x / 2.0, (y + height) / 2.0)
+                ];
+
+                bool reservesStair = proposed.Staircases.Any(stair =>
+                {
+                    bool lower = stair.LowerFloorIndex == index;
+                    bool upper = stair.LowerFloorIndex + 1 == index;
+                    if (!lower && !upper) return false;
+                    var reservation = upper
+                        ? BuildingStoreys.StairOpeningFootprint(stair)
+                        : BuildingStoreys.StairFootprint(stair);
+                    // The room and stair reservation may overlap with no
+                    // vertices within the other; test centre and crossings.
+                    return FloorGeometry.IsWithinPolygon(reservation, shape) ||
+                        FloorGeometry.IsWithinPolygon(shape, reservation) ||
+                        shape.Any(p => PolygonGeometry.ContainsPoint(reservation, p)) ||
+                        reservation.Any(p => PolygonGeometry.ContainsPoint(shape, p)) ||
+                        PolygonGeometry.ContainsPoint(shape, stair.Centre);
+                });
+                if (reservesStair) return false;
+
+                string type = RoomTypes[random.Next(RoomTypes.Length)];
+                var nextFloor = BuildingStoreys.GetFloor(proposed, index);
+                nextFloor.Rooms.Add(new RoomDefinition
+                {
+                    Name = $"{type} {nextFloor.Rooms.Count + 1}",
+                    Type = type,
+                    Outline = shape
+                });
+                var next = BuildingStoreys.Copy(proposed);
+                BuildingStoreys.SetFloor(next, index, nextFloor);
+                if (!BuildingStoreys.Validate(next, out _)) return false;
+                proposed = next;
+                floor = nextFloor;
+                addedRooms++;
+                thisFloorRooms++;
+                return true;
+            }
+
             for (int roomNumber = 0; roomNumber < targetRooms; roomNumber++)
             {
+                if (right - left < 2 || bottom - top < 2) break;
                 bool placed = false;
-                if (right - left < 4 || bottom - top < 4) break;
-                for (int attempt = 0; attempt < 180; attempt++)
+                if (right - left >= 4 && bottom - top >= 4)
                 {
-                    int width = random.Next(4, Math.Min(15, right - left) + 1);
-                    int height = random.Next(4, Math.Min(13, bottom - top) + 1);
-                    int x = random.Next(left, right - width + 1);
-                    int y = random.Next(top, bottom - height + 1);
-                    List<Point2> shape =
-                    [
-                        new(x / 2.0, y / 2.0),
-                        new((x + width) / 2.0, y / 2.0),
-                        new((x + width) / 2.0, (y + height) / 2.0),
-                        new(x / 2.0, (y + height) / 2.0)
-                    ];
-                    // Keep generated functional rooms clear of physical
-                    // staircases and upper-floor slab openings; stairwells
-                    // can be explicitly created by later circulation passes.
-                    bool reservesStair = proposed.Staircases.Any(stair =>
+                    for (int attempt = 0; attempt < 220; attempt++)
                     {
-                        bool lower = stair.LowerFloorIndex == index;
-                        bool upper = stair.LowerFloorIndex + 1 == index;
-                        if (!lower && !upper) return false;
-                        var reservation = upper
-                            ? BuildingStoreys.StairOpeningFootprint(stair)
-                            : BuildingStoreys.StairFootprint(stair);
-                        return PolygonGeometry.ContainsPoint(shape, stair.Centre) ||
-                            shape.Any(p => PolygonGeometry.ContainsPoint(reservation, p));
-                    });
-                    if (reservesStair) continue;
-
-                    string type = RoomTypes[random.Next(RoomTypes.Length)];
-                    var room = new RoomDefinition
+                        int width = random.Next(4, Math.Min(15, right - left) + 1);
+                        int height = random.Next(4, Math.Min(13, bottom - top) + 1);
+                        int x = random.Next(left, right - width + 1);
+                        int y = random.Next(top, bottom - height + 1);
+                        if (!TryPlace(x, y, width, height)) continue;
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed && thisFloorRooms == 0)
+                {
+                    // Deterministic fallback: large first, then down to
+                    // a 1m x 1m minimum. More than one rectangle shape is
+                    // considered so a narrow strip can still be filled.
+                    int[] sizes = [8, 6, 4, 3, 2];
+                    foreach (int width in sizes.Where(w => w <= right - left))
                     {
-                        Name = $"{type} {floor.Rooms.Count + 1}",
-                        Type = type,
-                        Outline = shape
-                    };
-                    var nextFloor = BuildingStoreys.GetFloor(proposed, index);
-                    nextFloor.Rooms.Add(room);
-                    var next = BuildingStoreys.Copy(proposed);
-                    BuildingStoreys.SetFloor(next, index, nextFloor);
-                    if (!BuildingStoreys.Validate(next, out _)) continue;
-
-                    proposed = next;
-                    floor = nextFloor;
-                    addedRooms++;
-                    placed = true;
-                    break;
+                        foreach (int height in sizes.Where(h => h <= bottom - top))
+                        {
+                            for (int y = top; y + height <= bottom && !placed; y++)
+                            for (int x = left; x + width <= right; x++)
+                            {
+                                if (!TryPlace(x, y, width, height)) continue;
+                                placed = true;
+                                break;
+                            }
+                            if (placed) break;
+                        }
+                        if (placed) break;
+                    }
                 }
                 if (!placed) break;
             }
+
+            if (thisFloorRooms == 0) skippedFloors.Add(index);
+            roomsPerFloor.Add($"{BuildingStoreys.FloorLabel(index)}: {thisFloorRooms} room(s)");
         }
 
-        if (addedFootprints == 0 && addedRooms == 0)
+        if (addedRooms == 0)
         {
-            reason = "No valid additional rooms fit the selected floors. Try a different floor, enlarge the perimeter, or remove an existing room.";
+            reason = "No valid room of at least 1 m × 1 m fits any selected floor. " +
+                "Remaining floor area may be too narrow, intersect a stairwell, " +
+                "or be disconnected from an available rectangular space.";
             return false;
         }
         if (!BuildingStoreys.Validate(proposed, out reason))
@@ -233,7 +274,10 @@ public static class BuildingGenerator
 
         string floorSummary = string.Join(", ", indices.Select(BuildingStoreys.FloorLabel));
         string description = $"Seed {seed}: {addedFootprints} new perimeter(s), " +
-            $"{addedRooms} room(s) on {floorSummary}";
+            $"{addedRooms} room(s) across {floorSummary}. " +
+            string.Join("; ", roomsPerFloor) +
+            (skippedFloors.Count > 0 ? " | No rooms fit: " +
+                string.Join(", ", skippedFloors.Select(BuildingStoreys.FloorLabel)) : "");
         suggestion = new BuildingSuggestion(proposed, seed, indices, description);
         reason = "";
         return true;

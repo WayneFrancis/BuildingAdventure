@@ -403,6 +403,37 @@ ceiling heights, or 3D wall meshes.
   remain non-destructive overlays. Whole-building proposals must still
   be applied atomically.
 
+## Flexible floor deletion and generator reliability (v0.14)
+
+- HasGroundFloor defaults to true for backwards-compatible JSON. In
+  basement-only buildings it is false; root-level geometry is cleared and
+  floor elevation indices span -N through -1 with no floor 0.
+- BuildingStoreys.TryRemoveFloor deletes a chosen signed floor index.
+  Every surviving floor above the target shifts down one elevation;
+  basement-only structures are rebased to contiguous negative indices.
+  The operation reconstructs floor collections in their correct storage
+  order, preserving rooms, doors, windows and wall thickness. Flights
+  whose two endpoints do not survive are removed, while other stair
+  endpoints are remapped through the original-to-new floor index map.
+  The complete rebuilt building is validated atomically before use.
+- Add Floor on a basement-only building creates a new ground floor
+  using the top basement's footprint and wall thickness. Old documents
+  without HasGroundFloor remain fully compatible.
+- Two staircase flights on opposite sides of the same intermediate level
+  can share footprint coordinates. Their slab holes belong to distinct
+  floor elevations, so this is valid geometry. FloorPlanSurface uses
+  offset labels and cycles coincident stair selections on repeated
+  clicks. MainWindow provides a list of flights touching the active
+  level for unambiguous direct selection.
+- BuildingGenerator.TrySuggest uses larger randomized candidate rooms
+  first, then scans a 0.5m lattice with decreasing dimensions (down to
+  1m × 1m) before declaring no fit. It rejects empty-room suggestions,
+  preserves pre-existing geometry, and reports counts/skipped floors.
+- The whole-building draft preview uses a separate read-only floor-plan
+  window with a selector over all candidate elevations, including
+  floors not yet present in the current building. This is separate
+  from the actual model until Accept All.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

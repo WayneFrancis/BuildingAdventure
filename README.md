@@ -4,7 +4,35 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.13 — Basement levels, Page Up/Down and selective suggestion acceptance (development branch)
+## v0.14 — Flexible floor deletion, stacked stairs and reliable suggestions (development branch)
+
+- **Delete any selected floor** in the FLOORS panel, including intermediate
+  levels and ground. Surviving levels above the removed one shift down.
+  The deletion preview states how many connected stair flights disappear,
+  then confirms before committing. Unaffected stair flights are reindexed
+  and validated; the entire operation supports Ctrl+Z/Ctrl+Y.
+  If the last above-ground floor is removed while a cellar remains,
+  the building becomes basement-only. Add Floor can create a new ground
+  level later. The total building limit is still four levels.
+- **Stacked stairs**: an up flight and a down flight may occupy the same
+  plan footprint at an intermediate level. Separate slab openings remain
+  on their respective upper floors. The stair selector in the sidebar
+  lists both UP and DOWN flights; repeatedly clicking an overlapping
+  stair footprint cycles the selected flight. Plan labels for stacked
+  flights are offset to avoid hiding each other.
+- **Four-floor building preview**: Suggest entire building creates a full
+  1–4-floor draft. Inspect all proposed floors opens a separate
+  floor-by-floor viewer of the candidate before acceptance, even when
+  the current building contains fewer levels. All floors are created
+  when Accept All commits the draft.
+- **Generator no-room fallback**: random placement is followed by a
+  deterministic scan for remaining rectangular space, down to 1 × 1 m.
+  A suggestion containing zero new rooms now fails clearly rather
+  than quietly returning an empty plan. Multi-floor result descriptions
+  report room counts per floor and identify selected levels that could
+  not fit additional rooms.
+
+
 
 The editor currently supports:
 

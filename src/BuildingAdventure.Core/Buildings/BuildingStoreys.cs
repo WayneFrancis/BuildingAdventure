@@ -67,24 +67,30 @@ public sealed record AdjacentFloorPlan(int FloorIndex, bool IsAbove,
 public static class BuildingStoreys
 {
     public static int FloorCount(BuildingDocument document) =>
-        1 + document.UpperFloors.Count + document.BasementFloors.Count;
+        (document.HasGroundFloor ? 1 : 0) +
+        document.UpperFloors.Count + document.BasementFloors.Count;
 
     public static int LowestFloorIndex(BuildingDocument document) =>
-        -document.BasementFloors.Count;
+        document.BasementFloors.Count > 0 ? -document.BasementFloors.Count :
+        document.HasGroundFloor ? 0 : 1;
 
     public static int HighestFloorIndex(BuildingDocument document) =>
-        document.UpperFloors.Count;
+        document.UpperFloors.Count > 0 ? document.UpperFloors.Count :
+        document.HasGroundFloor ? 0 : -1;
 
     public static IReadOnlyList<int> FloorIndexes(BuildingDocument document) =>
         Enumerable.Range(LowestFloorIndex(document), FloorCount(document)).ToArray();
 
     public static bool HasFloor(BuildingDocument document, int index) =>
-        index >= LowestFloorIndex(document) && index <= HighestFloorIndex(document);
+        index < 0 ? index >= -document.BasementFloors.Count :
+        index == 0 ? document.HasGroundFloor :
+        index <= document.UpperFloors.Count;
 
     public static BuildingDocument Copy(BuildingDocument source) => new()
     {
         SchemaVersion = source.SchemaVersion,
         Name = source.Name,
+        HasGroundFloor = source.HasGroundFloor,
         Perimeter = source.Perimeter.ToList(),
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
         Doors = source.Doors.Select(d => d.Copy()).ToList(),
@@ -208,6 +214,18 @@ public static class BuildingStoreys
             reason = "Buildings are currently limited to four floors.";
             return false;
         }
+        if (!result.HasGroundFloor)
+        {
+            // A basement-only structure gets a new ground level before
+            // any positive upper-floor levels can be created.
+            var basement = GetFloor(result, -1);
+            if (!PolygonGeometry.IsValidOutline(basement.Perimeter, out reason))
+                return false;
+            result.HasGroundFloor = true;
+            SetFloor(result, 0, basement);
+            result.SchemaVersion = 2;
+            return true;
+        }
         var previous = GetFloor(result, HighestFloorIndex(result));
         if (!PolygonGeometry.IsValidOutline(previous.Perimeter, out reason))
         {
@@ -267,6 +285,11 @@ public static class BuildingStoreys
             reason = "There is no basement to remove.";
             return false;
         }
+        if (FloorCount(result) <= 1)
+        {
+            reason = "A building must contain at least one floor.";
+            return false;
+        }
         int bottom = LowestFloorIndex(result);
         result.BasementFloors.RemoveAt(result.BasementFloors.Count - 1);
         result.Staircases.RemoveAll(s => s.LowerFloorIndex == bottom);
@@ -287,6 +310,122 @@ public static class BuildingStoreys
         int topIndex = HighestFloorIndex(result);
         result.UpperFloors.RemoveAt(result.UpperFloors.Count - 1);
         result.Staircases.RemoveAll(stairs => stairs.LowerFloorIndex >= topIndex - 1);
+        return true;
+    }
+
+    /// <summary>
+    /// Remove any selected level. Levels strictly above it shift down by
+    /// one elevation, and stairs touching the deleted level are removed.
+    /// Other stairs are renumbered and revalidated against their new floors.
+    /// Removing the last ground floor can leave a basement-only building.
+    /// </summary>
+    public static bool TryRemoveFloor(BuildingDocument source, int removedIndex,
+        out BuildingDocument result, out int removedStairCount, out string reason)
+    {
+        result = Copy(source);
+        removedStairCount = 0;
+        reason = "";
+        if (!HasFloor(source, removedIndex))
+        {
+            reason = "The selected level no longer exists.";
+            return false;
+        }
+        if (FloorCount(source) <= 1)
+        {
+            reason = "A building must contain at least one floor.";
+            return false;
+        }
+
+        var surviving = FloorIndexes(source)
+            .Where(i => i != removedIndex).ToArray();
+        var shifted = surviving
+            .Select(old => (Old: old, New: old > removedIndex ? old - 1 : old))
+            .ToList();
+        if (!shifted.Any(x => x.New >= 0))
+        {
+            // Basement-only documents have no physical ground floor.
+            // Keep negative indices contiguous even when removing the
+            // topmost basement, otherwise an unrepresentable gap appears.
+            shifted = surviving.Select((old, position) =>
+                (Old: old, New: position - surviving.Length)).ToList();
+        }
+        result.HasGroundFloor = shifted.Any(x => x.New == 0);
+        result.UpperFloors = new List<StoreyDefinition>();
+        result.BasementFloors = new List<StoreyDefinition>();
+
+        // Only the selected level disappears. Preserve rooms, windows and
+        // door identities on each remaining floor, even across index 0.
+        // Basement storage runs -1, -2, ... rather than ascending floor
+        // indices. Assemble all levels in top-to-bottom storage order.
+        foreach (var (oldIndex, newIndex) in shifted.OrderByDescending(x => x.New))
+        {
+            var floor = GetFloor(source, oldIndex);
+            if (newIndex == 0)
+            {
+                SetFloor(result, 0, floor);
+                continue;
+            }
+            var originalName = oldIndex < 0
+                ? source.BasementFloors[-oldIndex - 1].Name
+                : source.UpperFloors[oldIndex - 1].Name;
+            var name = originalName == FloorLabel(oldIndex)
+                ? FloorLabel(newIndex) : originalName;
+            var storey = new StoreyDefinition
+            {
+                Name = name,
+                Perimeter = floor.Perimeter.ToList(),
+                Rooms = floor.Rooms.Select(r => r.Copy()).ToList(),
+                Doors = floor.Doors.Select(d => d.Copy()).ToList(),
+                Windows = floor.Windows.Select(w => w.Copy()).ToList(),
+                WallThickness = floor.WallThickness.Copy()
+            };
+            if (newIndex < 0)
+                result.BasementFloors.Add(storey);
+            else
+                result.UpperFloors.Insert(0, storey);
+        }
+
+        if (!result.HasGroundFloor)
+        {
+            // The root floor is inactive in a basement-only structure.
+            // Clear obsolete geometry rather than persisting a ghost floor.
+            result.Perimeter = new List<Point2>();
+            result.Rooms = new List<RoomDefinition>();
+            result.Doors = new List<DoorDefinition>();
+            result.Windows = new List<WindowDefinition>();
+        }
+
+        var stairs = new List<StaircaseDefinition>();
+        foreach (var original in source.Staircases)
+        {
+            if (original.LowerFloorIndex == removedIndex ||
+                original.LowerFloorIndex + 1 == removedIndex)
+            {
+                removedStairCount++;
+                continue;
+            }
+            var oldLower = shifted.FirstOrDefault(s => s.Old == original.LowerFloorIndex);
+            var oldUpper = shifted.FirstOrDefault(s => s.Old == original.LowerFloorIndex + 1);
+            // Floor deletion or basement-only rebasing must not leave
+            // staircases pointing at nonexistent or non-adjacent levels.
+            if (!shifted.Any(s => s.Old == original.LowerFloorIndex) ||
+                !shifted.Any(s => s.Old == original.LowerFloorIndex + 1) ||
+                oldUpper.New != oldLower.New + 1)
+            {
+                removedStairCount++;
+                continue;
+            }
+            var copied = original.Copy();
+            copied.LowerFloorIndex = oldLower.New;
+            stairs.Add(copied);
+        }
+        result.Staircases = stairs;
+        result.SchemaVersion = 2;
+        if (!Validate(result, out reason))
+        {
+            result = Copy(source);
+            return false;
+        }
         return true;
     }
 
@@ -365,14 +504,15 @@ public static class BuildingStoreys
             reason = "Floor or staircase collections are missing.";
             return false;
         }
-        if (FloorCount(building) > 4)
+        if (FloorCount(building) < 1 || FloorCount(building) > 4 ||
+            (!building.HasGroundFloor && building.UpperFloors.Count > 0))
         {
-            reason = "Buildings cannot contain more than four floors.";
+            reason = "A building needs 1–4 contiguous levels; above-ground floors require ground level.";
             return false;
         }
         if (building.SchemaVersion == 1 &&
             (building.UpperFloors.Count != 0 || building.BasementFloors.Count != 0 ||
-             building.Staircases.Count != 0))
+             building.Staircases.Count != 0 || !building.HasGroundFloor))
         {
             reason = "Multi-floor buildings require JSON schema version 2.";
             return false;

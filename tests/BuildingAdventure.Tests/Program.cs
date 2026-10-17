@@ -3233,5 +3233,275 @@ Check("Partial room acceptance rejects wrong floor or absent room", () =>
     Assert(message.Contains("not found"));
 });
 
+Check("Delete arbitrary middle floor shifts upper levels and preserves their rooms", () =>
+{
+    var baseFloor = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(baseFloor, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(three, out var four, out reason), reason);
+    var highest = BuildingStoreys.GetFloor(four, 3);
+    highest.Rooms.Add(new RoomDefinition
+    {
+        Name = "Attic",
+        Outline = [new(0, 0), new(3, 0), new(3, 3), new(0, 3)]
+    });
+    BuildingStoreys.SetFloor(four, 3, highest);
+    Assert(BuildingStoreys.TryRemoveFloor(four, 1,
+        out var shorter, out var lost, out reason), reason);
+    Assert(lost == 0);
+    Assert(BuildingStoreys.FloorIndexes(shorter).SequenceEqual([0, 1, 2]));
+    Assert(BuildingStoreys.GetFloor(shorter, 2).Rooms[0].Name == "Attic");
+    Assert(BuildingStoreys.GetFloor(shorter, 1).Rooms.Count == 0);
+    Assert(BuildingStoreys.GetFloor(four, 3).Rooms.Count == 1);
+    Assert(BuildingStoreys.Validate(shorter, out reason), reason);
+});
+
+Check("Deleting ground promotes an upper floor with all its contents", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
+    var upper = BuildingStoreys.GetFloor(two, 1);
+    upper.Rooms.Add(new RoomDefinition
+    {
+        Name = "Former first floor",
+        Outline = [new(0, 0), new(3, 0), new(3, 3), new(0, 3)]
+    });
+    BuildingStoreys.SetFloor(two, 1, upper);
+    Assert(BuildingStoreys.TryRemoveFloor(two, 0, out var remaining,
+        out int removedStairs, out reason), reason);
+    Assert(removedStairs == 0);
+    Assert(remaining.HasGroundFloor && remaining.UpperFloors.Count == 0);
+    Assert(remaining.Rooms.Count == 1 && remaining.Rooms[0].Name == "Former first floor");
+    Assert(BuildingStoreys.FloorIndexes(remaining).SequenceEqual([0]));
+    Assert(BuildingStoreys.Validate(remaining, out reason), reason);
+});
+
+Check("Deleting ground from a cellar building can leave basement but no ground", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(doc, out var withBasement, out var reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(withBasement, 0, out var remaining,
+        out _, out reason), reason);
+    Assert(!remaining.HasGroundFloor);
+    Assert(BuildingStoreys.FloorIndexes(remaining).SequenceEqual([-1]));
+    Assert(!BuildingStoreys.HasFloor(remaining, 0));
+    Assert(remaining.Perimeter.Count == 0);
+    Assert(BuildingStoreys.GetFloor(remaining, -1).Perimeter.Count == 4);
+    Assert(BuildingStoreys.Validate(remaining, out reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(remaining, out var newGround, out reason), reason);
+    Assert(newGround.HasGroundFloor && BuildingStoreys.HasFloor(newGround, 0));
+    Assert(BuildingStoreys.Validate(newGround, out reason), reason);
+});
+
+Check("Deleting first basement shifts ground into a basement and upper into ground", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(doc, out var basement, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(basement, out var three, out reason), reason);
+    var first = BuildingStoreys.GetFloor(three, 1);
+    first.Rooms.Add(new RoomDefinition
+    {
+        Name = "Promoted ground room",
+        Outline = [new(0, 0), new(3, 0), new(3, 3), new(0, 3)]
+    });
+    BuildingStoreys.SetFloor(three, 1, first);
+    Assert(BuildingStoreys.TryRemoveFloor(three, -1,
+        out var result, out _, out reason), reason);
+    Assert(BuildingStoreys.FloorIndexes(result).SequenceEqual([-1, 0]));
+    Assert(result.Rooms.Single().Name == "Promoted ground room");
+    Assert(result.BasementFloors.Count == 1);
+    Assert(BuildingStoreys.Validate(result, out reason), reason);
+});
+
+Check("Deleting topmost basement in basement-only structure closes index gaps", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(doc, out var first, out var reason), reason);
+    Assert(BuildingStoreys.TryAddBasement(first, out var second, out reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(second, 0, out var cellarsOnly,
+        out _, out reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(cellarsOnly, -1, out var remainder,
+        out _, out reason), reason);
+    Assert(BuildingStoreys.FloorIndexes(remainder).SequenceEqual([-1]));
+    Assert(BuildingStoreys.GetFloor(remainder, -1).Perimeter.Count == 4);
+    Assert(BuildingStoreys.Validate(remainder, out reason), reason);
+});
+
+Check("Deleting a floor removes attached stair flights and renumbers surviving flights", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(doc, out var b1, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(b1, out var first, out reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(first, out var second, out reason), reason);
+    var low = new StaircaseDefinition { LowerFloorIndex = -1, Centre = new Point2(3, 4) };
+    var above = new StaircaseDefinition { LowerFloorIndex = 1, Centre = new Point2(7, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(second, low, out var hasLow, out reason), reason);
+    Assert(BuildingStoreys.TryAddStaircase(hasLow, above,
+        out var hasBoth, out reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(hasBoth, 1, out var result,
+        out var lost, out reason), reason);
+    Assert(lost == 1);
+    Assert(result.Staircases.Count == 1 && result.Staircases[0].Id == low.Id);
+    Assert(BuildingStoreys.FloorIndexes(result).SequenceEqual([-1, 0, 1]));
+    Assert(BuildingStoreys.Validate(result, out reason), reason);
+});
+
+Check("Delete floor never leaves invalid stair links or changes input", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
+    var link = new StaircaseDefinition { LowerFloorIndex = 0, Centre = new Point2(5, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(two, link, out var withStairs, out reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(withStairs, 0, out var result,
+        out var lost, out reason), reason);
+    Assert(lost == 1 && result.Staircases.Count == 0);
+    Assert(withStairs.Staircases.Count == 1);
+    Assert(!BuildingStoreys.TryRemoveFloor(new BuildingDocument(), 0,
+        out _, out _, out reason));
+    Assert(reason.Contains("at least one floor"));
+});
+
+Check("Stacked staircase flights allow exactly matching up and down footprints", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    var lower = new StaircaseDefinition
+    {
+        LowerFloorIndex = 0, Centre = new Point2(5, 4),
+        Length = 3.6, Width = 1.4
+    };
+    var upper = new StaircaseDefinition
+    {
+        LowerFloorIndex = 1, Centre = new Point2(5, 4),
+        Length = 3.6, Width = 1.4
+    };
+    Assert(BuildingStoreys.TryAddStaircase(three, lower, out var first, out reason), reason);
+    Assert(BuildingStoreys.TryAddStaircase(first, upper, out var both, out reason), reason);
+    Assert(both.Staircases.Count == 2);
+    Assert(BuildingStoreys.GetOpenings(both, 1).Count == 1);
+    Assert(BuildingStoreys.GetOpenings(both, 2).Count == 1);
+    Assert(BuildingStoreys.Validate(both, out reason), reason);
+    var roundTrip = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(both));
+    Assert(roundTrip.Staircases.Count == 2);
+});
+
+Check("Deleting one intermediate level deletes both connecting stacked flights", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    var low = new StaircaseDefinition { LowerFloorIndex = 0, Centre = new Point2(5, 4) };
+    var high = new StaircaseDefinition { LowerFloorIndex = 1, Centre = new Point2(5, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(three, low, out var one, out reason), reason);
+    Assert(BuildingStoreys.TryAddStaircase(one, high, out var both, out reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(both, 1, out var remaining,
+        out var lost, out reason), reason);
+    Assert(lost == 2);
+    Assert(remaining.Staircases.Count == 0);
+    Assert(BuildingStoreys.FloorIndexes(remaining).SequenceEqual([0, 1]));
+    Assert(BuildingStoreys.Validate(remaining, out reason), reason);
+});
+
+Check("Whole-building generator creates four real floors before acceptance", () =>
+{
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(4, 1783,
+        out var proposal, out var reason), reason);
+    Assert(BuildingStoreys.FloorCount(proposal.Building) == 4);
+    Assert(BuildingStoreys.FloorIndexes(proposal.Building).SequenceEqual([0, 1, 2, 3]));
+    Assert(proposal.FloorIndexes.SequenceEqual([0, 1, 2, 3]));
+    for (int floor = 0; floor < 4; floor++)
+        Assert(BuildingStoreys.GetFloor(proposal.Building, floor).Rooms.Count > 0);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Generator fills a narrow unused strip when large random rectangles do not fit", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name = "Existing large room",
+                Outline = [new(0, 0), new(8, 0), new(8, 8), new(0, 8)]
+            }
+        ]
+    };
+    Assert(FloorGeometry.Validate(doc, out var reason), reason);
+    Assert(BuildingGenerator.TrySuggest(doc, [0], 2026,
+        out var proposal, out reason), reason);
+    Assert(proposal.Building.Rooms.Count > doc.Rooms.Count);
+    Assert(proposal.Building.Rooms[0].Id == doc.Rooms[0].Id);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Selecting all four existing floors generates rooms on all four", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(three, out var four, out reason), reason);
+    Assert(BuildingGenerator.TrySuggest(four, [0, 1, 2, 3], 601,
+        out var suggestion, out reason), reason);
+    foreach (int floor in new[] { 0, 1, 2, 3 })
+        Assert(BuildingStoreys.GetFloor(suggestion.Building, floor).Rooms.Count > 0);
+    Assert(BuildingStoreys.Validate(suggestion.Building, out reason), reason);
+});
+
+Check("Basement-only buildings save and reopen without introducing ground", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(doc, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(two, 0, out var cellar,
+        out _, out reason), reason);
+    var reopened = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(cellar));
+    Assert(!reopened.HasGroundFloor);
+    Assert(BuildingStoreys.FloorIndexes(reopened).SequenceEqual([-1]));
+    Assert(BuildingStoreys.Validate(reopened, out reason), reason);
+});
+
+Check("Floor deletion reindexes stairs connecting surviving upper levels", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(two, out var three, out reason), reason);
+    var upstairs = new StaircaseDefinition
+    {
+        LowerFloorIndex = 1, Centre = new Point2(5, 4)
+    };
+    Assert(BuildingStoreys.TryAddStaircase(three, upstairs, out var building,
+        out reason), reason);
+    Assert(BuildingStoreys.TryRemoveFloor(building, 0, out var shifted,
+        out var count, out reason), reason);
+    Assert(count == 0);
+    Assert(shifted.Staircases.Count == 1);
+    Assert(shifted.Staircases[0].Id == upstairs.Id);
+    Assert(shifted.Staircases[0].LowerFloorIndex == 0);
+    Assert(BuildingStoreys.FloorIndexes(shifted).SequenceEqual([0, 1]));
+    Assert(BuildingStoreys.Validate(shifted, out reason), reason);
+});
+
+Check("Generator explains when no 1 metre room can fit", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name = "Nearly full floor",
+                Outline = [new(0, 0), new(9.5, 0), new(9.5, 8), new(0, 8)]
+            }
+        ]
+    };
+    Assert(FloorGeometry.Validate(doc, out var reason), reason);
+    Assert(!BuildingGenerator.TrySuggest(doc, [0], 55, out _, out reason));
+    Assert(reason.Contains("No valid room"));
+    Assert(doc.Rooms.Count == 1);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

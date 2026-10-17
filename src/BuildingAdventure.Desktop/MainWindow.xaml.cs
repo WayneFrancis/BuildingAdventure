@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private bool _pendingWholeBuilding;
     private readonly List<SavedSuggestionEntry> _suggestionMemory = SuggestionMemory.Load();
     private bool _loadingDoorVisibility;
+    private bool _loadingStairPicker;
 
     public MainWindow()
     {
@@ -275,9 +276,10 @@ public partial class MainWindow : Window
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
         OpeningText.Text = $"{BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex).Count} opening(s) in this slab";
         AddFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
-        RemoveFloorButton.IsEnabled = BuildingStoreys.HighestFloorIndex(_building) > 0;
+        RemoveFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) > 1;
         AddBasementButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
-        RemoveBasementButton.IsEnabled = BuildingStoreys.LowestFloorIndex(_building) < 0;
+        InspectProposalButton.IsEnabled = _pendingSuggestion is not null;
+        UpdateStairFlightChoices();
         UndoButton.IsEnabled = UndoMenu.IsEnabled =
             EditorSurface.HasPendingStep || _history.CanUndo;
         RedoButton.IsEnabled = RedoMenu.IsEnabled =
@@ -671,6 +673,48 @@ public partial class MainWindow : Window
         BeginSuggestion(proposal, whole: true);
     }
 
+    private void InspectProposal_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingSuggestion is null) return;
+        var proposal = BuildingStoreys.Copy(_pendingSuggestion.Building);
+        var floorIndexes = BuildingStoreys.FloorIndexes(proposal);
+        var viewer = new FloorPlanSurface { IsHitTestVisible = false };
+        var selector = new ComboBox { Margin = new Thickness(10), Padding = new Thickness(5) };
+        foreach (int index in floorIndexes)
+            selector.Items.Add(BuildingStoreys.FloorLabel(index));
+        var layout = new DockPanel();
+        DockPanel.SetDock(selector, Dock.Top);
+        layout.Children.Add(selector);
+        layout.Children.Add(viewer);
+        var dialog = new Window
+        {
+            Title = $"Suggested building — {floorIndexes.Count} floor(s)",
+            Owner = this,
+            Content = layout,
+            Width = 950,
+            Height = 700,
+            MinWidth = 500,
+            MinHeight = 400,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        void View(int position)
+        {
+            int index = floorIndexes[position];
+            viewer.LoadDocument(BuildingStoreys.GetFloor(proposal, index));
+            viewer.SetStairOverlay(proposal.Staircases, index);
+            dialog.Dispatcher.BeginInvoke(
+                new Action(viewer.FitToView),
+                DispatcherPriority.Loaded);
+        }
+        selector.SelectionChanged += (_, _) =>
+        {
+            if (selector.SelectedIndex >= 0)
+                View(selector.SelectedIndex);
+        };
+        selector.SelectedIndex = 0;
+        dialog.ShowDialog();
+    }
+
     private void AcceptSuggestion_Click(object sender, RoutedEventArgs e)
     {
         if (_pendingSuggestion is null) return;
@@ -985,72 +1029,103 @@ public partial class MainWindow : Window
         Refresh();
     }
 
-    private void RemoveFloor_Click(object sender, RoutedEventArgs e)
-    {
-        if (MessageBox.Show(this,
-                "Remove the highest floor and any staircase leading to it?",
-                "Remove floor", MessageBoxButton.YesNo, MessageBoxImage.Warning)
-                != MessageBoxResult.Yes) return;
-
-        if (!BuildingStoreys.TryRemoveTopFloor(CurrentDocument(), out var updated, out var reason))
-        {
-            MessageBox.Show(this, reason, "Cannot remove floor",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-        _history.RecordBefore(CurrentDocument(), _activeFloorIndex);
-        _building = updated;
-        _activeFloorIndex = Math.Min(_activeFloorIndex,
-            BuildingStoreys.HighestFloorIndex(_building));
-        RebuildFloorPicker();
-        ShowFloor(_activeFloorIndex);
-        _hint = "Highest floor removed.";
-        Refresh();
-    }
-
     private void AddBasement_Click(object sender, RoutedEventArgs e)
     {
         var before = CurrentDocument();
-        if (!BuildingStoreys.TryAddBasement(before, out var added, out var reason))
+        if (!BuildingStoreys.TryAddBasement(before, out var updated, out var reason))
         {
             MessageBox.Show(this, reason, "Cannot add basement",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         _history.RecordBefore(before, _activeFloorIndex);
-        _building = added;
-        _activeFloorIndex = BuildingStoreys.LowestFloorIndex(added);
+        _building = updated;
+        _activeFloorIndex = BuildingStoreys.LowestFloorIndex(updated);
         ClearPendingSuggestion();
         RebuildFloorPicker();
         ShowFloor(_activeFloorIndex);
-        _hint = "Basement created below the previous lowest level. Add stairs to connect levels.";
+        _hint = "Basement added below the current lowest level.";
         Refresh();
     }
 
-    private void RemoveBasement_Click(object sender, RoutedEventArgs e)
+    private void RemoveFloor_Click(object sender, RoutedEventArgs e)
     {
-        if (BuildingStoreys.LowestFloorIndex(_building) == 0) return;
-        if (MessageBox.Show(this,
-                "Remove the deepest basement and any stairs connected to it?",
-                "Remove basement", MessageBoxButton.YesNo, MessageBoxImage.Warning)
-            != MessageBoxResult.Yes) return;
         var before = CurrentDocument();
-        if (!BuildingStoreys.TryRemoveBottomBasement(before,
-                out var updated, out var reason))
+        int selected = _activeFloorIndex;
+        if (!BuildingStoreys.TryRemoveFloor(before, selected,
+            out var result, out int affectedStairs, out var reason))
         {
-            MessageBox.Show(this, reason, "Cannot remove basement",
+            MessageBox.Show(this, reason, "Cannot delete floor",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        _history.RecordBefore(before, _activeFloorIndex);
-        _building = updated;
-        _activeFloorIndex = Math.Max(_activeFloorIndex,
-            BuildingStoreys.LowestFloorIndex(updated));
+
+        string stairsText = affectedStairs == 0
+            ? "No staircase connections will be removed."
+            : $"{affectedStairs} connected staircase flight(s) will also be removed.";
+        string prompt = $"Delete {BuildingStoreys.FloorLabel(selected)}?\n\n" +
+            "Every surviving floor above it shifts down one level. " +
+            stairsText + "\n\nThis can be undone with Ctrl+Z. Continue?";
+        if (MessageBox.Show(this, prompt, "Delete selected floor",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning)
+            != MessageBoxResult.Yes) return;
+
+        _history.RecordBefore(before, selected);
+        _building = result;
+        _activeFloorIndex = BuildingStoreys.HasFloor(result, selected)
+            ? selected : BuildingStoreys.FloorIndexes(result)
+                .OrderBy(index => Math.Abs(index - selected)).First();
         ClearPendingSuggestion();
         RebuildFloorPicker();
         ShowFloor(_activeFloorIndex);
-        _hint = "Deepest basement removed. Ctrl+Z restores it.";
+        _hint = $"Deleted {BuildingStoreys.FloorLabel(selected)}; " +
+            $"{affectedStairs} staircase connection(s) removed. Ctrl+Z to undo.";
         Refresh();
+    }
+
+    private void UpdateStairFlightChoices()
+    {
+        if (StairFlightPicker is null || EditorSurface is null) return;
+        _loadingStairPicker = true;
+        try
+        {
+            Guid? selectedId = EditorSurface.SelectedStaircaseId;
+            StairFlightPicker.Items.Clear();
+            foreach (var flight in _building.Staircases.Where(s =>
+                s.LowerFloorIndex == _activeFloorIndex ||
+                s.LowerFloorIndex + 1 == _activeFloorIndex)
+                .OrderBy(s => s.LowerFloorIndex))
+            {
+                string direction = flight.LowerFloorIndex == _activeFloorIndex
+                    ? $"UP to {BuildingStoreys.FloorLabel(_activeFloorIndex + 1)}"
+                    : $"DOWN to {BuildingStoreys.FloorLabel(_activeFloorIndex - 1)}";
+                StairFlightPicker.Items.Add(new ComboBoxItem
+                {
+                    Content = $"{direction} — {flight.Centre.X:0.##}, {flight.Centre.Y:0.##} m",
+                    Tag = flight.Id
+                });
+            }
+            int choice = -1;
+            for (int i = 0; i < StairFlightPicker.Items.Count; i++)
+            {
+                if ((Guid)((ComboBoxItem)StairFlightPicker.Items[i]).Tag == selectedId)
+                {
+                    choice = i;
+                    break;
+                }
+            }
+            StairFlightPicker.SelectedIndex = choice;
+        }
+        finally { _loadingStairPicker = false; }
+    }
+
+    private void StairFlightPicker_SelectionChanged(
+        object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingStairPicker || StairFlightPicker.SelectedItem is not ComboBoxItem selected)
+            return;
+        if (selected.Tag is Guid id)
+            EditorSurface.SelectStairById(id);
     }
 
     private void NavigateFloor(int change)

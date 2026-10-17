@@ -19,6 +19,9 @@ public sealed class BuildingDocument
     public List<StoreyDefinition> UpperFloors { get; set; } = new();
     // BasementFloors[0] is one level below ground (-1), [1] is -2, etc.
     public List<StoreyDefinition> BasementFloors { get; set; } = new();
+    // When false, the building consists solely of underground levels.
+    // Root-level geometry remains for legacy document compatibility.
+    public bool HasGroundFloor { get; set; } = true;
     public List<StaircaseDefinition> Staircases { get; set; } = new();
 }
 
