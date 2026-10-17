@@ -217,6 +217,129 @@ public static class BuildingConnectivity
         return count;
     }
 
+    /// <summary>
+    /// Reserve one aligned, hall-accessible stairwell on every floor of a new
+    /// building before other rooms are laid out. Stairs run alongside the
+    /// corridor at its far end, not across the corridor's walking route.
+    /// All edits are validated on detached building copies.
+    /// </summary>
+    public static bool TryReserveStackedStairwell(BuildingDocument source,
+        out BuildingDocument updated, out int flights, out string reason)
+    {
+        updated = BuildingStoreys.Copy(source);
+        flights = 0;
+        reason = "";
+        var levels = BuildingStoreys.FloorIndexes(source);
+        if (levels.Count < 2)
+        {
+            reason = "At least two floors are needed for connected stairs.";
+            return false;
+        }
+        var ground = BuildingStoreys.GetFloor(source, levels[0]);
+        var hall = ground.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+        if (hall is null || hall.Outline.Count != 4)
+        {
+            reason = "An open central hallway is required to reserve a stairwell.";
+            return false;
+        }
+        double hLeft = hall.Outline.Min(p => p.X);
+        double hRight = hall.Outline.Max(p => p.X);
+        double hTop = hall.Outline.Min(p => p.Y);
+        double hBottom = hall.Outline.Max(p => p.Y);
+        bool vertical = hBottom - hTop >= hRight - hLeft;
+        double minX = ground.Perimeter.Min(p => p.X);
+        double maxX = ground.Perimeter.Max(p => p.X);
+        double minY = ground.Perimeter.Min(p => p.Y);
+        double maxY = ground.Perimeter.Max(p => p.Y);
+        double hallLength = vertical ? hBottom - hTop : hRight - hLeft;
+        // A 3.6 m run needs space at both ends for access / landings.
+        double pocketLength = Math.Floor(Math.Min(5.0, hallLength) * 2) / 2;
+        if (pocketLength < 4.5)
+        {
+            reason = "The hall is too short to reserve a landing beside the stairs.";
+            return false;
+        }
+
+        // Prefer the far end of the hall, leaving its main entrance unobstructed;
+        // try both sides, then the near end on irregular footprints.
+        foreach (bool farEnd in new[] { true, false })
+        foreach (bool leftSide in new[] { true, false })
+        {
+            double sideStart = vertical
+                ? (leftSide ? minX : hRight)
+                : (leftSide ? minY : hBottom);
+            double sideEnd = vertical
+                ? (leftSide ? hLeft : maxX)
+                : (leftSide ? hTop : maxY);
+            if (sideEnd - sideStart < 2.5) continue;
+            double axisStart = vertical ? hTop : hLeft;
+            double axisEnd = vertical ? hBottom : hRight;
+            double from = farEnd ? axisEnd - pocketLength : axisStart;
+            double to = from + pocketLength;
+            var outline = vertical
+                ? new List<Point2>
+                {
+                    new(sideStart, from), new(sideEnd, from),
+                    new(sideEnd, to), new(sideStart, to)
+                }
+                : new List<Point2>
+                {
+                    new(from, sideStart), new(to, sideStart),
+                    new(to, sideEnd), new(from, sideEnd)
+                };
+            var centre = vertical
+                ? new Point2((sideStart + sideEnd) / 2, (from + to) / 2)
+                : new Point2((from + to) / 2, (sideStart + sideEnd) / 2);
+            var candidate = BuildingStoreys.Copy(source);
+            bool roomsFit = true;
+            foreach (int index in levels)
+            {
+                var floor = BuildingStoreys.GetFloor(candidate, index);
+                var matchingHall = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+                if (matchingHall is null ||
+                    !ShareWall(outline, matchingHall.Outline, 2.0))
+                {
+                    roomsFit = false;
+                    break;
+                }
+                floor.Rooms.Add(new RoomDefinition
+                {
+                    Name = "Stairwell", Type = "Stairwell",
+                    Outline = outline.ToList()
+                });
+                BuildingStoreys.SetFloor(candidate, index, floor);
+                if (BuildingStoreys.Validate(candidate, out _)) continue;
+                roomsFit = false;
+                break;
+            }
+            if (!roomsFit) continue;
+
+            int added = 0;
+            foreach (int lower in levels.Take(levels.Count - 1))
+            {
+                var stair = new StaircaseDefinition
+                {
+                    LowerFloorIndex = lower,
+                    Centre = centre,
+                    Length = 3.6, Width = 1.4,
+                    RotationDegrees = vertical ? 0 : 90
+                };
+                if (!BuildingStoreys.TryAddStaircase(candidate, stair,
+                        out var placed, out _))
+                    break;
+                candidate = placed;
+                added++;
+            }
+            if (added != levels.Count - 1) continue;
+            updated = candidate;
+            flights = added;
+            return true;
+        }
+        reason = "No valid stairwell could fit beside a corridor on every floor. " +
+            "The generator did not put stairs in the main hallway.";
+        return false;
+    }
+
     public static int AddStairs(BuildingDocument building,
         IReadOnlyCollection<int> selectedFloors, out BuildingDocument updated)
     {
@@ -234,16 +357,30 @@ public static class BuildingConnectivity
             if (low.Perimeter.Count < 3 || upper.Perimeter.Count < 3)
                 continue;
             var hallway = low.Rooms.FirstOrDefault(r => r.Type == "Hallway");
-            var preferred = hallway is null ? new Point2(
+            var stairwell = low.Rooms.FirstOrDefault(r =>
+                r.Type == "Stairwell" &&
+                upper.Rooms.Any(u => u.Type == "Stairwell" &&
+                    u.Outline.SequenceEqual(r.Outline)));
+            // Do not obstruct an existing hall. For fully empty plans retain
+            // the original central location as a sensible starting point.
+            if (hallway is not null && stairwell is null) continue;
+            var preferred = stairwell is null ? new Point2(
                 low.Perimeter.Average(p => p.X),
                 low.Perimeter.Average(p => p.Y)) : new Point2(
-                hallway.Outline.Average(p => p.X),
-                hallway.Outline.Average(p => p.Y));
+                stairwell.Outline.Average(p => p.X),
+                stairwell.Outline.Average(p => p.Y));
             bool placed = false;
-            foreach (double offset in new double[] { 0, -2, 2, -3, 3 })
+            foreach (double offset in stairwell is null
+                ? new double[] { 0, -2, 2, -3, 3 }
+                : new double[] { 0 })
             {
                 if (placed) break;
-                foreach (double angle in new double[] { 0, 90 })
+                foreach (double angle in stairwell is null
+                    ? new double[] { 0, 90 }
+                    : stairwell.Outline.Max(p => p.Y) - stairwell.Outline.Min(p => p.Y) >=
+                      stairwell.Outline.Max(p => p.X) - stairwell.Outline.Min(p => p.X)
+                        ? new double[] { 0 }
+                        : new double[] { 90 })
                 {
                     var stair = new StaircaseDefinition
                     {
