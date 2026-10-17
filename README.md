@@ -4,6 +4,30 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.19 — Browsable draft floors and side stairwells (development branch)
+
+- **Browse before accepting:** generating a whole building displays a
+  read-only floor plan directly in the main editor area. Its dedicated
+  floor dropdown and Previous/Next controls show every proposed floor,
+  including levels not yet part of the working building. Accept All commits
+  the draft; Discard preview restores the live editor unchanged. Saved
+  whole-building proposals can be inspected in the same way.
+- **Stairs off the hall:** for a new multi-floor building with corridors
+  and stairs enabled, the generator builds central halls on every floor,
+  reserves a vertically aligned *Stairwell* room beside the hall on each
+  level, and places connecting flights inside that space. Each stairwell
+  shares a wall with the hall and receives a candidate door.
+- **Fill around stairs:** remaining frontage is subdivided on either side of
+  existing stairwell reservations rather than being skipped because a
+  full-width proposed room would overlap the reserved area.
+- **Don't block existing corridors:** when completing existing floors,
+  automatic stair placement uses matching stairwell rooms if available,
+  otherwise declines to insert stairs through a hallway.
+- **Limits:** this is a 2D stairwell reservation and connected-floor
+  layout, not a building-code-compliant staircase design. Realistic
+  landings, treads/risers, guardrails and multi-level fire egress still
+  require separate validation.
+
 ## v0.18 — Visible whole-building preview and floor-count confirmation (development branch)
 
 - **See every generated floor immediately:** choosing 1–4 floors and clicking
