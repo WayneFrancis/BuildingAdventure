@@ -364,7 +364,11 @@ public static class BuildingGenerator
         if (addedRooms == 0 && addedCorridors == 0 &&
             addedDoors == 0 && addedWindows == 0 && addedStairs == 0)
         {
-            reason = "No valid new features fit the selected floors and settings. " +
+            bool roomOnly = options.Rooms && !options.Corridors &&
+                !options.Doors && !options.Windows && !options.Stairs;
+            reason = (roomOnly
+                ? "No valid room fits the selected floors. "
+                : "No valid new features fit the selected floors and settings. ") +
                 "Try a different seed, smaller rooms, additional floor space, " +
                 "or enable different features.";
             return false;
