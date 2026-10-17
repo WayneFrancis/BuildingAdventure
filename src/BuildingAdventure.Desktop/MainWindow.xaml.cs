@@ -316,10 +316,15 @@ public partial class MainWindow : Window
         AcceptSuggestedRoomButton.IsEnabled = _pendingSuggestion is not null &&
             !_pendingWholeBuilding && EditorSurface.SelectedSuggestedRoomId.HasValue;
         SuggestionInfoText.Text = _pendingSuggestion is null
-            ? "No pending suggestion. Select floors and choose Suggest."
-            : _pendingSuggestion.Description +
-              $" | Previewing {BuildingStoreys.FloorLabel(_activeFloorIndex)}. " +
-              "Use Page Up / Page Down or View next selected floor to inspect other levels.";
+            ? "No pending suggestion. Complete existing floors, or draft a new whole building."
+            : _pendingWholeBuilding
+                ? $"NEW BUILDING PREVIEW: {BuildingStoreys.FloorCount(_pendingSuggestion.Building)} " +
+                  $"floor(s) generated. The editor still contains {BuildingStoreys.FloorCount(_building)} " +
+                  "floor(s) until you choose Accept All. Use Inspect all proposed floors " +
+                  "to see every generated level. " + _pendingSuggestion.Description
+                : _pendingSuggestion.Description +
+                  $" | Previewing {BuildingStoreys.FloorLabel(_activeFloorIndex)}. " +
+                  "Use Page Up / Page Down or View next selected floor to inspect other existing levels.";
         ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
         string fileLabel = _filePath is null ? "Untitled" : Path.GetFileName(_filePath);
         Title = $"{NameBox.Text} — {fileLabel}{(IsDirty() ? " *" : "")} — BuildingAdventure";
@@ -701,10 +706,24 @@ public partial class MainWindow : Window
             Refresh();
             return;
         }
+        if (BuildingStoreys.FloorCount(proposal.Building) != count)
+        {
+            _hint = $"The building generator returned an unexpected floor count. Expected {count}, " +
+                $"received {BuildingStoreys.FloorCount(proposal.Building)}. No changes were applied.";
+            Refresh();
+            return;
+        }
         BeginSuggestion(proposal, whole: true);
+        _hint = $"Created a {count}-floor draft. Close the preview viewer, then " +
+            "choose Accept All to add every floor to the building.";
+        Refresh();
+        OpenProposalViewer();
     }
 
-    private void InspectProposal_Click(object sender, RoutedEventArgs e)
+    private void InspectProposal_Click(object sender, RoutedEventArgs e) =>
+        OpenProposalViewer();
+
+    private void OpenProposalViewer()
     {
         if (_pendingSuggestion is null) return;
         var proposal = BuildingStoreys.Copy(_pendingSuggestion.Building);
@@ -712,8 +731,21 @@ public partial class MainWindow : Window
         var viewer = new FloorPlanSurface { IsHitTestVisible = false };
         var selector = new ComboBox { Margin = new Thickness(10), Padding = new Thickness(5) };
         foreach (int index in floorIndexes)
-            selector.Items.Add(BuildingStoreys.FloorLabel(index));
+        {
+            int roomCount = BuildingStoreys.GetFloor(proposal, index).Rooms.Count;
+            selector.Items.Add($"{BuildingStoreys.FloorLabel(index)} — {roomCount} room(s)");
+        }
+        var instructions = new TextBlock
+        {
+            Text = $"This draft contains {floorIndexes.Count} floor(s). " +
+                "Choose a level below to inspect it. Close this viewer and click " +
+                "Accept All in the main window to create every floor.",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(10, 10, 10, 0)
+        };
         var layout = new DockPanel();
+        DockPanel.SetDock(instructions, Dock.Top);
+        layout.Children.Add(instructions);
         DockPanel.SetDock(selector, Dock.Top);
         layout.Children.Add(selector);
         layout.Children.Add(viewer);
@@ -771,8 +803,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        bool acceptedWholeBuilding = _pendingWholeBuilding;
         _history.RecordBefore(before, _activeFloorIndex);
         _building = BuildingStoreys.Copy(_pendingSuggestion.Building);
+        int acceptedFloorCount = BuildingStoreys.FloorCount(_building);
         _activeFloorIndex = Math.Clamp(_activeFloorIndex,
             BuildingStoreys.LowestFloorIndex(_building),
             BuildingStoreys.HighestFloorIndex(_building));
@@ -780,7 +814,10 @@ public partial class MainWindow : Window
         NameBox.Text = _building.Name;
         RebuildFloorPicker();
         ShowFloor(_activeFloorIndex);
-        _hint = "Suggestion accepted on selected floors. Ctrl+Z restores the previous building.";
+        _hint = acceptedWholeBuilding
+            ? $"Accepted the {acceptedFloorCount}-floor building. Switch levels using " +
+              "the FLOORS selector or Page Up / Page Down. Ctrl+Z restores the old building."
+            : "Suggestion accepted on selected floors. Ctrl+Z restores the previous building.";
         Refresh();
     }
 
