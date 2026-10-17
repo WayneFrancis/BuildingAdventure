@@ -610,6 +610,8 @@ public partial class MainWindow : Window
         _pendingSuggestion = proposal.Copy();
         _suggestionSource = CurrentJson();
         _pendingWholeBuilding = whole;
+        if (!whole)
+            WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
         if (whole)
         {
             UpdateSuggestionPreview();
@@ -1115,6 +1117,7 @@ public partial class MainWindow : Window
         }
         _history.RecordBefore(CurrentDocument(), _activeFloorIndex);
         _building = added;
+        ClearPendingSuggestion();
         _activeFloorIndex = BuildingStoreys.HighestFloorIndex(_building);
         RebuildFloorPicker();
         ShowFloor(_activeFloorIndex);
