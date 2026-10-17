@@ -72,43 +72,81 @@ public static class RoomLayoutPlanner
         {
             int depth = Math.Abs(near - far);
             if (depth < 4) continue; // avoid rooms under 2m deep
-            int length = lengthHigh - lengthLow;
-            int target = Math.Clamp((int)Math.Round(length / 9.0) +
-                random.Next(-1, 2), length >= 16 ? 2 : 1, Math.Max(1, length / 5));
-            // A domestic ground floor needs a real main living space, not
-            // uniformly small frontage slices that cannot fit one.
-            // Reserve that area before dividing the remaining frontage.
-            var widths = ChooseFrontageWidths(length, depth, target,
-                use, floorIndex,
-                BuildingStoreys.GetFloor(updated, floorIndex).Rooms, random);
 
-            int position = lengthLow;
-            foreach (int width in widths)
+            // Existing rooms (including reserved stairwells) occupy frontage.
+            // Split the free portions at those boundaries rather than
+            // proposing one room that overlaps the stairwell and abandoning
+            // the entire remainder of the hallway side.
+            var free = new List<(int Start, int End)> { (lengthLow, lengthHigh) };
+            int sideLow = Math.Min(near, far), sideHigh = Math.Max(near, far);
+            foreach (var existing in BuildingStoreys.GetFloor(updated, floorIndex).Rooms)
             {
-                int from = Math.Min(near, far);
-                int to = Math.Max(near, far);
-                List<Point2> outline = horizontal
-                    ? Rectangle(position, from, position + width, to)
-                    : Rectangle(from, position, to, position + width);
-                double area = PolygonGeometry.Area(outline);
-                var current = BuildingStoreys.GetFloor(updated, floorIndex);
-                string type = ChooseRoomType(use, floorIndex, area,
-                    current.Rooms, random);
-                var candidate = BuildingStoreys.Copy(updated);
-                var edited = BuildingStoreys.GetFloor(candidate, floorIndex);
-                edited.Rooms.Add(new RoomDefinition
+                if (existing.Id == hallId) continue;
+                double crossMin = horizontal
+                    ? existing.Outline.Min(p => p.Y) : existing.Outline.Min(p => p.X);
+                double crossMax = horizontal
+                    ? existing.Outline.Max(p => p.Y) : existing.Outline.Max(p => p.X);
+                if (crossMin * 2 >= sideHigh - 1e-6 ||
+                    crossMax * 2 <= sideLow + 1e-6) continue;
+
+                int occupiedStart = GridFloor(horizontal
+                    ? existing.Outline.Min(p => p.X)
+                    : existing.Outline.Min(p => p.Y));
+                int occupiedEnd = GridCeil(horizontal
+                    ? existing.Outline.Max(p => p.X)
+                    : existing.Outline.Max(p => p.Y));
+                var remaining = new List<(int Start, int End)>();
+                foreach (var (start, finish) in free)
                 {
-                    Name = NextRoomName(type, edited.Rooms),
-                    Type = type,
-                    Outline = outline
-                });
-                BuildingStoreys.SetFloor(candidate, floorIndex, edited);
-                if (BuildingStoreys.Validate(candidate, out _))
-                {
-                    updated = candidate;
-                    added++;
+                    if (occupiedEnd <= start || occupiedStart >= finish)
+                    {
+                        remaining.Add((start, finish));
+                        continue;
+                    }
+                    if (occupiedStart > start)
+                        remaining.Add((start, occupiedStart));
+                    if (occupiedEnd < finish)
+                        remaining.Add((occupiedEnd, finish));
                 }
-                position += width;
+                free = remaining;
+            }
+            foreach (var (start, end) in free)
+            {
+                int length = end - start;
+                if (length < 4) continue;
+                int target = Math.Clamp((int)Math.Round(length / 9.0) +
+                    random.Next(-1, 2), length >= 16 ? 2 : 1, Math.Max(1, length / 5));
+                var widths = ChooseFrontageWidths(length, depth, target,
+                    use, floorIndex,
+                    BuildingStoreys.GetFloor(updated, floorIndex).Rooms, random);
+                int position = start;
+                foreach (int width in widths)
+                {
+                    int from = Math.Min(near, far);
+                    int to = Math.Max(near, far);
+                    List<Point2> outline = horizontal
+                        ? Rectangle(position, from, position + width, to)
+                        : Rectangle(from, position, to, position + width);
+                    double area = PolygonGeometry.Area(outline);
+                    var current = BuildingStoreys.GetFloor(updated, floorIndex);
+                    string type = ChooseRoomType(use, floorIndex, area,
+                        current.Rooms, random);
+                    var candidate = BuildingStoreys.Copy(updated);
+                    var edited = BuildingStoreys.GetFloor(candidate, floorIndex);
+                    edited.Rooms.Add(new RoomDefinition
+                    {
+                        Name = NextRoomName(type, edited.Rooms),
+                        Type = type,
+                        Outline = outline
+                    });
+                    BuildingStoreys.SetFloor(candidate, floorIndex, edited);
+                    if (BuildingStoreys.Validate(candidate, out _))
+                    {
+                        updated = candidate;
+                        added++;
+                    }
+                    position += width;
+                }
             }
         }
         return added;
