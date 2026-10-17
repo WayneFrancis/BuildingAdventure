@@ -79,7 +79,8 @@ public static class RoomLayoutPlanner
             // uniformly small frontage slices that cannot fit one.
             // Reserve that area before dividing the remaining frontage.
             var widths = ChooseFrontageWidths(length, depth, target,
-                use, floorIndex, floor.Rooms, random);
+                use, floorIndex,
+                BuildingStoreys.GetFloor(updated, floorIndex).Rooms, random);
 
             int position = lengthLow;
             foreach (int width in widths)
