@@ -3022,5 +3022,216 @@ Check("Generator avoids placing named rooms across existing stair footprints", (
     Assert(BuildingStoreys.Validate(result.Building, out reason), reason);
 });
 
+Check("Basement levels use stable negative indices with ground remaining zero", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var one, out var reason), reason);
+    Assert(BuildingStoreys.TryAddBasement(one, out var two, out reason), reason);
+    Assert(BuildingStoreys.FloorCount(two) == 3);
+    Assert(BuildingStoreys.LowestFloorIndex(two) == -2);
+    Assert(BuildingStoreys.HighestFloorIndex(two) == 0);
+    Assert(BuildingStoreys.FloorIndexes(two).SequenceEqual([-2, -1, 0]));
+    Assert(BuildingStoreys.FloorLabel(-1) == "Basement 1");
+    Assert(BuildingStoreys.FloorLabel(-2) == "Basement 2");
+    Assert(two.BasementFloors[0].Name == "Basement 1");
+    Assert(two.BasementFloors[1].Name == "Basement 2");
+    Assert(BuildingStoreys.Validate(two, out reason), reason);
+    Assert(ground.BasementFloors.Count == 0);
+});
+
+Check("Basement and upper floor indices coexist without renumbering ground", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var withBasement, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(withBasement, out var withUpper, out reason), reason);
+    Assert(BuildingStoreys.FloorIndexes(withUpper).SequenceEqual([-1, 0, 1]));
+    Assert(BuildingStoreys.FloorCount(withUpper) == 3);
+    var basement = BuildingStoreys.GetFloor(withUpper, -1);
+    basement.Rooms.Add(new RoomDefinition { Name = "Cellar", Type = "Cellar",
+        Outline = [new(0, 0), new(4, 0), new(4, 4), new(0, 4)] });
+    BuildingStoreys.SetFloor(withUpper, -1, basement);
+    Assert(withUpper.Rooms.Count == 0);
+    Assert(withUpper.UpperFloors[0].Rooms.Count == 0);
+    Assert(withUpper.BasementFloors[0].Rooms.Count == 1);
+    Assert(BuildingStoreys.Validate(withUpper, out reason), reason);
+});
+
+Check("Basement staircase creates slab opening at ground floor", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var withBasement, out var reason), reason);
+    var stairs = new StaircaseDefinition
+    {
+        LowerFloorIndex = -1, Centre = new Point2(5, 4),
+        Length = 3.6, Width = 1.4
+    };
+    Assert(BuildingStoreys.TryAddStaircase(withBasement, stairs,
+        out var placed, out reason), reason);
+    Assert(BuildingStoreys.GetOpenings(placed, 0).Count == 1);
+    Assert(BuildingStoreys.GetOpenings(placed, -1).Count == 0);
+    Assert(BuildingStoreys.GetOpenings(placed, 0)[0].StaircaseId == stairs.Id);
+    Equal(BuildingStoreys.SlabArea(placed, 0), 80 - 3.6 * 1.4);
+    Assert(BuildingStoreys.Validate(placed, out reason), reason);
+});
+
+Check("Second basement staircase opens first basement floor slab", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var one, out var reason), reason);
+    Assert(BuildingStoreys.TryAddBasement(one, out var two, out reason), reason);
+    var flight = new StaircaseDefinition { LowerFloorIndex = -2,
+        Centre = new Point2(5, 4), Length = 3.6, Width = 1.4 };
+    Assert(BuildingStoreys.TryAddStaircase(two, flight, out var placed, out reason), reason);
+    Assert(BuildingStoreys.GetOpenings(placed, -1).Count == 1);
+    Assert(BuildingStoreys.GetOpenings(placed, 0).Count == 0);
+    Assert(BuildingStoreys.Validate(placed, out reason), reason);
+});
+
+Check("Removing deepest basement cleans only its connecting stairs", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var one, out var reason), reason);
+    Assert(BuildingStoreys.TryAddBasement(one, out var two, out reason), reason);
+    var deep = new StaircaseDefinition { LowerFloorIndex = -2,
+        Centre = new Point2(3, 4) };
+    var groundAccess = new StaircaseDefinition { LowerFloorIndex = -1,
+        Centre = new Point2(7, 4) };
+    Assert(BuildingStoreys.TryAddStaircase(two, deep, out var withDeep, out reason), reason);
+    Assert(BuildingStoreys.TryAddStaircase(withDeep, groundAccess,
+        out var withBoth, out reason), reason);
+    Assert(BuildingStoreys.TryRemoveBottomBasement(withBoth, out var remaining,
+        out reason), reason);
+    Assert(remaining.BasementFloors.Count == 1);
+    Assert(remaining.Staircases.Count == 1);
+    Assert(remaining.Staircases[0].LowerFloorIndex == -1);
+    Assert(BuildingStoreys.Validate(remaining, out reason), reason);
+});
+
+Check("Basements round-trip JSON and remain independent in history", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var journal = new BuildingEditHistory();
+    journal.RecordBefore(ground, 0);
+    Assert(BuildingStoreys.TryAddBasement(ground, out var added, out var reason), reason);
+    var restored = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(added));
+    Assert(restored.BasementFloors.Count == 1);
+    Assert(BuildingStoreys.FloorIndexes(restored).SequenceEqual([-1, 0]));
+    Assert(journal.TryUndo(restored, -1, out var back));
+    Assert(back.Building.BasementFloors.Count == 0);
+    Assert(journal.TryRedo(back.Building, 0, out var again));
+    Assert(again.Building.BasementFloors.Count == 1);
+});
+
+Check("Generator targets basement without changing untouched upper floors", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var one, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(one, out var building, out reason), reason);
+    Assert(BuildingGenerator.TrySuggest(building, [-1], 785, out var proposal,
+        out reason), reason);
+    Assert(BuildingStoreys.GetFloor(proposal.Building, -1).Rooms.Count > 0);
+    Assert(BuildingStoreys.GetFloor(proposal.Building, 0).Rooms.Count == 0);
+    Assert(BuildingStoreys.GetFloor(proposal.Building, 1).Rooms.Count == 0);
+});
+
+Check("Generator selected basement and upper floor generate on both", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var one, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(one, out var building, out reason), reason);
+    Assert(BuildingGenerator.TrySuggest(building, [-1, 1], 141,
+        out var proposal, out reason), reason);
+    Assert(BuildingStoreys.GetFloor(proposal.Building, -1).Rooms.Count > 0);
+    Assert(BuildingStoreys.GetFloor(proposal.Building, 1).Rooms.Count > 0);
+    Assert(BuildingStoreys.GetFloor(proposal.Building, 0).Rooms.Count == 0);
+    Assert(proposal.FloorIndexes.SequenceEqual([-1, 1]));
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Four-level combined limit includes basements", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var b1, out var reason), reason);
+    Assert(BuildingStoreys.TryAddBasement(b1, out var b2, out reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(b2, out var four, out reason), reason);
+    Assert(BuildingStoreys.FloorCount(four) == 4);
+    Assert(!BuildingStoreys.TryAddBasement(four, out _, out _));
+    Assert(!BuildingStoreys.TryAddFloor(four, out _, out _));
+});
+
+Check("Accepting one proposed room does not accept other proposed rooms", () =>
+{
+    var building = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var suggestions = new List<RoomDefinition>
+    {
+        new() { Name = "First proposal",
+            Outline = [new(0, 0), new(3, 0), new(3, 3), new(0, 3)] },
+        new() { Name = "Second proposal",
+            Outline = [new(4, 0), new(8, 0), new(8, 3), new(4, 3)] }
+    };
+    var candidate = BuildingStoreys.Copy(building);
+    candidate.Rooms.AddRange(suggestions);
+    var proposal = new BuildingSuggestion(candidate, 17, [0], "Two rooms");
+    Assert(BuildingGenerator.TryAcceptRoom(building, proposal, 0,
+        suggestions[0].Id, out var updated, out var reason), reason);
+    Assert(updated.Rooms.Count == 1);
+    Assert(updated.Rooms[0].Id == suggestions[0].Id);
+    Assert(building.Rooms.Count == 0);
+    Assert(candidate.Rooms.Count == 2);
+    Assert(BuildingGenerator.TryAcceptRoom(updated, proposal, 0,
+        suggestions[1].Id, out var withBoth, out reason), reason);
+    Assert(withBoth.Rooms.Count == 2);
+    Assert(BuildingStoreys.Validate(withBoth, out reason), reason);
+});
+
+Check("Accepting a suggested room on a blank floor copies its initial perimeter", () =>
+{
+    var blank = new BuildingDocument();
+    Assert(BuildingGenerator.TrySuggest(blank, [0], 817,
+        out var suggestion, out var reason), reason);
+    var chosen = suggestion.Building.Rooms[0];
+    Assert(BuildingGenerator.TryAcceptRoom(blank, suggestion, 0,
+        chosen.Id, out var committed, out reason), reason);
+    Assert(committed.Perimeter.SequenceEqual(suggestion.Building.Perimeter));
+    Assert(committed.Rooms.Count == 1);
+    Assert(blank.Perimeter.Count == 0);
+});
+
+Check("Accepting one proposed basement room affects no other floors", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddBasement(ground, out var withBasement, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(withBasement, out var three, out reason), reason);
+    Assert(BuildingGenerator.TrySuggest(three, [-1, 1], 211,
+        out var proposal, out reason), reason);
+    Guid roomId = BuildingStoreys.GetFloor(proposal.Building, -1).Rooms[0].Id;
+    Assert(BuildingGenerator.TryAcceptRoom(three, proposal, -1, roomId,
+        out var committed, out reason), reason);
+    Assert(BuildingStoreys.GetFloor(committed, -1).Rooms.Count == 1);
+    Assert(BuildingStoreys.GetFloor(committed, 1).Rooms.Count == 0);
+    Assert(BuildingStoreys.GetFloor(committed, 0).Rooms.Count == 0);
+    Assert(!BuildingGenerator.TryAcceptRoom(committed, proposal, -1, roomId,
+        out _, out reason));
+    Assert(reason.Contains("already been accepted"));
+});
+
+Check("Partial room acceptance rejects wrong floor or absent room", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var proposalBuilding = BuildingStoreys.Copy(doc);
+    var candidateRoom = new RoomDefinition
+    {
+        Outline = [new(0, 0), new(3, 0), new(3, 3), new(0, 3)]
+    };
+    proposalBuilding.Rooms.Add(candidateRoom);
+    var suggestion = new BuildingSuggestion(proposalBuilding, 3, [0], "One room");
+    Assert(!BuildingGenerator.TryAcceptRoom(doc, suggestion, -1,
+        candidateRoom.Id, out _, out var message));
+    Assert(message.Contains("not part"));
+    Assert(!BuildingGenerator.TryAcceptRoom(doc, suggestion, 0,
+        Guid.NewGuid(), out _, out message));
+    Assert(message.Contains("not found"));
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

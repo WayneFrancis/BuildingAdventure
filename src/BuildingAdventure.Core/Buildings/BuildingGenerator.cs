@@ -66,6 +66,45 @@ public static class BuildingGenerator
         return true;
     }
 
+    /// <summary>
+    /// Accept precisely one room from a detached suggestion on one floor.
+    /// Other suggested rooms and all other floors remain untouched.
+    /// If the target floor has no perimeter, carry over its suggested
+    /// footprint as a prerequisite to placing the room.
+    /// </summary>
+    public static bool TryAcceptRoom(BuildingDocument source,
+        BuildingSuggestion suggestion, int floorIndex, Guid roomId,
+        out BuildingDocument updated, out string reason)
+    {
+        updated = BuildingStoreys.Copy(source);
+        reason = "";
+        if (!BuildingStoreys.HasFloor(source, floorIndex) ||
+            !BuildingStoreys.HasFloor(suggestion.Building, floorIndex) ||
+            !suggestion.FloorIndexes.Contains(floorIndex))
+        {
+            reason = "The selected floor is not part of this suggestion.";
+            return false;
+        }
+        var proposedFloor = BuildingStoreys.GetFloor(suggestion.Building, floorIndex);
+        var room = proposedFloor.Rooms.FirstOrDefault(r => r.Id == roomId);
+        if (room is null)
+        {
+            reason = "The selected proposed room was not found.";
+            return false;
+        }
+        var current = BuildingStoreys.GetFloor(updated, floorIndex);
+        if (current.Rooms.Any(r => r.Id == room.Id))
+        {
+            reason = "This proposed room has already been accepted.";
+            return false;
+        }
+        if (current.Perimeter.Count == 0)
+            current.Perimeter = proposedFloor.Perimeter.ToList();
+        current.Rooms.Add(room.Copy());
+        BuildingStoreys.SetFloor(updated, floorIndex, current);
+        return BuildingStoreys.Validate(updated, out reason);
+    }
+
     public static bool TrySuggest(BuildingDocument source,
         IReadOnlyCollection<int> selectedFloors, int seed,
         out BuildingSuggestion suggestion, out string reason)
@@ -82,7 +121,7 @@ public static class BuildingGenerator
             reason = "Choose at least one floor for generation.";
             return false;
         }
-        if (indices.Any(i => i < 0 || i >= floors))
+        if (indices.Any(i => !BuildingStoreys.HasFloor(source, i)))
         {
             reason = "A selected floor no longer exists.";
             return false;

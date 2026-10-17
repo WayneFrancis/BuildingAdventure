@@ -114,8 +114,14 @@
                         <Button x:Name="RemoveFloorButton" Content="Remove Top Floor"
                                 Click="RemoveFloor_Click" Padding="7,5"/>
                     </WrapPanel>
+                    <WrapPanel Margin="0,0,0,10">
+                        <Button x:Name="AddBasementButton" Content="Add Basement" Click="AddBasement_Click"
+                                Padding="7,5" Margin="0,0,7,0"/>
+                        <Button x:Name="RemoveBasementButton" Content="Remove Deepest Basement"
+                                Click="RemoveBasement_Click" Padding="7,5"/>
+                    </WrapPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,14"
-                               Text="Each floor has its own perimeter. Add Floor copies the outline initially; select that floor and use Split Perimeter, Remove Corner or drag corners to reshape it independently. Stairs must remain inside both connected floors."/>
+                               Text="Each level has its own perimeter. Add Floor creates levels above ground; Add Basement creates levels below ground. Page Up and Page Down switch levels. Add Floor copies the outline initially; select that floor and use Split Perimeter, Remove Corner or drag corners to reshape it independently. Stairs must remain inside both connected floors."/>
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="GeneratorSection" Header="GENERATOR / SUGGESTIONS"
@@ -129,9 +135,14 @@
                             <WrapPanel Margin="0,0,0,8">
                                 <Button Content="Suggest / Regenerate" Click="Suggest_Click"
                                         Padding="7,5" Margin="0,0,5,0"/>
-                                <Button x:Name="AcceptSuggestionButton" Content="Accept"
+                                <Button x:Name="AcceptSuggestionButton" Content="Accept All"
                                         Click="AcceptSuggestion_Click" IsEnabled="False" Padding="7,5"/>
                             </WrapPanel>
+                            <Button x:Name="AcceptSuggestedRoomButton" Content="Accept selected suggested room"
+                                    Click="AcceptSuggestedRoom_Click" IsEnabled="False"
+                                    Padding="7,5" Margin="0,0,0,8"/>
+                            <Button Content="View next selected floor" Click="NextSuggestedFloor_Click"
+                                    Padding="7,5" Margin="0,0,0,7"/>
                             <TextBlock Text="New whole-building draft" Margin="0,8,0,5"/>
                             <WrapPanel Margin="0,0,0,9">
                                 <ComboBox x:Name="WholeBuildingFloorsBox" Width="85" SelectedIndex="1"

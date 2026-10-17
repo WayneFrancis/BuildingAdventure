@@ -4,9 +4,36 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.12 — Generator suggestions, secret doors and floor silhouettes (development branch)
+## v0.13 — Basement levels, Page Up/Down and selective suggestion acceptance (development branch)
 
 The editor currently supports:
+
+- **Page Up / Page Down floor navigation**: when not editing text, Page Up
+  selects the next higher floor and Page Down the next lower floor.
+  The keys work across basement, ground and upper levels and stop at
+  the highest/lowest available level.
+- **Basements and cellars**: use Add Basement to create the next level
+  below the lowest existing floor and Remove Deepest Basement to remove
+  it. The ground floor retains index 0; basement 1 is -1, basement 2
+  is -2, etc. A basement starts with the footprint and wall thickness
+  of the level directly above but is independently editable afterward.
+  Stairs placed on a basement can lead up through the slab of the
+  level above, including through the ground floor. Four levels total
+  (above and below ground combined) are currently supported.
+  Files without basements remain compatible.
+- **Multi-floor generation review**: floor checkboxes can include
+  basement and upper levels. If the current floor was not selected,
+  the editor opens the first selected floor after generating.
+  Use View next selected floor or Page Up / Page Down to examine each
+  floor's green preview; generator changes still apply only to the
+  checked levels.
+- **Accept one proposed room**: in Select / Edit, click a green dashed
+  room proposal; it is highlighted red/orange. Choose Accept selected
+  suggested room to commit only that room (and the initial perimeter
+  if needed), without accepting the other proposed rooms. The rest of
+  the preview remains available, and the change gets its own global
+  undo step. Accept All still applies the whole suggestion.
+  New whole-building drafts must be accepted together.
 
 - **Procedural building suggestions**: GENERATOR / SUGGESTIONS lets you
   select existing floors by checkbox, suggest new rooms within each
@@ -276,6 +303,11 @@ Run the geometry checks without third-party test packages:
 | Centre window within its room facade | Select window, expand WINDOWS and click Centre window on room wall segment |
 | Centre door in a wall section | Select door, expand DOORS and click Centre door on wall segment |
 | Preserve window size and position | Close the application normally; the window and sidebar layout restore on next launch |
+| Navigate between floors | Page Up goes one level up; Page Down goes one level down |
+| Create a cellar or basement | Expand FLOORS, click Add Basement, then select its floor and draw/edit rooms |
+| Remove lowest cellar/basement | Expand FLOORS and click Remove Deepest Basement |
+| Review multi-floor suggestions | Choose View next selected floor or Page Up/Down to see previews on the checked floors |
+| Accept a single generated room | Select / Edit, click its green dashed proposal, then Accept selected suggested room |
 | Generate selected floors | Check floor boxes in GENERATOR, select Suggest / Regenerate and Accept the preview |
 | Suggest a complete new building | Select a floor count and choose Suggest entire building; Accept replaces the current building after confirmation |
 | Save/recall variants | Remember, Preview saved, Remove and Clear list in the generator panel |

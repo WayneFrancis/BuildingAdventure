@@ -17,6 +17,8 @@ public sealed class BuildingDocument
     // Version 2. Ground floor retains the original root properties so
     // existing v0.1-v0.4 JSON files load without conversion.
     public List<StoreyDefinition> UpperFloors { get; set; } = new();
+    // BasementFloors[0] is one level below ground (-1), [1] is -2, etc.
+    public List<StoreyDefinition> BasementFloors { get; set; } = new();
     public List<StaircaseDefinition> Staircases { get; set; } = new();
 }
 

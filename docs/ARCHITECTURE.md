@@ -371,6 +371,38 @@ ceiling heights, or 3D wall meshes.
   storey, labelled and dashed, without their interior walls. They
   complement rather than replace detailed adjacent floor references.
 
+## Signed floor elevations, keyboard navigation and partial suggestions (v0.13)
+
+- Buildings retain the ground floor at index 0. BasementFloors stores the
+  closest basement at array index 0, floor index -1; lower basements have
+  index -2, -3. UpperFloors retains positive floor indices. The public
+  helper methods FloorIndexes, LowestFloorIndex, HighestFloorIndex, and
+  HasFloor address the complete contiguous signed range.
+- FloorCount is the total count of above/below-ground storeys. The current
+  four-level cap includes both. The floor picker is ordered from lowest to
+  highest, maps a displayed selection back to signed floor indices, and
+  supports Page Up/Down without renumbering existing upper-floor links.
+- TryAddBasement creates a detached snapshot with a new lowest basement
+  copying the outline and wall thickness from the immediately higher floor.
+  TryRemoveBottomBasement removes the deepest level and only staircases
+  attached to it. Both are undoable actions in the desktop editor.
+- Stairs always connect LowerFloorIndex to LowerFloorIndex+1, so a staircase
+  at -1 joins basement 1 and ground floor. A ground-floor slab opening is
+  therefore now possible; GetOpenings no longer assumes floor 0 cannot
+  have a staircase void. Existing staircase floor indices remain stable.
+- Old JSON documents without BasementFloors deserialize with an empty
+  default collection. The existing schema version 2 covers multi-storey
+  documents, including basements; schema version 1 remains ground-only.
+- The room generator accepts any valid signed floor index; checkbox
+  selections and candidate display work across basement/ground/upper
+  floors. A cycling button makes multi-floor suggestions easier to inspect.
+- The editor distinguishes proposed rooms by GUID and allows selecting
+  one with a click. Accept selected suggested room runs whole-building
+  validation on a detached copy, commits only that room to the active
+  floor, and records one global undo snapshot. Any other proposed rooms
+  remain non-destructive overlays. Whole-building proposals must still
+  be applied atomically.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

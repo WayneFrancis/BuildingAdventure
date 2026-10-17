@@ -38,6 +38,14 @@ public partial class MainWindow : Window
                 _previousWindowState = WindowState;
         };
         EditorSurface.UsesGlobalHistory = true;
+        EditorSurface.SuggestedRoomSelectionChanged += () =>
+        {
+            if (AcceptSuggestedRoomButton is not null)
+                AcceptSuggestedRoomButton.IsEnabled =
+                    _pendingSuggestion is not null &&
+                !_pendingWholeBuilding &&
+                EditorSurface.SelectedSuggestedRoomId.HasValue;
+        };
         UpdateMemoryList();
         EditorSurface.HighlightUnassigned = true;
         EditorSurface.WindowWidthProvider = () =>
@@ -267,7 +275,9 @@ public partial class MainWindow : Window
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
         OpeningText.Text = $"{BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex).Count} opening(s) in this slab";
         AddFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
-        RemoveFloorButton.IsEnabled = BuildingStoreys.FloorCount(_building) > 1;
+        RemoveFloorButton.IsEnabled = BuildingStoreys.HighestFloorIndex(_building) > 0;
+        AddBasementButton.IsEnabled = BuildingStoreys.FloorCount(_building) < 4;
+        RemoveBasementButton.IsEnabled = BuildingStoreys.LowestFloorIndex(_building) < 0;
         UndoButton.IsEnabled = UndoMenu.IsEnabled =
             EditorSurface.HasPendingStep || _history.CanUndo;
         RedoButton.IsEnabled = RedoMenu.IsEnabled =
@@ -288,8 +298,13 @@ public partial class MainWindow : Window
         HintText.Text = _hint;
         AcceptSuggestionButton.IsEnabled = RememberSuggestionButton.IsEnabled =
             _pendingSuggestion is not null;
-        SuggestionInfoText.Text = _pendingSuggestion?.Description ??
-            "No pending suggestion. Select floors and choose Suggest.";
+        AcceptSuggestedRoomButton.IsEnabled = _pendingSuggestion is not null &&
+            !_pendingWholeBuilding && EditorSurface.SelectedSuggestedRoomId.HasValue;
+        SuggestionInfoText.Text = _pendingSuggestion is null
+            ? "No pending suggestion. Select floors and choose Suggest."
+            : _pendingSuggestion.Description +
+              $" | Previewing {BuildingStoreys.FloorLabel(_activeFloorIndex)}. " +
+              "Use Page Up / Page Down or View next selected floor to inspect other levels.";
         ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
         string fileLabel = _filePath is null ? "Untitled" : Path.GetFileName(_filePath);
         Title = $"{NameBox.Text} — {fileLabel}{(IsDirty() ? " *" : "")} — BuildingAdventure";
@@ -540,7 +555,7 @@ public partial class MainWindow : Window
         if (EditorSurface is null) return;
         EditorSurface.SetSuggestionPreview(
             _pendingSuggestion is not null &&
-            _activeFloorIndex < BuildingStoreys.FloorCount(_pendingSuggestion.Building)
+            BuildingStoreys.HasFloor(_pendingSuggestion.Building, _activeFloorIndex)
                 ? BuildingStoreys.GetFloor(_pendingSuggestion.Building, _activeFloorIndex)
                 : null);
     }
@@ -555,8 +570,17 @@ public partial class MainWindow : Window
         _pendingSuggestion = proposal.Copy();
         _suggestionSource = CurrentJson();
         _pendingWholeBuilding = whole;
-        UpdateSuggestionPreview();
-        _hint = "Suggestion previewed in green. Switch floors to inspect, then Accept or Remember.";
+        if (!proposal.FloorIndexes.Contains(_activeFloorIndex) &&
+            proposal.FloorIndexes.Count > 0 &&
+            BuildingStoreys.HasFloor(_building, proposal.FloorIndexes[0]))
+        {
+            _building = CurrentDocument();
+            ShowFloor(proposal.FloorIndexes[0]);
+        }
+        else
+            UpdateSuggestionPreview();
+        _hint = $"Suggested changes on {proposal.FloorIndexes.Count} floor(s). " +
+            "Use View next selected floor or Page Up/Down to inspect, then Accept.";
         Refresh();
     }
 
@@ -572,6 +596,65 @@ public partial class MainWindow : Window
             return;
         }
         BeginSuggestion(proposal, whole: false);
+    }
+
+    private void NextSuggestedFloor_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingSuggestion is null || _pendingSuggestion.FloorIndexes.Count == 0)
+        {
+            _hint = "Generate a suggestion before reviewing selected floors.";
+            Refresh();
+            return;
+        }
+        var eligible = _pendingSuggestion.FloorIndexes
+            .Where(i => BuildingStoreys.HasFloor(_building, i))
+            .Distinct().OrderBy(i => i).ToArray();
+        if (eligible.Length == 0)
+        {
+            _hint = "Accept the whole-building draft to view its new floors.";
+            Refresh();
+            return;
+        }
+        int next = eligible.FirstOrDefault(i => i > _activeFloorIndex,
+            eligible[0]);
+        _building = CurrentDocument();
+        ShowFloor(next);
+        _hint = $"Previewing suggested rooms on {BuildingStoreys.FloorLabel(next)}.";
+        Refresh();
+    }
+
+    private void AcceptSuggestedRoom_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingSuggestion is null ||
+            !EditorSurface.SelectedSuggestedRoomId.HasValue) return;
+        if (_pendingWholeBuilding)
+        {
+            _hint = "Accept the whole-building draft first; individual rooms need an existing building.";
+            Refresh();
+            return;
+        }
+        var before = CurrentDocument();
+        var suggested = BuildingStoreys.HasFloor(
+            _pendingSuggestion.Building, _activeFloorIndex)
+            ? BuildingStoreys.GetFloor(_pendingSuggestion.Building, _activeFloorIndex)
+            : null;
+        var room = suggested?.Rooms.FirstOrDefault(
+            r => r.Id == EditorSurface.SelectedSuggestedRoomId.Value);
+        if (room is null) return;
+        if (!BuildingGenerator.TryAcceptRoom(before, _pendingSuggestion,
+                _activeFloorIndex, room.Id, out var updated, out var reason))
+        {
+            _hint = "Cannot accept this room: " + reason;
+            Refresh();
+            return;
+        }
+
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = updated;
+        ShowFloor(_activeFloorIndex);
+        _hint = $"Accepted {room.Name} on {BuildingStoreys.FloorLabel(_activeFloorIndex)}. " +
+            "Other proposed rooms remain available. Ctrl+Z to undo.";
+        Refresh();
     }
 
     private void SuggestWholeBuilding_Click(object sender, RoutedEventArgs e)
@@ -615,8 +698,9 @@ public partial class MainWindow : Window
 
         _history.RecordBefore(before, _activeFloorIndex);
         _building = BuildingStoreys.Copy(_pendingSuggestion.Building);
-        _activeFloorIndex = Math.Min(_activeFloorIndex,
-            BuildingStoreys.FloorCount(_building) - 1);
+        _activeFloorIndex = Math.Clamp(_activeFloorIndex,
+            BuildingStoreys.LowestFloorIndex(_building),
+            BuildingStoreys.HighestFloorIndex(_building));
         ClearPendingSuggestion();
         NameBox.Text = _building.Name;
         RebuildFloorPicker();
@@ -739,13 +823,16 @@ public partial class MainWindow : Window
         bool prior = _loading;
         _loading = true;
         FloorPicker.Items.Clear();
-        for (int i = 0; i < BuildingStoreys.FloorCount(_building); i++)
-            FloorPicker.Items.Add(i == 0 ? "Ground Floor" : _building.UpperFloors[i - 1].Name);
-        FloorPicker.SelectedIndex = _activeFloorIndex;
+        foreach (int i in BuildingStoreys.FloorIndexes(_building))
+            FloorPicker.Items.Add(i == 0 ? "Ground Floor" : i < 0
+                ? _building.BasementFloors[-i - 1].Name
+                : _building.UpperFloors[i - 1].Name);
+        FloorPicker.SelectedIndex =
+            _activeFloorIndex - BuildingStoreys.LowestFloorIndex(_building);
         if (GeneratorFloorChecks is not null)
         {
             GeneratorFloorChecks.Children.Clear();
-            for (int i = 0; i < BuildingStoreys.FloorCount(_building); i++)
+            foreach (int i in BuildingStoreys.FloorIndexes(_building))
                 GeneratorFloorChecks.Children.Add(new CheckBox
                 {
                     Content = BuildingStoreys.FloorLabel(i),
@@ -760,7 +847,7 @@ public partial class MainWindow : Window
 
     private void ShowFloor(int index)
     {
-        if (index < 0 || index >= BuildingStoreys.FloorCount(_building)) return;
+        if (!BuildingStoreys.HasFloor(_building, index)) return;
         _loading = true;
         _activeFloorIndex = index;
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, index));
@@ -769,7 +856,8 @@ public partial class MainWindow : Window
         EditorSurface.SetStairOverlay(_building.Staircases, index);
         UpdateAlignmentReferences();
         EditorSurface.SetTool(EditorTool.Select);
-        FloorPicker.SelectedIndex = index;
+        FloorPicker.SelectedIndex =
+            index - BuildingStoreys.LowestFloorIndex(_building);
         _loading = false;
         EditorSurface.FitToView();
         _hint = $"Editing {BuildingStoreys.FloorLabel(index)}.";
@@ -851,7 +939,7 @@ public partial class MainWindow : Window
         EditorSurface.SetFloorReferences(references, AlignmentOpacitySlider.Value);
         if (AllFloorSilhouettesCheckBox?.IsChecked == true)
         {
-            var all = Enumerable.Range(0, BuildingStoreys.FloorCount(_building))
+            var all = BuildingStoreys.FloorIndexes(_building)
                 .Where(i => i != _activeFloorIndex)
                 .Select(i => new AdjacentFloorPlan(
                     i, i > _activeFloorIndex, BuildingStoreys.GetFloor(_building, i)))
@@ -872,8 +960,10 @@ public partial class MainWindow : Window
     private void FloorPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || EditorSurface is null || FloorPicker is null) return;
-        int next = FloorPicker.SelectedIndex;
-        if (next < 0 || next == _activeFloorIndex) return;
+        int selected = FloorPicker.SelectedIndex;
+        if (selected < 0) return;
+        int next = selected + BuildingStoreys.LowestFloorIndex(_building);
+        if (next == _activeFloorIndex) return;
         _building = CurrentDocument();
         ShowFloor(next);
     }
@@ -888,7 +978,7 @@ public partial class MainWindow : Window
         }
         _history.RecordBefore(CurrentDocument(), _activeFloorIndex);
         _building = added;
-        _activeFloorIndex = BuildingStoreys.FloorCount(_building) - 1;
+        _activeFloorIndex = BuildingStoreys.HighestFloorIndex(_building);
         RebuildFloorPicker();
         ShowFloor(_activeFloorIndex);
         _hint = "Upper floor created. Exterior copied; rooms and doors are independent.";
@@ -911,11 +1001,70 @@ public partial class MainWindow : Window
         _history.RecordBefore(CurrentDocument(), _activeFloorIndex);
         _building = updated;
         _activeFloorIndex = Math.Min(_activeFloorIndex,
-            BuildingStoreys.FloorCount(_building) - 1);
+            BuildingStoreys.HighestFloorIndex(_building));
         RebuildFloorPicker();
         ShowFloor(_activeFloorIndex);
         _hint = "Highest floor removed.";
         Refresh();
+    }
+
+    private void AddBasement_Click(object sender, RoutedEventArgs e)
+    {
+        var before = CurrentDocument();
+        if (!BuildingStoreys.TryAddBasement(before, out var added, out var reason))
+        {
+            MessageBox.Show(this, reason, "Cannot add basement",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = added;
+        _activeFloorIndex = BuildingStoreys.LowestFloorIndex(added);
+        ClearPendingSuggestion();
+        RebuildFloorPicker();
+        ShowFloor(_activeFloorIndex);
+        _hint = "Basement created below the previous lowest level. Add stairs to connect levels.";
+        Refresh();
+    }
+
+    private void RemoveBasement_Click(object sender, RoutedEventArgs e)
+    {
+        if (BuildingStoreys.LowestFloorIndex(_building) == 0) return;
+        if (MessageBox.Show(this,
+                "Remove the deepest basement and any stairs connected to it?",
+                "Remove basement", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+            != MessageBoxResult.Yes) return;
+        var before = CurrentDocument();
+        if (!BuildingStoreys.TryRemoveBottomBasement(before,
+                out var updated, out var reason))
+        {
+            MessageBox.Show(this, reason, "Cannot remove basement",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = updated;
+        _activeFloorIndex = Math.Max(_activeFloorIndex,
+            BuildingStoreys.LowestFloorIndex(updated));
+        ClearPendingSuggestion();
+        RebuildFloorPicker();
+        ShowFloor(_activeFloorIndex);
+        _hint = "Deepest basement removed. Ctrl+Z restores it.";
+        Refresh();
+    }
+
+    private void NavigateFloor(int change)
+    {
+        if (EditorSurface.HasPendingStep)
+        {
+            _hint = "Finish or cancel the current drawing before switching floors.";
+            Refresh();
+            return;
+        }
+        int next = _activeFloorIndex + change;
+        if (!BuildingStoreys.HasFloor(_building, next)) return;
+        _building = CurrentDocument();
+        ShowFloor(next);
     }
 
     private void PlaceStairsTool_Click(object sender, RoutedEventArgs e) =>
@@ -929,10 +1078,16 @@ public partial class MainWindow : Window
 
     private StaircaseDefinition? GetStairTemplate()
     {
+        // Prefer stairs up from the current level. At the top of the
+        // building, allow placing stairs down into the level below,
+        // including the basement-to-ground connection.
+        int lowerFloor = _activeFloorIndex < BuildingStoreys.HighestFloorIndex(_building)
+            ? _activeFloorIndex : _activeFloorIndex - 1;
         if (StairLengthBox is null || StairWidthBox is null ||
             OpeningWidthBox is null || OpeningLengthBox is null ||
             StairRotationBox is null || EditorSurface is null ||
-            _activeFloorIndex >= BuildingStoreys.FloorCount(_building) - 1 ||
+            lowerFloor < BuildingStoreys.LowestFloorIndex(_building) ||
+            lowerFloor >= BuildingStoreys.HighestFloorIndex(_building) ||
             !TryReadMetres(StairLengthBox.Text, out double length) ||
             !TryReadMetres(StairWidthBox.Text, out double width) ||
             !TryReadMetres(OpeningWidthBox.Text, out double extraWidth) ||
@@ -945,7 +1100,7 @@ public partial class MainWindow : Window
 
         return new StaircaseDefinition
         {
-            LowerFloorIndex = _activeFloorIndex,
+            LowerFloorIndex = lowerFloor,
             Length = length,
             Width = width,
             OpeningExtraWidth = extraWidth,
@@ -1239,6 +1394,12 @@ public partial class MainWindow : Window
         }
         else if (ctrl && e.Key == Key.Z) UndoDocument();
         else if (ctrl && e.Key == Key.Y) RedoDocument();
+        else if (!ctrl && !shift && e.Key == Key.PageUp &&
+                 Keyboard.FocusedElement is not TextBox)
+            NavigateFloor(+1);
+        else if (!ctrl && !shift && e.Key == Key.PageDown &&
+                 Keyboard.FocusedElement is not TextBox)
+            NavigateFloor(-1);
         else if (ctrl && e.Key == Key.D0) EditorSurface.FitToView();
         else if (e.Key == Key.Escape) EditorSurface.CancelDrawing();
         else if (e.Key == Key.Delete && !NameBox.IsKeyboardFocusWithin && !RoomNameBox.IsKeyboardFocusWithin)

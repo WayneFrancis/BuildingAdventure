@@ -67,7 +67,19 @@ public sealed record AdjacentFloorPlan(int FloorIndex, bool IsAbove,
 public static class BuildingStoreys
 {
     public static int FloorCount(BuildingDocument document) =>
-        1 + document.UpperFloors.Count;
+        1 + document.UpperFloors.Count + document.BasementFloors.Count;
+
+    public static int LowestFloorIndex(BuildingDocument document) =>
+        -document.BasementFloors.Count;
+
+    public static int HighestFloorIndex(BuildingDocument document) =>
+        document.UpperFloors.Count;
+
+    public static IReadOnlyList<int> FloorIndexes(BuildingDocument document) =>
+        Enumerable.Range(LowestFloorIndex(document), FloorCount(document)).ToArray();
+
+    public static bool HasFloor(BuildingDocument document, int index) =>
+        index >= LowestFloorIndex(document) && index <= HighestFloorIndex(document);
 
     public static BuildingDocument Copy(BuildingDocument source) => new()
     {
@@ -79,6 +91,7 @@ public static class BuildingStoreys
         Windows = source.Windows.Select(w => w.Copy()).ToList(),
         WallThickness = source.WallThickness.Copy(),
         UpperFloors = source.UpperFloors.Select(f => f.Copy()).ToList(),
+        BasementFloors = source.BasementFloors.Select(f => f.Copy()).ToList(),
         Staircases = source.Staircases.Select(s => s.Copy()).ToList()
     };
 
@@ -88,9 +101,7 @@ public static class BuildingStoreys
     /// </summary>
     public static List<StairwellOpening> GetOpenings(
         IReadOnlyList<StaircaseDefinition> staircases, int floorIndex) =>
-        floorIndex <= 0
-            ? new List<StairwellOpening>()
-            : staircases
+        staircases
                 .Where(s => s.LowerFloorIndex == floorIndex - 1)
                 .Select(s => new StairwellOpening(s.Id, floorIndex,
                     StairOpeningFootprint(s)))
@@ -116,10 +127,10 @@ public static class BuildingStoreys
     {
         CheckFloorIndex(building, floorIndex);
         var adjacent = new List<AdjacentFloorPlan>();
-        if (includeBelow && floorIndex > 0)
+        if (includeBelow && floorIndex > LowestFloorIndex(building))
             adjacent.Add(new AdjacentFloorPlan(
                 floorIndex - 1, false, GetFloor(building, floorIndex - 1)));
-        if (includeAbove && floorIndex + 1 < FloorCount(building))
+        if (includeAbove && floorIndex < HighestFloorIndex(building))
             adjacent.Add(new AdjacentFloorPlan(
                 floorIndex + 1, true, GetFloor(building, floorIndex + 1)));
         return adjacent;
@@ -148,7 +159,9 @@ public static class BuildingStoreys
                 WallThickness = building.WallThickness.Copy()
             };
 
-        var floor = building.UpperFloors[floorIndex - 1];
+        var floor = floorIndex < 0
+            ? building.BasementFloors[-floorIndex - 1]
+            : building.UpperFloors[floorIndex - 1];
         return new BuildingDocument
         {
             Name = building.Name,
@@ -174,7 +187,9 @@ public static class BuildingStoreys
         }
         else
         {
-            var floor = building.UpperFloors[index - 1];
+            var floor = index < 0
+                ? building.BasementFloors[-index - 1]
+                : building.UpperFloors[index - 1];
             floor.Perimeter = editedFloor.Perimeter.ToList();
             floor.Rooms = editedFloor.Rooms.Select(r => r.Copy()).ToList();
             floor.Doors = editedFloor.Doors.Select(d => d.Copy()).ToList();
@@ -193,13 +208,13 @@ public static class BuildingStoreys
             reason = "Buildings are currently limited to four floors.";
             return false;
         }
-        var previous = GetFloor(result, FloorCount(result) - 1);
+        var previous = GetFloor(result, HighestFloorIndex(result));
         if (!PolygonGeometry.IsValidOutline(previous.Perimeter, out reason))
         {
             reason = "Finish a valid perimeter before adding another floor: " + reason;
             return false;
         }
-        int index = FloorCount(result);
+        int index = HighestFloorIndex(result) + 1;
         result.UpperFloors.Add(new StoreyDefinition
         {
             Name = FloorLabel(index),
@@ -207,6 +222,54 @@ public static class BuildingStoreys
             WallThickness = previous.WallThickness.Copy()
         });
         result.SchemaVersion = 2;
+        return true;
+    }
+
+    /// <summary>
+    /// Add a new lowest underground level, maintaining ground as floor 0
+    /// and addressing basement levels by -1, -2, etc.
+    /// </summary>
+    public static bool TryAddBasement(BuildingDocument source,
+        out BuildingDocument result, out string reason)
+    {
+        result = Copy(source);
+        reason = "";
+        if (FloorCount(result) >= 4)
+        {
+            reason = "Buildings are currently limited to four levels total.";
+            return false;
+        }
+        int newIndex = LowestFloorIndex(result) - 1;
+        var above = GetFloor(result, newIndex + 1);
+        if (!PolygonGeometry.IsValidOutline(above.Perimeter, out reason))
+        {
+            reason = "Finish the perimeter above the basement first: " + reason;
+            return false;
+        }
+        result.BasementFloors.Add(new StoreyDefinition
+        {
+            Name = FloorLabel(newIndex),
+            Perimeter = above.Perimeter.ToList(),
+            WallThickness = above.WallThickness.Copy()
+        });
+        result.SchemaVersion = 2;
+        return true;
+    }
+
+    /// <summary>Remove only the deepest underground floor and its access stairs.</summary>
+    public static bool TryRemoveBottomBasement(BuildingDocument source,
+        out BuildingDocument result, out string reason)
+    {
+        result = Copy(source);
+        reason = "";
+        if (result.BasementFloors.Count == 0)
+        {
+            reason = "There is no basement to remove.";
+            return false;
+        }
+        int bottom = LowestFloorIndex(result);
+        result.BasementFloors.RemoveAt(result.BasementFloors.Count - 1);
+        result.Staircases.RemoveAll(s => s.LowerFloorIndex == bottom);
         return true;
     }
 
@@ -218,10 +281,10 @@ public static class BuildingStoreys
         reason = "";
         if (result.UpperFloors.Count == 0)
         {
-            reason = "The ground floor cannot be removed.";
+            reason = "There is no upper floor to remove.";
             return false;
         }
-        int topIndex = FloorCount(result) - 1;
+        int topIndex = HighestFloorIndex(result);
         result.UpperFloors.RemoveAt(result.UpperFloors.Count - 1);
         result.Staircases.RemoveAll(stairs => stairs.LowerFloorIndex >= topIndex - 1);
         return true;
@@ -281,7 +344,10 @@ public static class BuildingStoreys
         1 => "First Floor",
         2 => "Second Floor",
         3 => "Third Floor",
-        _ => $"Floor {index + 1}"
+        -1 => "Basement 1",
+        -2 => "Basement 2",
+        -3 => "Basement 3",
+        _ => index < 0 ? $"Basement {-index}" : $"Floor {index + 1}"
     };
 
     /// <summary>Validates all independent floor plans and each cross-floor stair reservation.</summary>
@@ -293,7 +359,8 @@ public static class BuildingStoreys
             reason = "Ground Floor: Wall thickness settings are missing.";
             return false;
         }
-        if (building.UpperFloors is null || building.Staircases is null)
+        if (building.UpperFloors is null || building.BasementFloors is null ||
+            building.Staircases is null)
         {
             reason = "Floor or staircase collections are missing.";
             return false;
@@ -304,7 +371,8 @@ public static class BuildingStoreys
             return false;
         }
         if (building.SchemaVersion == 1 &&
-            (building.UpperFloors.Count != 0 || building.Staircases.Count != 0))
+            (building.UpperFloors.Count != 0 || building.BasementFloors.Count != 0 ||
+             building.Staircases.Count != 0))
         {
             reason = "Multi-floor buildings require JSON schema version 2.";
             return false;
@@ -315,11 +383,13 @@ public static class BuildingStoreys
             return false;
         }
 
-        for (int i = 0; i < FloorCount(building); i++)
+        foreach (int i in FloorIndexes(building))
         {
-            if (i > 0)
+            if (i != 0)
             {
-                var floor = building.UpperFloors[i - 1];
+                var floor = i < 0
+                    ? building.BasementFloors[-i - 1]
+                    : building.UpperFloors[i - 1];
                 if (floor is null || floor.Perimeter is null ||
                     floor.Rooms is null || floor.Doors is null || floor.Windows is null ||
                     floor.WallThickness is null ||
@@ -336,7 +406,7 @@ public static class BuildingStoreys
                 reason = $"{FloorLabel(i)}: {error}";
                 return false;
             }
-            if (i > 0 && singleFloor.Perimeter.Count == 0)
+            if (i != 0 && singleFloor.Perimeter.Count == 0)
             {
                 reason = $"{FloorLabel(i)} must have a perimeter.";
                 return false;
@@ -347,7 +417,8 @@ public static class BuildingStoreys
         foreach (var stair in building.Staircases)
         {
             if (stair is null || stair.Id == Guid.Empty || !ids.Add(stair.Id) ||
-                stair.LowerFloorIndex < 0 || stair.LowerFloorIndex >= FloorCount(building) - 1 ||
+                stair.LowerFloorIndex < LowestFloorIndex(building) ||
+                stair.LowerFloorIndex >= HighestFloorIndex(building) ||
                 !double.IsFinite(stair.Centre.X) || !double.IsFinite(stair.Centre.Y) ||
                 !double.IsFinite(stair.Width) || stair.Width < 0.7 || stair.Width > 5 ||
                 !double.IsFinite(stair.Length) || stair.Length < 1.8 || stair.Length > 12 ||
@@ -413,7 +484,7 @@ public static class BuildingStoreys
 
         // Voids must not overlap: unioning several different holes would
         // otherwise misstate usable slab area and create ambiguous openings.
-        for (int floorIndex = 1; floorIndex < FloorCount(building); floorIndex++)
+        foreach (int floorIndex in FloorIndexes(building).Where(i => i > LowestFloorIndex(building)))
         {
             var openings = GetOpenings(building, floorIndex);
             for (int i = 0; i < openings.Count; i++)
@@ -518,7 +589,7 @@ public static class BuildingStoreys
 
     private static void CheckFloorIndex(BuildingDocument building, int index)
     {
-        if (index < 0 || index >= FloorCount(building))
+        if (!HasFloor(building, index))
             throw new ArgumentOutOfRangeException(nameof(index));
     }
 }

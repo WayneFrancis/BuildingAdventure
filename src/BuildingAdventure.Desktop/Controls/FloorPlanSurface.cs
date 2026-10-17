@@ -59,6 +59,9 @@ public sealed class FloorPlanSurface : FrameworkElement
     private double _referenceOpacity = 0.40;
     private List<AdjacentFloorPlan> _silhouetteFloors = new();
     private BuildingDocument? _suggestedFloor;
+    private Guid? _selectedSuggestedRoomId;
+    public Guid? SelectedSuggestedRoomId => _selectedSuggestedRoomId;
+    public event Action? SuggestedRoomSelectionChanged;
     private MapVisibilityMode _displayMode;
     private bool _draggingStair;
     private bool _rotatingStair;
@@ -120,7 +123,10 @@ public sealed class FloorPlanSurface : FrameworkElement
     public void SetSuggestionPreview(BuildingDocument? suggestion)
     {
         _suggestedFloor = suggestion is null ? null : BuildingStoreys.Copy(suggestion);
+        if (_suggestedFloor?.Rooms.All(r => r.Id != _selectedSuggestedRoomId) != false)
+            _selectedSuggestedRoomId = null;
         InvalidateVisual();
+        SuggestedRoomSelectionChanged?.Invoke();
     }
 
     /// <summary>Refresh the placement ghost when dimension input changes.</summary>
@@ -791,8 +797,9 @@ public sealed class FloorPlanSurface : FrameworkElement
                 BuildGeometry(footprint, true));
 
             Point middle = ToScreen(stair.Centre);
-            string label = goingUp ? $"UP to {stair.LowerFloorIndex + 2}"
-                                   : $"DOWN to {stair.LowerFloorIndex + 1}";
+            string label = goingUp
+                ? $"UP to {BuildingStoreys.FloorLabel(stair.LowerFloorIndex + 1)}"
+                : $"DOWN to {BuildingStoreys.FloorLabel(stair.LowerFloorIndex)}";
             DrawText(dc, label, new Point(middle.X + 5, middle.Y - 8),
                 12, Brushes.DarkSlateBlue);
 
@@ -921,6 +928,22 @@ public sealed class FloorPlanSurface : FrameworkElement
         }
     }
 
+    private bool SelectSuggestedRoom(Point position)
+    {
+        if (_suggestedFloor is null) return false;
+        var existing = _rooms.Select(room => room.Id).ToHashSet();
+        var mouse = ToWorld(position);
+        var found = _suggestedFloor.Rooms.LastOrDefault(room =>
+            !existing.Contains(room.Id) &&
+            PolygonGeometry.ContainsPoint(room.Outline, mouse));
+        if (found is null) return false;
+        _selectedSuggestedRoomId = found.Id;
+        SuggestedRoomSelectionChanged?.Invoke();
+        InvalidateVisual();
+        Say("Selected suggestion: " + found.Name + ". Use Accept selected suggested room.");
+        return true;
+    }
+
     private void DrawSuggestionPreview(DrawingContext dc)
     {
         if (_suggestedFloor is null) return;
@@ -937,7 +960,10 @@ public sealed class FloorPlanSurface : FrameworkElement
         {
             var shape = BuildGeometry(room.Outline, true);
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(85, 35, 173, 100)),
-                new Pen(Brushes.ForestGreen, 2.3) { DashStyle = DashStyles.Dash },
+                new Pen(room.Id == _selectedSuggestedRoomId
+                    ? Brushes.OrangeRed : Brushes.ForestGreen,
+                    room.Id == _selectedSuggestedRoomId ? 3.5 : 2.3)
+                { DashStyle = DashStyles.Dash },
                 shape);
             Point at = ToScreen(FindRoomLabelPoint(room.Outline));
             DrawText(dc, "+ " + room.Name, at, 12, Brushes.DarkGreen);
@@ -1131,6 +1157,12 @@ public sealed class FloorPlanSurface : FrameworkElement
         if (_displayMode == MapVisibilityMode.Player)
         {
             Say("Player preview is presentation-only. Switch to Editor to make changes.");
+            e.Handled = true;
+            return;
+        }
+
+        if (Tool == EditorTool.Select && SelectSuggestedRoom(position))
+        {
             e.Handled = true;
             return;
         }
