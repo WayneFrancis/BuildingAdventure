@@ -3900,5 +3900,30 @@ Check("Residential room roles are allocated before repeat bedrooms", () =>
     Assert(RoomLayoutPlanner.NextRoomName("Kitchen", existing) == "Kitchen 2");
 });
 
+Check("Three-floor whole-building preview remains three floors through acceptance copy and JSON", () =>
+{
+    var existing = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.FloorCount(existing) == 1);
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true,
+        Purpose = BuildingUse.Residence
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(3, 27017, options,
+        out var draft, out var reason), reason);
+    Assert(draft.FloorIndexes.SequenceEqual([0, 1, 2]));
+    Assert(BuildingStoreys.FloorCount(draft.Building) == 3);
+    Assert(draft.Building.UpperFloors.Count == 2);
+    foreach (int index in draft.FloorIndexes)
+        Assert(BuildingStoreys.GetFloor(draft.Building, index).Rooms.Count > 0);
+    var accepted = BuildingStoreys.Copy(draft.Building);
+    Assert(BuildingStoreys.FloorCount(accepted) == 3);
+    var reloaded = BuildingDocumentJson.Deserialize(
+        BuildingDocumentJson.Serialize(accepted));
+    Assert(BuildingStoreys.FloorCount(reloaded) == 3);
+    Assert(BuildingStoreys.FloorIndexes(reloaded).SequenceEqual([0, 1, 2]));
+    Assert(BuildingStoreys.Validate(reloaded, out reason), reason);
+    Assert(BuildingStoreys.FloorCount(existing) == 1);
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
