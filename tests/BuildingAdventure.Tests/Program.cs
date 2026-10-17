@@ -3925,5 +3925,67 @@ Check("Three-floor whole-building preview remains three floors through acceptanc
     Assert(BuildingStoreys.Validate(reloaded, out reason), reason);
     Assert(BuildingStoreys.FloorCount(existing) == 1);
 });
+Check("Three-floor layout reserves aligned stairwells beside, not inside, the hallway", () =>
+{
+    var settings = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true, Stairs = true,
+        Purpose = BuildingUse.Residence
+    };
+    foreach (int seed in new[] { 812, 1783, 42024 })
+    {
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(3, seed, settings,
+            out var draft, out var reason), reason);
+        var building = draft.Building;
+        Assert(BuildingStoreys.FloorCount(building) == 3);
+        Assert(building.Staircases.Count == 2,
+            "Each pair of adjoining floors should have a staircase.");
+        var first = building.Staircases.Single(s => s.LowerFloorIndex == 0);
+        var second = building.Staircases.Single(s => s.LowerFloorIndex == 1);
+        Assert(first.Centre.DistanceTo(second.Centre) < 1e-6,
+            "Up/down flights should align in their dedicated stairwell.");
+        foreach (int index in BuildingStoreys.FloorIndexes(building))
+        {
+            var floor = BuildingStoreys.GetFloor(building, index);
+            var hall = floor.Rooms.Single(r => r.Type == "Hallway");
+            var stairwell = floor.Rooms.Single(r => r.Type == "Stairwell");
+            Assert(BuildingConnectivity.ShareWall(hall.Outline,
+                stairwell.Outline, 2.0),
+                "Stairwell must open off the main hall.");
+            Assert(!PolygonGeometry.ContainsPoint(hall.Outline, first.Centre),
+                "Stairs cannot obstruct the walking space of the hall.");
+            Assert(PolygonGeometry.ContainsPoint(stairwell.Outline, first.Centre));
+            Assert(floor.Doors.Any(d =>
+                PolygonGeometry.ClosestPointOnSegment(
+                    d.Centre, stairwell.Outline[0], stairwell.Outline[1])
+                    .DistanceTo(d.Centre) < 0.01 ||
+                Enumerable.Range(0, stairwell.Outline.Count).Any(i =>
+                    PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                        stairwell.Outline[i],
+                        stairwell.Outline[(i + 1) % stairwell.Outline.Count])
+                        .DistanceTo(d.Centre) < 0.01)),
+                "Each stairwell needs a real doorway.");
+        }
+        Assert(BuildingStoreys.Validate(building, out reason), reason);
+    }
+});
+
+Check("Hall-only multi-floor stair suggestions never block a pre-existing corridor", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
+    Assert(BuildingGenerator.TrySuggest(two, [0, 1], 1223,
+        new GenerationOptions { Rooms = false, Corridors = true, Doors = false },
+        out var halls, out reason), reason);
+    var source = halls.Building;
+    var options = new GenerationOptions
+    {
+        Rooms = false, Corridors = false, Doors = false, Stairs = true
+    };
+    Assert(!BuildingGenerator.TrySuggest(source, [0, 1], 1223, options,
+        out _, out reason));
+    Assert(source.Staircases.Count == 0);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
