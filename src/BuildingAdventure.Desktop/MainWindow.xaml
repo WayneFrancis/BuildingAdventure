@@ -384,7 +384,34 @@
             </ScrollViewer>
         </Border>
         <Border Background="#FFFFFF">
-            <local:FloorPlanSurface x:Name="EditorSurface"/>
+            <Grid>
+                <local:FloorPlanSurface x:Name="EditorSurface"/>
+                <!-- Detached proposed building: this view never edits the active document. -->
+                <Grid x:Name="WholeBuildingPreviewPanel" Visibility="Collapsed"
+                      Background="White" Panel.ZIndex="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0" Background="#E8F2EB" Padding="10">
+                        <StackPanel>
+                            <TextBlock x:Name="ProposedBuildingHeader" FontWeight="Bold"
+                                       Text="PROPOSED BUILDING — NOT YET ACCEPTED"/>
+                            <TextBlock Text="Browse the proposed floors here. Accept All commits them; Discard preview leaves your building unchanged."
+                                       TextWrapping="Wrap" Margin="0,4,0,8"/>
+                            <WrapPanel>
+                                <Button Content="Previous floor" Click="PreviousProposalFloor_Click" Padding="8,5" Margin="0,0,8,0"/>
+                                <ComboBox x:Name="ProposalFloorPicker" MinWidth="180"
+                                          SelectionChanged="ProposalFloorPicker_SelectionChanged"
+                                          Padding="5" Margin="0,0,8,0"/>
+                                <Button Content="Next floor" Click="NextProposalFloor_Click" Padding="8,5"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                    <local:FloorPlanSurface x:Name="WholeBuildingPreviewSurface" Grid.Row="1"
+                                             IsHitTestVisible="False"/>
+                </Grid>
+            </Grid>
         </Border>
     </DockPanel>
 </Window>
