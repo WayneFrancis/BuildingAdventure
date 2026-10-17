@@ -3858,5 +3858,47 @@ Check("Floor coverage metric returns remaining area and is never negative", () =
     Equal(RoomLayoutPlanner.UnassignedArea(doc), 40);
 });
 
+Check("Residential frontage reserves a proper living room rather than tiny equal rooms", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true,
+        Purpose = BuildingUse.Residence
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 9917, options,
+        out var proposal, out var reason), reason);
+    var floor = proposal.Building;
+    var living = floor.Rooms.Where(r => r.Type == "Living room").ToList();
+    Assert(living.Count == 1,
+        "An ordinary 10 x 8 metre residential ground floor needs one living room.");
+    Assert(PolygonGeometry.Area(living[0].Outline) >= 23,
+        "The principal room must be genuinely usable as a living room.");
+    Assert(floor.Rooms.Any(r => r.Type == "Kitchen"));
+    Assert(floor.Rooms.Any(r => r.Type == "Dining room"));
+    Assert(floor.Rooms.Any(r => r.Type == "Bathroom"));
+    Assert(floor.Rooms.Select(r => r.Name).Distinct().Count() == floor.Rooms.Count,
+        "Generated room names should be unique.");
+    Assert(RoomLayoutPlanner.UnassignedArea(floor) < 0.01);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+    Assert(source.Rooms.Count == 0, "Suggestions must not modify the source.");
+});
+
+Check("Residential room roles are allocated before repeat bedrooms", () =>
+{
+    var existing = new List<RoomDefinition>();
+    string[] expected = ["Kitchen", "Dining room", "Bedroom", "Study", "Bedroom"];
+    foreach (var role in expected)
+    {
+        string picked = RoomLayoutPlanner.ChooseRoomType(
+            BuildingUse.Residence, 0, 15, existing, new Random(72));
+        Assert(picked == role, $"Expected {role}, got {picked}.");
+        existing.Add(new RoomDefinition { Type = picked });
+    }
+    Assert(RoomLayoutPlanner.NextRoomName("Kitchen", existing) == "Kitchen");
+    existing.Add(new RoomDefinition { Name = "Kitchen", Type = "Kitchen" });
+    Assert(RoomLayoutPlanner.NextRoomName("Kitchen", existing) == "Kitchen 2");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
