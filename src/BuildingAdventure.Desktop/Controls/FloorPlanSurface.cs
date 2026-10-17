@@ -1029,7 +1029,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(60, 31, 145, 94)),
                 new Pen(Brushes.ForestGreen, 2.5) { DashStyle = DashStyles.Dash },
                 BuildGeometry(BuildingStoreys.StairFootprint(stair), true));
-            DrawText(dc, s.LowerFloorIndex == _stairFloorIndex
+            DrawText(dc, stair.LowerFloorIndex == _stairFloorIndex
                     ? "+ STAIRS UP" : "+ STAIRS DOWN",
                 ToScreen(stair.Centre), 11, Brushes.DarkGreen);
         }
