@@ -57,8 +57,19 @@ public static class BuildingGenerator
                 "to establish its initial floor layout.";
             return false;
         }
+        // On a new multi-floor building, place a hallway on every level
+        // first, reserve aligned stairwell rooms off that hallway, and only
+        // then fill the remaining frontage. Placing stairs last had forced
+        // them into the middle of the only unassigned corridor.
+        bool reserveStairwells = options.Stairs && options.Corridors && floorCount > 1;
         var stageOptions = options.Copy();
         stageOptions.Stairs = false;
+        if (reserveStairwells)
+        {
+            stageOptions.Rooms = false;
+            stageOptions.Doors = false;
+            stageOptions.Windows = false;
+        }
         if (!TrySuggest(blank, [0], seed, stageOptions, out var first, out reason))
             return false;
         var basis = BuildingStoreys.Copy(first.Building);
@@ -68,7 +79,6 @@ public static class BuildingGenerator
                 return false;
             basis = next;
         }
-        // Keep the generated ground-floor rooms and fill upper floors.
         BuildingDocument result = basis;
         if (floorCount > 1)
         {
@@ -78,7 +88,23 @@ public static class BuildingGenerator
             result = upper.Building;
         }
         int stairs = 0;
-        if (options.Stairs && floorCount > 1)
+        if (reserveStairwells)
+        {
+            if (!BuildingConnectivity.TryReserveStackedStairwell(result,
+                    out var staged, out stairs, out reason))
+                return false;
+            result = staged;
+            var fill = options.Copy();
+            fill.Stairs = false;
+            if (fill.Rooms || fill.Doors || fill.Windows)
+            {
+                if (!TrySuggest(result, Enumerable.Range(0, floorCount).ToArray(),
+                        unchecked(seed + 2), fill, out var furnished, out reason))
+                    return false;
+                result = furnished.Building;
+            }
+        }
+        else if (options.Stairs && floorCount > 1)
         {
             stairs = BuildingConnectivity.AddStairs(result,
                 Enumerable.Range(0, floorCount).ToArray(), out var withStairs);
