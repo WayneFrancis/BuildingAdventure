@@ -306,6 +306,37 @@ ceiling heights, or 3D wall meshes.
 - All successful interactive changes use the existing floor edit commit
   callback and global history; preview-only operations remain transient.
 
+## Segment-centred openings and persistent UI layout (v0.11)
+
+- OpeningEditing.TryCentreWindow looks for room-outline edges containing
+  the selected window centre and fully coincident with the exterior
+  physical boundary. Those room segments take precedence over any
+  longer shared perimeter edge. If none exists, exterior physical
+  segments are used as the fallback for unassigned interior space.
+- OpeningEditing.TryCentreDoor uses the actual subdivided wall pieces
+  from FloorGeometry.BuildWalls, including shared interior partitions.
+  Neither centring operation treats the entire continuous collinear
+  validation run as the target segment.
+- Candidate segments are ordered by distance from the original opening
+  to the segment midpoint. A candidate must be large enough for the
+  opening plus required clearance, and all usual FloorGeometry.Validate
+  conditions must pass before a move is committed. Both functions
+  return detached copies and leave their sources unchanged on failure.
+  Centring uses the exact midpoint even if grid snapping is enabled.
+- The selected-door and selected-window controls trigger a full floor
+  commit only when the centre changes, so global undo/redo and
+  persistence work without introducing redundant history entries.
+- EditorLayoutSettings is an independent desktop-only JSON preference
+  model under the user's LocalApplicationData/BuildingAdventure
+  directory. It stores the window normal bounds/maximized state,
+  expanded sidebar section flags, sidebar scroll offset, and view
+  settings. Closing first performs the ordinary unsaved-work check;
+  settings save only after closing is accepted.
+- Startup bounds are validated and clamped to the available virtual
+  desktop. The preferences file can be missing, malformed, or read-only
+  without blocking building editing. No building geometry or saved
+  document JSON schema changes are required.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

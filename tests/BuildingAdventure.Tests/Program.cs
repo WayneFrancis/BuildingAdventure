@@ -2609,5 +2609,217 @@ Check("Door editing participates in document history and JSON persistence", () =
     Equal(again.Building.Doors[0].Width, 1.5);
 });
 
+Check("Window centres on its room wall segment, not full exterior perimeter", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Small shop",
+                Outline = [new(0, 0), new(4, 0), new(4, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Large shop",
+                Outline = [new(4, 0), new(10, 0), new(10, 8), new(4, 8)] }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(1, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    var windowId = building.Windows.Single().Id;
+    Assert(OpeningEditing.TryCentreWindow(building, windowId,
+        out var centred, out reason), reason);
+    Equal(centred.Windows.Single().Centre.X, 2);
+    Equal(centred.Windows.Single().Centre.Y, 0);
+    Equal(building.Windows.Single().Centre.X, 1);
+    Assert(centred.Windows.Single().Id == windowId);
+    Assert(reason.Contains("room wall"));
+});
+
+Check("Window centres on second room segment of a shared long perimeter", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Small shop",
+                Outline = [new(0, 0), new(4, 0), new(4, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Large shop",
+                Outline = [new(4, 0), new(10, 0), new(10, 8), new(4, 8)] }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(8, 0), Width = 1.2 }]
+    };
+    Assert(OpeningEditing.TryCentreWindow(building, building.Windows[0].Id,
+        out var centred, out var reason), reason);
+    Equal(centred.Windows[0].Centre.X, 7);
+    Assert(FloorGeometry.Validate(centred, out reason), reason);
+});
+
+Check("Window in unassigned interior uses exterior segment as fallback", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(2, 0), Width = 1.2 }]
+    };
+    Assert(OpeningEditing.TryCentreWindow(building, building.Windows[0].Id,
+        out var centred, out var reason), reason);
+    Equal(centred.Windows[0].Centre.X, 5);
+    Assert(reason.Contains("no room wall"));
+});
+
+Check("Window centring on an angled room wall stays on its diagonal edge", () =>
+{
+    var outline = new List<Point2>
+    {
+        new(0, 0), new(8, 4), new(8, 10), new(0, 10)
+    };
+    var building = new BuildingDocument
+    {
+        Perimeter = outline,
+        Rooms = [new RoomDefinition { Name = "Angled room",
+            Outline = outline.ToList() }],
+        Windows = [new WindowDefinition { Centre = new Point2(2, 1), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    Assert(OpeningEditing.TryCentreWindow(building, building.Windows[0].Id,
+        out var centred, out reason), reason);
+    Equal(centred.Windows[0].Centre.X, 4);
+    Equal(centred.Windows[0].Centre.Y, 2);
+    Assert(FloorGeometry.Validate(centred, out reason), reason);
+});
+
+Check("Interior door centres on its physical partition segment", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 3), new(0, 3)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 3), new(5, 3)] },
+            new RoomDefinition { Name = "Rear",
+                Outline = [new(0, 3), new(10, 3), new(10, 8), new(0, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 1), Width = 0.9 }]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    Assert(OpeningEditing.TryCentreDoor(building, building.Doors[0].Id,
+        out var centred, out reason), reason);
+    Equal(centred.Doors[0].Centre.X, 5);
+    Equal(centred.Doors[0].Centre.Y, 1.5);
+    Equal(building.Doors[0].Centre.Y, 1);
+});
+
+Check("Exterior door centres on room-divided physical wall segment", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(4, 0), new(4, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(4, 0), new(10, 0), new(10, 8), new(4, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(1, 0), Width = 0.9 }]
+    };
+    Assert(OpeningEditing.TryCentreDoor(building, building.Doors[0].Id,
+        out var centred, out var reason), reason);
+    Equal(centred.Doors[0].Centre.X, 2);
+    Assert(FloorGeometry.Validate(centred, out reason), reason);
+});
+
+Check("Window will not silently centre on the perimeter if room segment is too short", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Tiny room",
+                Outline = [new(0, 0), new(1, 0), new(1, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Hall",
+                Outline = [new(1, 0), new(10, 0), new(10, 8), new(1, 8)] }
+        ],
+        Windows = [new WindowDefinition { Centre = new Point2(1, 0), Width = 1.2 }]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    // Window currently sits at the shared corner and straddles both segments.
+    // For the action, the short segment cannot contain this opening.
+    // The other adjacent room segment is eligible; it must not select the
+    // entire 10m perimeter midpoint.
+    Assert(OpeningEditing.TryCentreWindow(building, building.Windows[0].Id,
+        out var centred, out reason), reason);
+    Equal(centred.Windows[0].Centre.X, 5.5);
+    Assert(centred.Windows[0].Centre.X != 5);
+});
+
+Check("Centring a window is rejected if the room segment midpoint conflicts with a door", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = [new RoomDefinition { Name = "Front",
+            Outline = [new(0, 0), new(6, 0), new(6, 8), new(0, 8)] }],
+        Windows = [new WindowDefinition { Centre = new Point2(1.5, 0), Width = 1.2 }],
+        Doors = [new DoorDefinition { Centre = new Point2(3, 0), Width = 0.9 }]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    Assert(!OpeningEditing.TryCentreWindow(building, building.Windows[0].Id,
+        out var ignored, out reason));
+    Assert(reason.Contains("Cannot centre"));
+    Equal(building.Windows[0].Centre.X, 1.5);
+    Equal(ignored.Windows[0].Centre.X, 1.5);
+});
+
+Check("Centring a door rejects overlapping openings and does not mutate it", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [
+            new DoorDefinition { Centre = new Point2(2, 0), Width = 0.9 },
+            new DoorDefinition { Centre = new Point2(5, 0), Width = 0.9 }
+        ]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    // The first door would be moved to the midpoint of the entire front wall,
+    // colliding with the second door.
+    Assert(!OpeningEditing.TryCentreDoor(building, building.Doors[0].Id,
+        out var unchanged, out reason));
+    Equal(unchanged.Doors[0].Centre.X, 2);
+    Equal(building.Doors[0].Centre.X, 2);
+});
+
+Check("Centring door and window are undoable and preserve saved JSON", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Windows = [new WindowDefinition { Centre = new Point2(2, 0) }],
+        Doors = [new DoorDefinition { Centre = new Point2(8, 0) }]
+    };
+    var journal = new BuildingEditHistory();
+    journal.RecordBefore(building, 0);
+    Assert(OpeningEditing.TryCentreWindow(building, building.Windows[0].Id,
+        out var withWindow, out var reason), reason);
+    Equal(withWindow.Windows[0].Centre.X, 5);
+    // Door midpoint conflicts with centred window: move the door first to
+    // another wall so both centring changes are valid.
+    withWindow.Doors[0].Centre = new Point2(10, 4);
+    Assert(FloorGeometry.Validate(withWindow, out reason), reason);
+    Assert(OpeningEditing.TryCentreDoor(withWindow, withWindow.Doors[0].Id,
+        out var centred, out reason), reason);
+    var reopened = BuildingDocumentJson.Deserialize(
+        BuildingDocumentJson.Serialize(centred));
+    Equal(reopened.Doors[0].Centre.Y, 4);
+    Assert(journal.TryUndo(reopened, 0, out var restored));
+    Equal(restored.Building.Windows[0].Centre.X, 2);
+    Equal(restored.Building.Doors[0].Centre.X, 8);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

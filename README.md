@@ -4,9 +4,29 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.10 — Collapsible editor sections, door handles and window snapping (development branch)
+## v0.11 — Centre openings on wall segments and restore window layout (development branch)
 
 The editor currently supports:
+
+- **Centre selected openings on a wall segment**: select a window and
+  click *Centre window on room wall segment*, or select a door and click
+  *Centre door on wall segment*. Windows use the exterior edge of the
+  adjoining room (so a shop window is centred on that shop's frontage,
+  not the entire building facade). If no room is defined at the window,
+  the exterior wall segment is used instead. Doors use the actual
+  physical wall section, including interior partitions. The action
+  uses the geometric midpoint rather than the snap grid; invalid
+  centres are rejected without changing the building. Successes
+  participate in global undo and redo.
+- **Remember application layout**: on accepted close, save the normal
+  window location and dimensions, maximized state, the open/collapsed
+  sidebar sections, sidebar scroll position, grid snapping,
+  unassigned-space highlighting, adjacent-floor overlays and their
+  visibility. Restore these at next launch, keeping this file separate
+  from saved building JSON. A removed display or invalid settings
+  cannot prevent normal startup. Preferences are stored locally in
+  `%LOCALAPPDATA%\BuildingAdventure\ui-settings.json`.
+  This does not automatically reopen unsaved building edits.
 
 - **Collapsible settings panel**: BUILDING, FLOORS, STAIRCASES,
   WALL CONSTRUCTION, PERIMETER, ROOMS, WINDOWS, DOORS, and HOW TO USE
@@ -226,6 +246,9 @@ Run the geometry checks without third-party test packages:
 | Insert corner | Double-click a wall with Select/Edit |
 | Delete corner | Select a corner and press Delete; the adjacent walls join |
 | Add door | Add Door, then click on a sufficiently long wall |
+| Centre window within its room facade | Select window, expand WINDOWS and click Centre window on room wall segment |
+| Centre door in a wall section | Select door, expand DOORS and click Centre door on wall segment |
+| Preserve window size and position | Close the application normally; the window and sidebar layout restore on next launch |
 | Collapse sidebar settings | Click a section's header to expand or collapse it |
 | Move a door | In Select / Edit, drag the door centre marker to a valid wall position |
 | Resize a door with handles | Select the door, then drag either square endpoint; the other endpoint remains fixed |

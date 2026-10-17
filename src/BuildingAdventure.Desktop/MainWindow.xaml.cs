@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using BuildingAdventure.Core.Buildings;
 using BuildingAdventure.Core.Geometry;
 using BuildingAdventure.Desktop.Controls;
@@ -19,10 +20,18 @@ public partial class MainWindow : Window
     private int _activeFloorIndex;
     private readonly BuildingEditHistory _history = new();
     private string? _nameBeforeEdit;
+    private EditorLayoutSettings? _savedLayout;
+    private WindowState _previousWindowState = WindowState.Normal;
 
     public MainWindow()
     {
         InitializeComponent();
+        RestoreSavedLayout();
+        StateChanged += (_, _) =>
+        {
+            if (WindowState != WindowState.Minimized)
+                _previousWindowState = WindowState;
+        };
         EditorSurface.UsesGlobalHistory = true;
         EditorSurface.HighlightUnassigned = true;
         EditorSurface.WindowWidthProvider = () =>
@@ -61,9 +70,131 @@ public partial class MainWindow : Window
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
         UpdateAlignmentReferences();
         _lastSavedJson = CurrentJson();
-        Loaded += (_, _) => { EditorSurface.Focus(); Refresh(); };
-        Closing += (_, e) => { if (!ConfirmDiscard()) e.Cancel = true; };
+        Loaded += (_, _) =>
+        {
+            EditorSurface.Focus();
+            Refresh();
+            if (_savedLayout is not null)
+                Dispatcher.BeginInvoke(new Action(() =>
+                    SettingsScrollViewer.ScrollToVerticalOffset(
+                        Math.Max(0, _savedLayout.SidebarScrollOffset))),
+                    DispatcherPriority.Loaded);
+        };
+        Closing += (_, e) =>
+        {
+            if (!ConfirmDiscard())
+            {
+                e.Cancel = true;
+                return;
+            }
+            SaveEditorLayout();
+        };
         Refresh();
+    }
+
+    private (string Name, Expander Control)[] LayoutSections() =>
+    [
+        ("Building", BuildingSection),
+        ("Floors", FloorsSection),
+        ("Staircases", StaircasesSection),
+        ("WallConstruction", WallConstructionSection),
+        ("Perimeter", PerimeterSection),
+        ("Rooms", RoomsSection),
+        ("Windows", WindowsSection),
+        ("Doors", DoorsSection),
+        ("Help", HelpSection)
+    ];
+
+    private void RestoreSavedLayout()
+    {
+        var saved = EditorLayoutSettings.TryLoad();
+        if (saved is null) return;
+        _savedLayout = saved;
+
+        _loading = true;
+        try
+        {
+            if (double.IsFinite(saved.Width) && double.IsFinite(saved.Height) &&
+                double.IsFinite(saved.Left) && double.IsFinite(saved.Top) &&
+                saved.Width >= MinWidth && saved.Height >= MinHeight &&
+                saved.Width <= 10000 && saved.Height <= 10000)
+            {
+                var available = new Rect(
+                    SystemParameters.VirtualScreenLeft,
+                    SystemParameters.VirtualScreenTop,
+                    SystemParameters.VirtualScreenWidth,
+                    SystemParameters.VirtualScreenHeight);
+                var lastPosition = new Rect(
+                    saved.Left, saved.Top, saved.Width, saved.Height);
+                if (lastPosition.IntersectsWith(available))
+                {
+                    WindowStartupLocation = WindowStartupLocation.Manual;
+                    Width = saved.Width;
+                    Height = saved.Height;
+                    Left = Math.Clamp(saved.Left,
+                        available.Left - saved.Width + 160,
+                        available.Right - 160);
+                    Top = Math.Clamp(saved.Top,
+                        available.Top - saved.Height + 90,
+                        available.Bottom - 90);
+                }
+            }
+
+            foreach (var (name, control) in LayoutSections())
+            {
+                if (saved.ExpandedSections is not null &&
+                    saved.ExpandedSections.TryGetValue(name, out bool expanded))
+                    control.IsExpanded = expanded;
+            }
+
+            SnapCheckBox.IsChecked = saved.SnapToGrid;
+            HighlightUnassignedCheckBox.IsChecked = saved.HighlightUnassigned;
+            ShowBelowCheckBox.IsChecked = saved.ShowBelow;
+            ShowAboveCheckBox.IsChecked = saved.ShowAbove;
+            if (double.IsFinite(saved.ReferenceOpacity))
+                AlignmentOpacitySlider.Value =
+                    Math.Clamp(saved.ReferenceOpacity,
+                        AlignmentOpacitySlider.Minimum,
+                        AlignmentOpacitySlider.Maximum);
+
+            _previousWindowState = saved.Maximized
+                ? WindowState.Maximized : WindowState.Normal;
+            if (saved.Maximized)
+                WindowState = WindowState.Maximized;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SaveEditorLayout()
+    {
+        var bounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, Width, Height)
+            : RestoreBounds;
+        var settings = new EditorLayoutSettings
+        {
+            Left = bounds.Left,
+            Top = bounds.Top,
+            Width = bounds.Width,
+            Height = bounds.Height,
+            Maximized = WindowState == WindowState.Maximized ||
+                (WindowState == WindowState.Minimized &&
+                 _previousWindowState == WindowState.Maximized),
+            ExpandedSections = LayoutSections().ToDictionary(
+                section => section.Name, section => section.Control.IsExpanded),
+            SidebarScrollOffset = SettingsScrollViewer.VerticalOffset,
+            SnapToGrid = SnapCheckBox.IsChecked == true,
+            HighlightUnassigned = HighlightUnassignedCheckBox.IsChecked == true,
+            ShowBelow = ShowBelowCheckBox.IsChecked == true,
+            ShowAbove = ShowAboveCheckBox.IsChecked == true,
+            ReferenceOpacity = AlignmentOpacitySlider.Value
+        };
+
+        // Preferences are best-effort: the user can always exit even when
+        // AppData is read-only or the preferences file is invalid.
+        EditorLayoutSettings.TrySave(settings);
     }
 
     private BuildingDocument CurrentDocument()
@@ -115,8 +246,10 @@ public partial class MainWindow : Window
         DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
         DeleteDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
         ApplyDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
+        CentreDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
         DeleteWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
         ApplyWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
+        CentreWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
         DeleteStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         ApplyStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
@@ -264,15 +397,22 @@ public partial class MainWindow : Window
     }
 
     private void DeleteRoom_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedRoom();
+    private void CentreDoor_Click(object sender, RoutedEventArgs e) =>
+        EditorSurface.CentreSelectedDoorOnWall();
+    private void CentreWindow_Click(object sender, RoutedEventArgs e) =>
+        EditorSurface.CentreSelectedWindowOnWall();
+
     private void DeleteDoor_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedDoor();
 
     private void UpdateSelectedDoorControls()
     {
         if (EditorSurface is null || DoorWidthBox is null ||
-            ApplyDoorButton is null || DeleteDoorButton is null)
+            ApplyDoorButton is null || DeleteDoorButton is null ||
+            CentreDoorButton is null)
             return;
         var door = EditorSurface.SelectedDoor;
-        ApplyDoorButton.IsEnabled = DeleteDoorButton.IsEnabled = door is not null;
+        ApplyDoorButton.IsEnabled = DeleteDoorButton.IsEnabled =
+            CentreDoorButton.IsEnabled = door is not null;
         if (door is not null)
             DoorWidthBox.Text = door.Width.ToString(
                 "R", System.Globalization.CultureInfo.CurrentCulture);
@@ -299,9 +439,11 @@ public partial class MainWindow : Window
     private void UpdateSelectedWindowControls()
     {
         if (EditorSurface is null || WindowWidthBox is null ||
-            ApplyWindowButton is null || DeleteWindowButton is null) return;
+            ApplyWindowButton is null || DeleteWindowButton is null ||
+            CentreWindowButton is null) return;
         var selected = EditorSurface.SelectedWindow;
-        ApplyWindowButton.IsEnabled = DeleteWindowButton.IsEnabled = selected is not null;
+        ApplyWindowButton.IsEnabled = DeleteWindowButton.IsEnabled =
+            CentreWindowButton.IsEnabled = selected is not null;
         if (selected is not null)
             WindowWidthBox.Text = selected.Width.ToString(
                 "R", System.Globalization.CultureInfo.CurrentCulture);

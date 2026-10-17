@@ -1877,6 +1877,68 @@ public sealed class FloorPlanSurface : FrameworkElement
         Say("Window width updated.");
     }
 
+    /// <summary>Centre the selected window on its adjacent room wall edge.</summary>
+    public void CentreSelectedWindowOnWall()
+    {
+        if (!_selectedWindowId.HasValue)
+        {
+            Say("Select a window to centre.");
+            return;
+        }
+
+        var previous = Snapshot();
+        if (!OpeningEditing.TryCentreWindow(Document(), _selectedWindowId.Value,
+            out var updated, out var message))
+        {
+            Say(message);
+            return;
+        }
+
+        var before = _windows.First(w => w.Id == _selectedWindowId.Value);
+        var after = updated.Windows.First(w => w.Id == _selectedWindowId.Value);
+        if (before.Centre.DistanceTo(after.Centre) < 1e-7)
+        {
+            Say("Window is already centred on its wall segment.");
+            return;
+        }
+
+        _windows = updated.Windows.Select(w => w.Copy()).ToList();
+        PushUndo(previous);
+        RaiseChanged();
+        Say(message);
+    }
+
+    /// <summary>Centre the selected door on its current physical wall piece.</summary>
+    public void CentreSelectedDoorOnWall()
+    {
+        if (!_selectedDoorId.HasValue)
+        {
+            Say("Select a door to centre.");
+            return;
+        }
+
+        var previous = Snapshot();
+        if (!OpeningEditing.TryCentreDoor(Document(), _selectedDoorId.Value,
+            out var updated, out var message))
+        {
+            Say(message);
+            return;
+        }
+
+        var before = _doors.First(d => d.Id == _selectedDoorId.Value);
+        var after = updated.Doors.First(d => d.Id == _selectedDoorId.Value);
+        if (before.Centre.DistanceTo(after.Centre) < 1e-7)
+        {
+            Say("Door is already centred on its wall segment.");
+            return;
+        }
+
+        _doors = updated.Doors.Select(d => d.Copy()).ToList();
+        PushUndo(previous);
+        RaiseChanged();
+        Say(message);
+    }
+
     public void SetSelectedDoorWidth(double width)
     {
         var door = _doors.FirstOrDefault(d => d.Id == _selectedDoorId);
