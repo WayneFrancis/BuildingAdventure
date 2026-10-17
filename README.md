@@ -4,6 +4,26 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.17 — Room priorities and sensible residential proportions (development branch)
+
+- **Reserve a properly sized main living space:** on a clear ground-floor
+  residence with a suitable hall, reserve a 23 m² or larger living room
+  before dividing the rest of that hallway frontage. The leftover part can
+  form a small service room, while the other side is subdivided independently.
+  Buildings too small for this layout retain the original conservative split.
+- **Essential rooms first:** allocate a home's kitchen and dining room ahead
+  of repeated bedrooms; favour bedrooms and studies upstairs. Other building
+  purposes receive ordered priorities for their relevant rooms, while
+  appropriate repeatable spaces such as guest bedrooms remain possible.
+- **Readable names:** use "Kitchen" or "Living room" when the name is still
+  available, and add a number only to disambiguate a duplicate.
+- **Regression fixes:** deleting a basement no longer tries to read the
+  source ground floor from the upper-floor collection. A room-only suggestion
+  that cannot fit a room reports an explicit no-valid-room explanation.
+- **Scope:** the room assignment is more deliberate, but automatic circulation
+  between floors, architectural codes, furnishing, natural light and full
+  whole-building room adjacency remain future work.
+
 ## v0.16 — Space-efficient, purpose-aware room layouts (development branch)
 
 - **Fill frontage rather than scatter rooms:** on a clear, rectangular floor
