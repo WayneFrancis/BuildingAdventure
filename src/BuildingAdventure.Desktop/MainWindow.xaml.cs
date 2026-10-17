@@ -568,6 +568,8 @@ public partial class MainWindow : Window
         _suggestionSource = "";
         _pendingWholeBuilding = false;
         EditorSurface?.SetSuggestionPreview(null);
+        if (WholeBuildingPreviewPanel is not null) WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
+        ProposalFloorPicker?.Items.Clear();
     }
 
     private void UpdateSuggestionPreview()
@@ -608,14 +610,19 @@ public partial class MainWindow : Window
         _pendingSuggestion = proposal.Copy();
         _suggestionSource = CurrentJson();
         _pendingWholeBuilding = whole;
-        if (!proposal.FloorIndexes.Contains(_activeFloorIndex) &&
+        if (whole)
+        {
+            UpdateSuggestionPreview();
+            ShowWholeBuildingPreview();
+        }
+        else if (!proposal.FloorIndexes.Contains(_activeFloorIndex) &&
             proposal.FloorIndexes.Count > 0 &&
             BuildingStoreys.HasFloor(_building, proposal.FloorIndexes[0]))
         {
             _building = CurrentDocument();
             ShowFloor(proposal.FloorIndexes[0]);
         }
-        else
+        else if (!whole)
             UpdateSuggestionPreview();
         _hint = $"Suggested changes on {proposal.FloorIndexes.Count} floor(s). " +
             "Use View next selected floor or Page Up/Down to inspect, then Accept.";
@@ -648,7 +655,8 @@ public partial class MainWindow : Window
         {
             // Some proposed levels do not exist in the active document yet.
             // Review the detached draft instead of cycling existing floors.
-            OpenProposalViewer();
+            ShowWholeBuildingPreview();
+            CycleProposedFloor(1);
             return;
         }
         var eligible = _pendingSuggestion.FloorIndexes
@@ -721,68 +729,76 @@ public partial class MainWindow : Window
             return;
         }
         BeginSuggestion(proposal, whole: true);
-        _hint = $"Created a {count}-floor draft. Close the preview viewer, then " +
-            "choose Accept All to add every floor to the building.";
+        _hint = $"Created a {count}-floor draft. Browse its floors directly on the plan; " +
+            "choose Accept All to add every floor.";
         Refresh();
-        OpenProposalViewer();
     }
 
     private void InspectProposal_Click(object sender, RoutedEventArgs e) =>
-        OpenProposalViewer();
+        ShowWholeBuildingPreview();
 
-    private void OpenProposalViewer()
+    // The draft is rendered by a separate, read-only surface in the main
+    // workspace. The live EditorSurface stays unchanged until Accept All.
+    private void ShowWholeBuildingPreview()
     {
-        if (_pendingSuggestion is null) return;
-        var proposal = BuildingStoreys.Copy(_pendingSuggestion.Building);
-        var floorIndexes = BuildingStoreys.FloorIndexes(proposal);
-        var viewer = new FloorPlanSurface { IsHitTestVisible = false };
-        var selector = new ComboBox { Margin = new Thickness(10), Padding = new Thickness(5) };
-        foreach (int index in floorIndexes)
+        if (_pendingSuggestion is null || WholeBuildingPreviewPanel is null) return;
+        var draft = _pendingSuggestion.Building;
+        var indices = BuildingStoreys.FloorIndexes(draft);
+        if (indices.Count == 0) return;
+        int selected = ProposalFloorPicker.SelectedItem is ComboBoxItem previous &&
+            previous.Tag is int floorIndex ? floorIndex : indices[0];
+        ProposalFloorPicker.SelectionChanged -= ProposalFloorPicker_SelectionChanged;
+        ProposalFloorPicker.Items.Clear();
+        foreach (int index in indices)
         {
-            int roomCount = BuildingStoreys.GetFloor(proposal, index).Rooms.Count;
-            selector.Items.Add($"{BuildingStoreys.FloorLabel(index)} — {roomCount} room(s)");
+            int roomCount = BuildingStoreys.GetFloor(draft, index).Rooms.Count;
+            ProposalFloorPicker.Items.Add(new ComboBoxItem
+            {
+                Content = $"{BuildingStoreys.FloorLabel(index)} — {roomCount} room(s)",
+                Tag = index
+            });
         }
-        var instructions = new TextBlock
-        {
-            Text = $"This draft contains {floorIndexes.Count} floor(s). " +
-                "Choose a level below to inspect it. Close this viewer and click " +
-                "Accept All in the main window to create every floor.",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(10, 10, 10, 0)
-        };
-        var layout = new DockPanel();
-        DockPanel.SetDock(instructions, Dock.Top);
-        layout.Children.Add(instructions);
-        DockPanel.SetDock(selector, Dock.Top);
-        layout.Children.Add(selector);
-        layout.Children.Add(viewer);
-        var dialog = new Window
-        {
-            Title = $"Suggested building — {floorIndexes.Count} floor(s)",
-            Owner = this,
-            Content = layout,
-            Width = 950,
-            Height = 700,
-            MinWidth = 500,
-            MinHeight = 400,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner
-        };
-        void View(int position)
-        {
-            int index = floorIndexes[position];
-            viewer.LoadDocument(BuildingStoreys.GetFloor(proposal, index));
-            viewer.SetStairOverlay(proposal.Staircases, index);
-            dialog.Dispatcher.BeginInvoke(
-                new Action(viewer.FitToView),
-                DispatcherPriority.Loaded);
-        }
-        selector.SelectionChanged += (_, _) =>
-        {
-            if (selector.SelectedIndex >= 0)
-                View(selector.SelectedIndex);
-        };
-        selector.SelectedIndex = 0;
-        dialog.ShowDialog();
+        int position = Array.IndexOf(indices.ToArray(), selected);
+        ProposalFloorPicker.SelectedIndex = position >= 0 ? position : 0;
+        ProposalFloorPicker.SelectionChanged += ProposalFloorPicker_SelectionChanged;
+        ProposedBuildingHeader.Text =
+            $"PROPOSED {indices.Count}-FLOOR BUILDING — NOT YET ACCEPTED";
+        WholeBuildingPreviewPanel.Visibility = Visibility.Visible;
+        ViewProposedFloor();
+    }
+
+    private void ViewProposedFloor()
+    {
+        if (_pendingSuggestion is null ||
+            ProposalFloorPicker.SelectedItem is not ComboBoxItem item ||
+            item.Tag is not int floorIndex) return;
+        var proposal = _pendingSuggestion.Building;
+        WholeBuildingPreviewSurface.LoadDocument(
+            BuildingStoreys.GetFloor(proposal, floorIndex));
+        WholeBuildingPreviewSurface.SetStairOverlay(proposal.Staircases, floorIndex);
+        WholeBuildingPreviewSurface.SetSuggestionPreview(null);
+        WholeBuildingPreviewSurface.SetFloorReferences([], 0);
+        WholeBuildingPreviewSurface.SetFloorSilhouettes([]);
+        Dispatcher.BeginInvoke(
+            new Action(WholeBuildingPreviewSurface.FitToView),
+            DispatcherPriority.Loaded);
+    }
+
+    private void ProposalFloorPicker_SelectionChanged(
+        object sender, SelectionChangedEventArgs e) => ViewProposedFloor();
+
+    private void PreviousProposalFloor_Click(object sender, RoutedEventArgs e) =>
+        CycleProposedFloor(-1);
+
+    private void NextProposalFloor_Click(object sender, RoutedEventArgs e) =>
+        CycleProposedFloor(1);
+
+    private void CycleProposedFloor(int step)
+    {
+        int count = ProposalFloorPicker.Items.Count;
+        if (count == 0) return;
+        ProposalFloorPicker.SelectedIndex =
+            ((ProposalFloorPicker.SelectedIndex + step) % count + count) % count;
     }
 
     private void AcceptSuggestion_Click(object sender, RoutedEventArgs e)
@@ -901,6 +917,8 @@ public partial class MainWindow : Window
         _suggestionSource = entry.SourceFingerprint;
         _pendingWholeBuilding = entry.WholeBuilding;
         UpdateSuggestionPreview();
+        if (_pendingWholeBuilding) ShowWholeBuildingPreview();
+        else WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
         _hint = "Saved candidate previewed; Accept to apply it (may replace newer edits).";
         Refresh();
     }
