@@ -367,7 +367,9 @@ public static class BuildingStoreys
             }
             var originalName = oldIndex < 0
                 ? source.BasementFloors[-oldIndex - 1].Name
-                : source.UpperFloors[oldIndex - 1].Name;
+                : oldIndex > 0
+                    ? source.UpperFloors[oldIndex - 1].Name
+                    : FloorLabel(0); // The source ground is stored at root, not UpperFloors[-1].
             var name = originalName == FloorLabel(oldIndex)
                 ? FloorLabel(newIndex) : originalName;
             var storey = new StoreyDefinition
