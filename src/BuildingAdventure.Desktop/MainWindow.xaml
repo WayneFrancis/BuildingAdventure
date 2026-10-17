@@ -128,7 +128,7 @@
                               IsExpanded="False" Margin="0,0,0,7" Padding="0,3,0,0">
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock TextWrapping="Wrap" Foreground="#566579"
-                                       Text="Suggest connected floor layouts or selected feature types. Green previews include new rooms, doors, windows and stairs. Nothing changes until accepted."
+                                       Text="Complete checked existing floors, or create a new whole building below. Green previews include rooms, doors, windows and stairs. Nothing changes until Accept All."
                                        Margin="0,0,0,8"/>
                             <TextBlock FontWeight="SemiBold" Text="Building purpose" Margin="0,0,0,5"/>
                             <ComboBox x:Name="GeneratorPurposeBox" Padding="5" SelectedIndex="0"
@@ -149,10 +149,10 @@
                             </WrapPanel>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,8"
                                        Text="Rooms are arranged beside a corridor when one can fit. Doors use actual shared walls. Windows and stairs are optional; stair flights require both adjoining floors checked. Every candidate is validated before preview."/>
-                            <TextBlock FontWeight="SemiBold" Text="Floors to complete" Margin="0,0,0,6"/>
+                            <TextBlock FontWeight="SemiBold" Text="Existing floors to complete (does not add floors)" Margin="0,0,0,6"/>
                             <StackPanel x:Name="GeneratorFloorChecks" Margin="0,0,0,10"/>
                             <WrapPanel Margin="0,0,0,8">
-                                <Button Content="Suggest / Regenerate" Click="Suggest_Click"
+                                <Button Content="Suggest on checked floors" Click="Suggest_Click"
                                         Padding="7,5" Margin="0,0,5,0"/>
                                 <Button x:Name="AcceptSuggestionButton" Content="Accept All"
                                         Click="AcceptSuggestion_Click" IsEnabled="False" Padding="7,5"/>
@@ -165,7 +165,10 @@
                             <Button x:Name="InspectProposalButton" Content="Inspect all proposed floors"
                                     Click="InspectProposal_Click" IsEnabled="False"
                                     Padding="7,5" Margin="0,0,0,7"/>
-                            <TextBlock Text="New whole-building draft" Margin="0,8,0,5"/>
+                            <TextBlock Text="New whole-building draft (1–4 floors)" FontWeight="SemiBold"
+                                       Margin="0,10,0,5"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,8"
+                                       Text="Choose the total number of floors below and click Suggest entire building. A separate viewer will show ALL proposed floors. Close it, then click Accept All to replace the current building with the complete draft."/>
                             <WrapPanel Margin="0,0,0,9">
                                 <ComboBox x:Name="WholeBuildingFloorsBox" Width="85" SelectedIndex="1"
                                           Padding="4" Margin="0,0,5,0">
