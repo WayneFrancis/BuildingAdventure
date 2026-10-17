@@ -4,6 +4,23 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.18 — Visible whole-building preview and floor-count confirmation (development branch)
+
+- **See every generated floor immediately:** choosing 1–4 floors and clicking
+  **Suggest entire building** opens the all-floor viewer automatically. The
+  floor dropdown in that viewer includes room counts for each proposed level.
+  Close the viewer and choose **Accept All** to actually replace the current
+  building with the entire generated draft.
+- **Separate generator actions:** **Suggest on checked floors** edits only the
+  already-existing checked floors. It does not add floors, regardless of the
+  separate new-building floor-count choice. The labels now make this explicit.
+- **Confirm creation:** the generator rejects an unexpected draft floor count,
+  the preview panel distinguishes the number of proposed floors from those in
+  the current document, and acceptance reports the resulting floor count.
+- **Regression coverage:** a three-floor draft is verified to keep all three
+  levels after copying and JSON round-trip, without modifying the prior
+  one-floor building.
+
 ## v0.17 — Room priorities and sensible residential proportions (development branch)
 
 - **Reserve a properly sized main living space:** on a clear ground-floor
