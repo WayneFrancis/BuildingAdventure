@@ -9,7 +9,7 @@ workshops, warehouses, mixed-use occupancy, and optionally hidden rooms.
 
 The first milestone implemented a perimeter editor. The second milestone adds
 manual polygonal rooms, shared-wall rendering, simple door openings and
-validation. Procedural generation remains **not implemented yet**.
+validation. Procedural generation now has initial geometry and connectivity suggestion passes, with more sophisticated architectural planning still outstanding.
 
 ## Coordinate system
 
@@ -433,6 +433,38 @@ ceiling heights, or 3D wall meshes.
   window with a selector over all candidate elevations, including
   floors not yet present in the current building. This is separate
   from the actual model until Accept All.
+
+## Connected layout suggestion passes (v0.15)
+
+- GenerationOptions controls five independent candidate categories:
+  Rooms, Corridors, Doors, Windows, and Stairs. Existing generator
+  overloads stay available for room-only compatibility. The desktop
+  reads the feature checkboxes and includes selected settings in the
+  user's private UI preferences.
+- BuildingConnectivity.TryAddCorridor proposes a straight central
+  hallway across a selected floor's rectangular bounding region.
+  Proposed halls are whole-building validated and cannot overwrite
+  existing rooms or stairwell constraints. Random room proposals are
+  constrained to share actual wall length with newly proposed corridors.
+- BuildingConnectivity.ShareWall tests collinear edge overlap, not
+  corner touching. AddDoors uses physical segments from
+  FloorGeometry.BuildWalls; it prioritises an exterior entrance and
+  hall-to-room connections, and each candidate is validated before
+  accepting it into a detached proposal.
+- AddWindows proposes up to two valid exterior openings per selected
+  floor along existing room frontage. AddStairs considers adjacent
+  selected floor pairs and validates the full staircase footprint,
+  rotation, interior walls and slab opening before adding a flight.
+- The surface renders differences between accepted and proposed
+  doors/windows/stairs alongside new room outlines. Both on-screen
+  previews and the saved-candidate list hold complete building
+  snapshots; acceptance is explicitly user-driven and undoable.
+- Completion remains intentionally conservative. A hall may not fit
+  a partially drawn floor, and some rooms may remain without a door.
+  The proposal description reports remaining rooms without openings.
+  Irregular-corridor routing, guaranteed traversability, exits,
+  architectural constraints and building-use grammars are still
+  separate planned generator stages.
 
 ## Current project boundaries
 

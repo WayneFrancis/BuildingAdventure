@@ -4,6 +4,37 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.15 — Configurable connected-layout suggestions (development branch)
+
+- **Generate features independently** in GENERATOR / SUGGESTIONS:
+  Rooms, Corridors, Doors, Windows, and Stairs have separate checkboxes.
+  Rooms, Corridors and Doors default to on; Windows and Stairs require
+  opt-in. The selections are saved in local UI preferences.
+- **Corridor-first floor layouts**: where a straight, 2-metre central
+  corridor fits within unassigned space, new rooms are placed beside
+  it with actual shared walls. Existing rooms, doors, windows, and
+  staircase geometry remain unchanged until Accept.
+- **Connectivity pass**: proposed doors are added as actual validated
+  wall openings, favouring an outside entrance and then interior
+  connections. A candidate description reports how many rooms still
+  lack door access. This is an initial access planner, not a claim
+  that every room on every irregular floor is reachable.
+- **Optional windows and stairs**: exterior windows can be proposed
+  for named rooms; staircase flights can be proposed between adjacent
+  **selected** floors, with existing floor geometry, wall clearance,
+  and cross-floor validation respected. No feature is forced if
+  validation rejects its placement.
+- **Full feature previews**: green room/corridor outlines are joined by
+  dashed orange proposed doors, blue proposed windows and green stair
+  outlines. The pending proposal and saved-candidate memory store all
+  generated components together; Accept All commits the selected
+  changes as one undoable building snapshot.
+- **Compatibility**: existing callers of the generator retain
+  room-only behaviour through the legacy overloads. This pass
+  deliberately does not yet handle complex winding corridors,
+  guaranteed graph-wide connectivity, purpose-aware room assignments
+  or multi-floor egress rules.
+
 ## v0.14 — Flexible floor deletion, stacked stairs and reliable suggestions (development branch)
 
 - **Delete any selected floor** in the FLOORS panel, including intermediate

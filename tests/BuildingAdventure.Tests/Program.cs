@@ -3503,5 +3503,237 @@ Check("Generator explains when no 1 metre room can fit", () =>
     Assert(doc.Rooms.Count == 1);
 });
 
+Check("Generation options can disable every feature explicitly", () =>
+{
+    var options = new GenerationOptions
+    {
+        Rooms = false, Corridors = false, Doors = false,
+        Windows = false, Stairs = false
+    };
+    Assert(!options.Any);
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(!BuildingGenerator.TrySuggest(source, [0], 91, options,
+        out _, out var reason));
+    Assert(reason.Contains("Select at least one feature"));
+});
+
+Check("Connected generation creates a hallway, adjoining rooms and doors", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 412, options,
+        out var suggestion, out var reason), reason);
+    var floor = suggestion.Building;
+    var corridor = floor.Rooms.Single(r => r.Type == "Hallway");
+    var generated = floor.Rooms.Where(r => r.Id != corridor.Id).ToList();
+    Assert(generated.Count > 0);
+    Assert(generated.Any(room =>
+        BuildingConnectivity.ShareWall(room.Outline, corridor.Outline)));
+    Assert(floor.Doors.Count >= 2);
+    Assert(floor.Doors.Any(d => FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
+        .Any(w => w.IsExterior &&
+            PolygonGeometry.ClosestPointOnSegment(d.Centre, w.A, w.B)
+                .DistanceTo(d.Centre) < 0.01)));
+    Assert(BuildingStoreys.Validate(floor, out reason), reason);
+    Assert(source.Rooms.Count == 0 && source.Doors.Count == 0);
+});
+
+Check("Corridor-only mode creates a hallway without generating ordinary rooms", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var options = new GenerationOptions
+    {
+        Rooms = false, Corridors = true, Doors = false
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 314, options,
+        out var proposal, out var reason), reason);
+    Assert(proposal.Building.Rooms.Count == 1);
+    Assert(proposal.Building.Rooms[0].Type == "Hallway");
+    Assert(proposal.Building.Doors.Count == 0);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Door-only generation connects existing rooms without adding new rooms", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Left",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "Right",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ]
+    };
+    var options = new GenerationOptions
+    {
+        Rooms = false, Corridors = false, Doors = true
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 120, options,
+        out var proposal, out var reason), reason);
+    Assert(proposal.Building.Rooms.Count == 2);
+    Assert(proposal.Building.Doors.Count >= 2);
+    Assert(BuildingConnectivity.CountRoomsWithoutDoors(proposal.Building, 0) == 0);
+    Assert(source.Doors.Count == 0);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Window-only mode creates glazed openings on defined exterior room walls", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "Shop",
+                Outline = [new(0, 0), new(4, 0), new(4, 4), new(0, 4)] }
+        ]
+    };
+    var options = new GenerationOptions
+    {
+        Rooms = false, Corridors = false, Doors = false, Windows = true
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 561, options,
+        out var proposal, out var reason), reason);
+    Assert(proposal.Building.Rooms.Count == 1);
+    Assert(proposal.Building.Windows.Count > 0);
+    Assert(proposal.Building.Windows.All(w => w.Width == 1.2));
+    Assert(source.Windows.Count == 0);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Stair-only mode joins existing floors without generating rooms", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(source, out var two, out var reason), reason);
+    var options = new GenerationOptions
+    {
+        Rooms = false, Corridors = false, Doors = false, Stairs = true
+    };
+    Assert(BuildingGenerator.TrySuggest(two, [0, 1], 20, options,
+        out var proposal, out reason), reason);
+    Assert(proposal.Building.Staircases.Count == 1);
+    Assert(proposal.Building.Staircases[0].LowerFloorIndex == 0);
+    Assert(proposal.Building.Rooms.Count == 0);
+    Assert(proposal.Building.UpperFloors[0].Rooms.Count == 0);
+    Assert(two.Staircases.Count == 0);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Stair generation never connects an unchecked floor", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(source, out var two, out var reason), reason);
+    var stairsOnly = new GenerationOptions
+    {
+        Rooms = false, Corridors = false, Doors = false, Stairs = true
+    };
+    Assert(!BuildingGenerator.TrySuggest(two, [0], 100, stairsOnly,
+        out _, out reason));
+    Assert(reason.Contains("No valid new features"));
+});
+
+Check("Generate only on the selected upper floor with corridors and doors", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(source, out var two, out var reason), reason);
+    var options = new GenerationOptions { Rooms = true, Corridors = true, Doors = true };
+    Assert(BuildingGenerator.TrySuggest(two, [1], 552, options,
+        out var proposal, out reason), reason);
+    Assert(proposal.Building.Rooms.Count == 0);
+    Assert(proposal.Building.Doors.Count == 0);
+    Assert(proposal.Building.UpperFloors[0].Rooms.Any(r => r.Type == "Hallway"));
+    Assert(proposal.Building.UpperFloors[0].Doors.Count > 0);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Whole-building options are applied across all proposed storeys", () =>
+{
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true, Stairs = true
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(3, 812, options,
+        out var proposal, out var reason), reason);
+    Assert(BuildingStoreys.FloorCount(proposal.Building) == 3);
+    Assert(proposal.FloorIndexes.SequenceEqual([0, 1, 2]));
+    foreach (var index in proposal.FloorIndexes)
+    {
+        var floor = BuildingStoreys.GetFloor(proposal.Building, index);
+        Assert(floor.Rooms.Any(r => r.Type == "Hallway"));
+        Assert(floor.Rooms.Count >= 2);
+        Assert(floor.Doors.Count >= 2);
+    }
+    Assert(proposal.Building.Staircases.Count >= 1);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
+Check("Generation options are detached and copy without leaking changes", () =>
+{
+    var source = new GenerationOptions
+    {
+        Rooms = true, Corridors = false, Doors = true,
+        Windows = true, Stairs = false
+    };
+    var copy = source.Copy();
+    copy.Doors = false;
+    copy.Stairs = true;
+    Assert(source.Doors && !source.Stairs && source.Windows);
+    Assert(!copy.Doors && copy.Stairs);
+});
+
+Check("Adjacent room geometry requires a wall, not merely a shared corner", () =>
+{
+    var room1 = new List<Point2>
+    {
+        new(0, 0), new(3, 0), new(3, 3), new(0, 3)
+    };
+    var room2 = new List<Point2>
+    {
+        new(3, 3), new(5, 3), new(5, 5), new(3, 5)
+    };
+    Assert(!BuildingConnectivity.ShareWall(room1, room2));
+    var hall = new List<Point2>
+    {
+        new(3, 0), new(5, 0), new(5, 3), new(3, 3)
+    };
+    Assert(BuildingConnectivity.ShareWall(room1, hall));
+});
+
+Check("Door generation adds exterior entry when all existing doors are internal", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "West",
+                Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)] },
+            new RoomDefinition { Name = "East",
+                Outline = [new(5, 0), new(10, 0), new(10, 8), new(5, 8)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 4), Width = 0.9 }]
+    };
+    var onlyDoors = new GenerationOptions
+    {
+        Rooms = false, Corridors = false, Doors = true
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 109, onlyDoors,
+        out var proposal, out var reason), reason);
+    Assert(proposal.Building.Doors.Count >= 2);
+    var walls = FloorGeometry.BuildWalls(proposal.Building.Perimeter,
+        proposal.Building.Rooms);
+    Assert(proposal.Building.Doors.Any(door =>
+        walls.Any(w => w.IsExterior &&
+            PolygonGeometry.ClosestPointOnSegment(
+                door.Centre, w.A, w.B).DistanceTo(door.Centre) < 0.01)));
+    Assert(source.Doors.Count == 1);
+    Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

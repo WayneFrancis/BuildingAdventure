@@ -59,6 +59,7 @@ public sealed class FloorPlanSurface : FrameworkElement
     private double _referenceOpacity = 0.40;
     private List<AdjacentFloorPlan> _silhouetteFloors = new();
     private BuildingDocument? _suggestedFloor;
+    private List<StaircaseDefinition> _suggestedStairs = new();
     private Guid? _selectedSuggestedRoomId;
     public Guid? SelectedSuggestedRoomId => _selectedSuggestedRoomId;
     public event Action? SuggestedRoomSelectionChanged;
@@ -120,9 +121,11 @@ public sealed class FloorPlanSurface : FrameworkElement
         InvalidateVisual();
     }
 
-    public void SetSuggestionPreview(BuildingDocument? suggestion)
+    public void SetSuggestionPreview(BuildingDocument? suggestion,
+        IReadOnlyList<StaircaseDefinition>? staircases = null)
     {
         _suggestedFloor = suggestion is null ? null : BuildingStoreys.Copy(suggestion);
+        _suggestedStairs = staircases?.Select(s => s.Copy()).ToList() ?? new();
         if (_suggestedFloor?.Rooms.All(r => r.Id != _selectedSuggestedRoomId) != false)
             _selectedSuggestedRoomId = null;
         InvalidateVisual();
@@ -985,6 +988,50 @@ public sealed class FloorPlanSurface : FrameworkElement
                 shape);
             Point at = ToScreen(FindRoomLabelPoint(room.Outline));
             DrawText(dc, "+ " + room.Name, at, 12, Brushes.DarkGreen);
+        }
+
+        var previewWalls = FloorGeometry.BuildWalls(proposed.Perimeter, proposed.Rooms);
+        var newDoors = proposed.Doors.Where(d => _doors.All(o => o.Id != d.Id));
+        foreach (var door in newDoors)
+        {
+            if (!FloorGeometry.TryFindDoorWall(door, previewWalls, out var wall) ||
+                wall is null || wall.Length < 1e-6) continue;
+            double ux = (wall.B.X - wall.A.X) / wall.Length;
+            double uy = (wall.B.Y - wall.A.Y) / wall.Length;
+            dc.DrawLine(new Pen(Brushes.DarkOrange, 6) { DashStyle = DashStyles.Dash },
+                ToScreen(new Point2(door.Centre.X - ux * door.Width / 2,
+                    door.Centre.Y - uy * door.Width / 2)),
+                ToScreen(new Point2(door.Centre.X + ux * door.Width / 2,
+                    door.Centre.Y + uy * door.Width / 2)));
+        }
+
+        foreach (var window in proposed.Windows.Where(w =>
+            _windows.All(o => o.Id != w.Id)))
+        {
+            var proxy = new DoorDefinition { Centre = window.Centre, Width = window.Width };
+            if (!FloorGeometry.TryFindDoorWall(proxy,
+                previewWalls.Where(w => w.IsExterior).ToList(), out var wall) ||
+                wall is null || wall.Length < 1e-6) continue;
+            double ux = (wall.B.X - wall.A.X) / wall.Length;
+            double uy = (wall.B.Y - wall.A.Y) / wall.Length;
+            dc.DrawLine(new Pen(Brushes.DodgerBlue, 6) { DashStyle = DashStyles.Dash },
+                ToScreen(new Point2(window.Centre.X - ux * window.Width / 2,
+                    window.Centre.Y - uy * window.Width / 2)),
+                ToScreen(new Point2(window.Centre.X + ux * window.Width / 2,
+                    window.Centre.Y + uy * window.Width / 2)));
+        }
+
+        foreach (var stair in _suggestedStairs.Where(s =>
+            _staircases.All(old => old.Id != s.Id) &&
+            (s.LowerFloorIndex == _stairFloorIndex ||
+             s.LowerFloorIndex + 1 == _stairFloorIndex)))
+        {
+            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(60, 31, 145, 94)),
+                new Pen(Brushes.ForestGreen, 2.5) { DashStyle = DashStyles.Dash },
+                BuildGeometry(BuildingStoreys.StairFootprint(stair), true));
+            DrawText(dc, s.LowerFloorIndex == _stairFloorIndex
+                    ? "+ STAIRS UP" : "+ STAIRS DOWN",
+                ToScreen(stair.Centre), 11, Brushes.DarkGreen);
         }
     }
 

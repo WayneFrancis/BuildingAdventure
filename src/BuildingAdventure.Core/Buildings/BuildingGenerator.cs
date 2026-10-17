@@ -20,7 +20,7 @@ public static class BuildingGenerator
     private static readonly string[] RoomTypes =
     [
         "Bedroom", "Office", "Storeroom", "Kitchen",
-        "Bathroom", "Workshop", "Living room", "Hallway"
+        "Bathroom", "Workshop", "Living room", "Dining room"
     ];
 
     /// <summary>
@@ -28,7 +28,13 @@ public static class BuildingGenerator
     /// This never overwrites the active building until explicitly accepted.
     /// </summary>
     public static bool TrySuggestWholeBuilding(int floorCount, int seed,
-        out BuildingSuggestion suggestion, out string reason)
+        out BuildingSuggestion suggestion, out string reason) =>
+        TrySuggestWholeBuilding(floorCount, seed,
+            new GenerationOptions { Corridors = false, Doors = false },
+            out suggestion, out reason);
+
+    public static bool TrySuggestWholeBuilding(int floorCount, int seed,
+        GenerationOptions options, out BuildingSuggestion suggestion, out string reason)
     {
         var blank = new BuildingDocument();
         suggestion = new BuildingSuggestion(blank, seed, [], "");
@@ -40,7 +46,20 @@ public static class BuildingGenerator
 
         // First establish a perimeter; subsequent floors inherit the exact
         // footprint but get separately proposed rooms.
-        if (!TrySuggest(blank, [0], seed, out var first, out reason))
+        if (options is null)
+        {
+            reason = "Generation options are required.";
+            return false;
+        }
+        if (!options.Rooms && !options.Corridors)
+        {
+            reason = "A new whole-building draft needs Rooms or Corridors enabled " +
+                "to establish its initial floor layout.";
+            return false;
+        }
+        var stageOptions = options.Copy();
+        stageOptions.Stairs = false;
+        if (!TrySuggest(blank, [0], seed, stageOptions, out var first, out reason))
             return false;
         var basis = BuildingStoreys.Copy(first.Building);
         for (int i = 1; i < floorCount; i++)
@@ -54,12 +73,21 @@ public static class BuildingGenerator
         if (floorCount > 1)
         {
             if (!TrySuggest(basis, Enumerable.Range(1, floorCount - 1).ToArray(),
-                    unchecked(seed + 1), out var upper, out reason))
+                    unchecked(seed + 1), stageOptions, out var upper, out reason))
                 return false;
             result = upper.Building;
         }
+        int stairs = 0;
+        if (options.Stairs && floorCount > 1)
+        {
+            stairs = BuildingConnectivity.AddStairs(result,
+                Enumerable.Range(0, floorCount).ToArray(), out var withStairs);
+            result = withStairs;
+        }
         string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
-            $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms";
+            $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms, " +
+            $"{result.UpperFloors.Sum(f => f.Doors.Count) + result.Doors.Count} doors, " +
+            $"{stairs} new stair flight(s)";
         suggestion = new BuildingSuggestion(BuildingStoreys.Copy(result), seed,
             Enumerable.Range(0, floorCount).ToArray(), label);
         reason = "";
@@ -107,12 +135,24 @@ public static class BuildingGenerator
 
     public static bool TrySuggest(BuildingDocument source,
         IReadOnlyCollection<int> selectedFloors, int seed,
+        out BuildingSuggestion suggestion, out string reason) =>
+        TrySuggest(source, selectedFloors, seed,
+            new GenerationOptions { Corridors = false, Doors = false },
+            out suggestion, out reason);
+
+    public static bool TrySuggest(BuildingDocument source,
+        IReadOnlyCollection<int> selectedFloors, int seed, GenerationOptions options,
         out BuildingSuggestion suggestion, out string reason)
     {
         var original = BuildingStoreys.Copy(source);
         var proposed = BuildingStoreys.Copy(source);
         suggestion = new BuildingSuggestion(original, seed, [], "");
         reason = "";
+        if (options is null || !options.Any)
+        {
+            reason = "Select at least one feature: rooms, corridors, doors, windows or stairs.";
+            return false;
+        }
 
         int floors = BuildingStoreys.FloorCount(source);
         int[] indices = selectedFloors.Distinct().OrderBy(i => i).ToArray();
@@ -129,7 +169,11 @@ public static class BuildingGenerator
 
         var random = new Random(seed);
         int addedRooms = 0;
+        int addedCorridors = 0;
+        int addedDoors = 0;
+        int addedWindows = 0;
         int addedFootprints = 0;
+        int addedStairs = 0;
         var skippedFloors = new List<int>();
         var roomsPerFloor = new List<string>();
         foreach (int index in indices)
@@ -155,6 +199,20 @@ public static class BuildingGenerator
                 addedFootprints++;
             }
 
+            Guid corridorId = Guid.Empty;
+            if (options.Corridors &&
+                BuildingConnectivity.TryAddCorridor(proposed, index,
+                    out var withCorridor, out corridorId))
+            {
+                proposed = withCorridor;
+                floor = BuildingStoreys.GetFloor(proposed, index);
+                addedCorridors++;
+            }
+            var corridor = corridorId == Guid.Empty ? null :
+                floor.Rooms.FirstOrDefault(room => room.Id == corridorId);
+
+            if (options.Rooms)
+            {
             double minX = floor.Perimeter.Min(p => p.X);
             double maxX = floor.Perimeter.Max(p => p.X);
             double minY = floor.Perimeter.Min(p => p.Y);
@@ -197,6 +255,9 @@ public static class BuildingGenerator
                         PolygonGeometry.ContainsPoint(shape, stair.Centre);
                 });
                 if (reservesStair) return false;
+                if (corridor is not null &&
+                    !BuildingConnectivity.ShareWall(shape, corridor.Outline, 1.1))
+                    return false;
 
                 string type = RoomTypes[random.Next(RoomTypes.Length)];
                 var nextFloor = BuildingStoreys.GetFloor(proposed, index);
@@ -260,21 +321,47 @@ public static class BuildingGenerator
 
             if (thisFloorRooms == 0) skippedFloors.Add(index);
             roomsPerFloor.Add($"{BuildingStoreys.FloorLabel(index)}: {thisFloorRooms} room(s)");
+            }
+            if (options.Doors)
+            {
+                addedDoors += BuildingConnectivity.AddDoors(
+                    proposed, index, out var withDoors);
+                proposed = withDoors;
+            }
+            if (options.Windows)
+            {
+                addedWindows += BuildingConnectivity.AddWindows(
+                    proposed, index, out var withWindows);
+                proposed = withWindows;
+            }
+        }
+        if (options.Stairs)
+        {
+            addedStairs = BuildingConnectivity.AddStairs(
+                proposed, indices, out var withStairs);
+            proposed = withStairs;
         }
 
-        if (addedRooms == 0)
+        if (addedRooms == 0 && addedCorridors == 0 &&
+            addedDoors == 0 && addedWindows == 0 && addedStairs == 0)
         {
-            reason = "No valid room of at least 1 m × 1 m fits any selected floor. " +
-                "Remaining floor area may be too narrow, intersect a stairwell, " +
-                "or be disconnected from an available rectangular space.";
+            reason = "No valid new features fit the selected floors and settings. " +
+                "Try a different seed, smaller rooms, additional floor space, " +
+                "or enable different features.";
             return false;
         }
         if (!BuildingStoreys.Validate(proposed, out reason))
             return false;
 
+        int roomsWithoutDoors = options.Doors ? indices.Sum(i =>
+            BuildingConnectivity.CountRoomsWithoutDoors(proposed, i)) : 0;
         string floorSummary = string.Join(", ", indices.Select(BuildingStoreys.FloorLabel));
         string description = $"Seed {seed}: {addedFootprints} new perimeter(s), " +
-            $"{addedRooms} room(s) across {floorSummary}. " +
+            $"{addedRooms} room(s), {addedCorridors} corridor(s), " +
+            $"{addedDoors} door(s), {addedWindows} window(s), " +
+            $"{addedStairs} stair flight(s) across {floorSummary}. " +
+            (options.Doors && roomsWithoutDoors > 0 ?
+                $"{roomsWithoutDoors} room(s) still without door access. " : "") +
             string.Join("; ", roomsPerFloor) +
             (skippedFloors.Count > 0 ? " | No rooms fit: " +
                 string.Join(", ", skippedFloors.Select(BuildingStoreys.FloorLabel)) : "");

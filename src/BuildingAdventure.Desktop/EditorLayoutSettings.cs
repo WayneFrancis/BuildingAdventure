@@ -23,6 +23,11 @@ internal sealed class EditorLayoutSettings
     public double ReferenceOpacity { get; set; } = 0.45;
     public bool AllFloorSilhouettes { get; set; }
     public int MapModeIndex { get; set; }
+    public bool GenerateRooms { get; set; } = true;
+    public bool GenerateCorridors { get; set; } = true;
+    public bool GenerateDoors { get; set; } = true;
+    public bool GenerateWindows { get; set; }
+    public bool GenerateStairs { get; set; }
 
     private static string SettingsFile => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

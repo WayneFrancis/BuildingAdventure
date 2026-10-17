@@ -128,8 +128,18 @@
                               IsExpanded="False" Margin="0,0,0,7" Padding="0,3,0,0">
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock TextWrapping="Wrap" Foreground="#566579"
-                                       Text="Generate a new building or suggest additional rooms on selected floors. Changes remain a green preview until accepted."
+                                       Text="Suggest connected floor layouts or selected feature types. Green previews include new rooms, doors, windows and stairs. Nothing changes until accepted."
                                        Margin="0,0,0,8"/>
+                            <TextBlock FontWeight="SemiBold" Text="Generate features" Margin="0,0,0,6"/>
+                            <WrapPanel Margin="0,0,0,10">
+                                <CheckBox x:Name="GenerateRoomsCheckBox" Content="Rooms" IsChecked="True" Margin="0,0,12,6"/>
+                                <CheckBox x:Name="GenerateCorridorsCheckBox" Content="Corridors" IsChecked="True" Margin="0,0,12,6"/>
+                                <CheckBox x:Name="GenerateDoorsCheckBox" Content="Doors" IsChecked="True" Margin="0,0,12,6"/>
+                                <CheckBox x:Name="GenerateWindowsCheckBox" Content="Windows" Margin="0,0,12,6"/>
+                                <CheckBox x:Name="GenerateStairsCheckBox" Content="Stairs" Margin="0,0,12,6"/>
+                            </WrapPanel>
+                            <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,8"
+                                       Text="Rooms are arranged beside a corridor when one can fit. Doors use actual shared walls. Windows and stairs are optional; stair flights require both adjoining floors checked. Every candidate is validated before preview."/>
                             <TextBlock FontWeight="SemiBold" Text="Floors to complete" Margin="0,0,0,6"/>
                             <StackPanel x:Name="GeneratorFloorChecks" Margin="0,0,0,10"/>
                             <WrapPanel Margin="0,0,0,8">

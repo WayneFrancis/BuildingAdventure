@@ -169,6 +169,11 @@ public partial class MainWindow : Window
             ShowBelowCheckBox.IsChecked = saved.ShowBelow;
             ShowAboveCheckBox.IsChecked = saved.ShowAbove;
             AllFloorSilhouettesCheckBox.IsChecked = saved.AllFloorSilhouettes;
+            GenerateRoomsCheckBox.IsChecked = saved.GenerateRooms;
+            GenerateCorridorsCheckBox.IsChecked = saved.GenerateCorridors;
+            GenerateDoorsCheckBox.IsChecked = saved.GenerateDoors;
+            GenerateWindowsCheckBox.IsChecked = saved.GenerateWindows;
+            GenerateStairsCheckBox.IsChecked = saved.GenerateStairs;
             MapModeBox.SelectedIndex = Math.Clamp(saved.MapModeIndex, 0, 2);
             if (double.IsFinite(saved.ReferenceOpacity))
                 AlignmentOpacitySlider.Value =
@@ -209,6 +214,11 @@ public partial class MainWindow : Window
             ShowBelow = ShowBelowCheckBox.IsChecked == true,
             ShowAbove = ShowAboveCheckBox.IsChecked == true,
             AllFloorSilhouettes = AllFloorSilhouettesCheckBox.IsChecked == true,
+            GenerateRooms = GenerateRoomsCheckBox.IsChecked == true,
+            GenerateCorridors = GenerateCorridorsCheckBox.IsChecked == true,
+            GenerateDoors = GenerateDoorsCheckBox.IsChecked == true,
+            GenerateWindows = GenerateWindowsCheckBox.IsChecked == true,
+            GenerateStairs = GenerateStairsCheckBox.IsChecked == true,
             MapModeIndex = Math.Max(0, MapModeBox.SelectedIndex),
             ReferenceOpacity = AlignmentOpacitySlider.Value
         };
@@ -559,8 +569,18 @@ public partial class MainWindow : Window
             _pendingSuggestion is not null &&
             BuildingStoreys.HasFloor(_pendingSuggestion.Building, _activeFloorIndex)
                 ? BuildingStoreys.GetFloor(_pendingSuggestion.Building, _activeFloorIndex)
-                : null);
+                : null,
+            _pendingSuggestion?.Building.Staircases);
     }
+
+    private GenerationOptions SelectedGeneratorOptions() => new()
+    {
+        Rooms = GenerateRoomsCheckBox.IsChecked == true,
+        Corridors = GenerateCorridorsCheckBox.IsChecked == true,
+        Doors = GenerateDoorsCheckBox.IsChecked == true,
+        Windows = GenerateWindowsCheckBox.IsChecked == true,
+        Stairs = GenerateStairsCheckBox.IsChecked == true
+    };
 
     private int[] CheckedGeneratorFloors() =>
         GeneratorFloorChecks.Children.OfType<CheckBox>()
@@ -591,7 +611,7 @@ public partial class MainWindow : Window
         int[] floors = CheckedGeneratorFloors();
         var seed = Random.Shared.Next(1, int.MaxValue);
         if (!BuildingGenerator.TrySuggest(CurrentDocument(), floors, seed,
-            out var proposal, out var reason))
+            SelectedGeneratorOptions(), out var proposal, out var reason))
         {
             _hint = reason;
             Refresh();
@@ -664,7 +684,7 @@ public partial class MainWindow : Window
         int count = Math.Clamp(WholeBuildingFloorsBox.SelectedIndex + 1, 1, 4);
         int seed = Random.Shared.Next(1, int.MaxValue);
         if (!BuildingGenerator.TrySuggestWholeBuilding(count, seed,
-            out var proposal, out var reason))
+            SelectedGeneratorOptions(), out var proposal, out var reason))
         {
             _hint = reason;
             Refresh();
