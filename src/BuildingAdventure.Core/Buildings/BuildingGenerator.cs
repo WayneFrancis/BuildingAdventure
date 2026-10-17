@@ -282,7 +282,7 @@ public static class BuildingGenerator
                     nextFloor.Rooms, random);
                 nextFloor.Rooms.Add(new RoomDefinition
                 {
-                    Name = $"{type} {nextFloor.Rooms.Count + 1}",
+                    Name = RoomLayoutPlanner.NextRoomName(type, nextFloor.Rooms),
                     Type = type,
                     Outline = shape
                 });
