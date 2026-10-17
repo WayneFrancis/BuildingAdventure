@@ -644,6 +644,13 @@ public partial class MainWindow : Window
             Refresh();
             return;
         }
+        if (_pendingWholeBuilding)
+        {
+            // Some proposed levels do not exist in the active document yet.
+            // Review the detached draft instead of cycling existing floors.
+            OpenProposalViewer();
+            return;
+        }
         var eligible = _pendingSuggestion.FloorIndexes
             .Where(i => BuildingStoreys.HasFloor(_building, i))
             .Distinct().OrderBy(i => i).ToArray();
