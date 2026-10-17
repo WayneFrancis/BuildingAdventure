@@ -466,6 +466,31 @@ ceiling heights, or 3D wall meshes.
   architectural constraints and building-use grammars are still
   separate planned generator stages.
 
+## Purpose-aware frontage partitioning (v0.16)
+
+- RoomLayoutPlanner.FillHallFrontage recognises axis-aligned straight
+  hallway rectangles. It calculates strips on both sides of the hall,
+  divides each frontage into contiguous half-metre-aligned spans, and
+  proposes full-depth rectangular rooms. Each candidate passes
+  BuildingStoreys.Validate on a detached document; rejected candidates
+  never modify existing rooms or the live editor.
+- Random variations change the number and widths of frontage
+  partitions. Unlike the earlier random scattering pass, a clear
+  rectangular perimeter and hallway can be fully covered without
+  leaving large arbitrary gaps. For complex polygons or obstructed
+  strips, the existing geometry-checked fallback remains available.
+- GenerationOptions.Purpose selects Residence, Inn, Shop, Dungeon or
+  Mixed room-role vocabularies. The type selector considers floor
+  elevation and room area, avoids repeating a room function when
+  alternatives exist, and does not override user-authored names.
+- RoomLayoutPlanner.UnassignedArea computes unassigned floor area,
+  excluding rooms but not attempting to model furnishings or other
+  unusable space. Generator descriptions include coverage percentage
+  and unused square metres for each selected floor, so a user can
+  assess each proposal before Accept.
+- Building purpose is an option for the generator, not a building JSON
+  schema change. Local UI preferences retain the selected purpose.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

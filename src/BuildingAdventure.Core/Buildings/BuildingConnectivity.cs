@@ -13,11 +13,12 @@ public sealed class GenerationOptions
     public bool Doors { get; set; } = true;
     public bool Windows { get; set; }
     public bool Stairs { get; set; }
+    public BuildingUse Purpose { get; set; } = BuildingUse.Residence;
 
     public GenerationOptions Copy() => new()
     {
         Rooms = Rooms, Corridors = Corridors, Doors = Doors,
-        Windows = Windows, Stairs = Stairs
+        Windows = Windows, Stairs = Stairs, Purpose = Purpose
     };
 
     public bool Any => Rooms || Corridors || Doors || Windows || Stairs;

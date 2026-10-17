@@ -3735,5 +3735,128 @@ Check("Door generation adds exterior entry when all existing doors are internal"
     Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
 });
 
+Check("Frontage planning fills both sides of a hall without wasting room area", () =>
+{
+    var source = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true,
+        Purpose = BuildingUse.Residence
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 2245, options,
+        out var plan, out var reason), reason);
+    var floor = plan.Building;
+    Assert(floor.Rooms.Any(r => r.Type == "Hallway"));
+    Assert(floor.Rooms.Count >= 5, "Both sides should be subdivided.");
+    Assert(RoomLayoutPlanner.UnassignedArea(floor) < 0.01,
+        "Both hallway frontages should be filled, not scattered.");
+    Assert(floor.Rooms.All(r => PolygonGeometry.Area(r.Outline) >= 4));
+    Assert(BuildingStoreys.Validate(plan.Building, out reason), reason);
+    Assert(plan.Description.Contains("unused"));
+    Assert(source.Rooms.Count == 0);
+});
+
+Check("Frontage partitioning creates different valid layouts for different seeds", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true,
+        Purpose = BuildingUse.Residence
+    };
+    Assert(BuildingGenerator.TrySuggest(doc, [0], 199, options,
+        out var a, out var reason), reason);
+    Assert(BuildingGenerator.TrySuggest(doc, [0], 517, options,
+        out var b, out reason), reason);
+    Assert(RoomLayoutPlanner.UnassignedArea(a.Building) < 0.01);
+    Assert(RoomLayoutPlanner.UnassignedArea(b.Building) < 0.01);
+    Assert(BuildingStoreys.Validate(a.Building, out reason), reason);
+    Assert(BuildingStoreys.Validate(b.Building, out reason), reason);
+});
+
+Check("Residence generation avoids implausibly huge bathrooms or tiny living rooms", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    var options = new GenerationOptions { Purpose = BuildingUse.Residence };
+    Assert(BuildingGenerator.TrySuggest(doc, [0], 456, options,
+        out var suggested, out var reason), reason);
+    foreach (var room in suggested.Building.Rooms.Where(r => r.Type != "Hallway"))
+    {
+        double area = PolygonGeometry.Area(room.Outline);
+        if (room.Type is "Bathroom" or "Pantry" or "Laundry")
+            Assert(area < 9);
+        if (room.Type == "Living room")
+            Assert(area >= 23);
+    }
+    Assert(BuildingStoreys.Validate(suggested.Building, out reason), reason);
+});
+
+Check("Building-use choice assigns coherent room roles on different elevations", () =>
+{
+    var existing = new List<RoomDefinition>();
+    var innUpper = Enumerable.Range(0, 20).Select(i =>
+        RoomLayoutPlanner.ChooseRoomType(BuildingUse.Inn, 1, 16, existing,
+            new Random(i))).ToList();
+    Assert(innUpper.All(t => t is "Guest room" or "Suite" or "Linen store"));
+
+    for (int i = 0; i < 20; i++)
+    {
+        string small = RoomLayoutPlanner.ChooseRoomType(
+            BuildingUse.Residence, 0, 6, existing, new Random(i));
+        Assert(small is "Bathroom" or "Pantry" or "Laundry");
+        string upper = RoomLayoutPlanner.ChooseRoomType(
+            BuildingUse.Residence, 1, 15, existing, new Random(i));
+        Assert(upper is "Bedroom" or "Study");
+        string dungeon = RoomLayoutPlanner.ChooseRoomType(
+            BuildingUse.Dungeon, -1, 16, existing, new Random(i));
+        Assert(dungeon is "Chamber" or "Barracks" or "Guardroom" or "Vault");
+    }
+});
+
+Check("Generator preserves manually defined rooms and refuses overlapping partitions", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms =
+        [
+            new RoomDefinition { Name = "My handcrafted room", Type = "Office",
+                Outline = [new(0, 0), new(3, 0), new(3, 2), new(0, 2)] }
+        ]
+    };
+    var original = source.Rooms[0].Copy();
+    Assert(FloorGeometry.Validate(source, out var reason), reason);
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true
+    };
+    Assert(BuildingGenerator.TrySuggest(source, [0], 500, options,
+        out var plan, out reason), reason);
+    Assert(plan.Building.Rooms.Any(r => r.Id == original.Id &&
+        r.Outline.SequenceEqual(original.Outline)));
+    Assert(source.Rooms.Count == 1);
+    Assert(BuildingStoreys.Validate(plan.Building, out reason), reason);
+});
+
+Check("Purpose setting survives options copy independently", () =>
+{
+    var a = new GenerationOptions { Purpose = BuildingUse.Shop };
+    var b = a.Copy();
+    b.Purpose = BuildingUse.Dungeon;
+    Assert(a.Purpose == BuildingUse.Shop);
+    Assert(b.Purpose == BuildingUse.Dungeon);
+});
+
+Check("Floor coverage metric returns remaining area and is never negative", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Equal(RoomLayoutPlanner.UnassignedArea(doc), 80);
+    doc.Rooms.Add(new RoomDefinition
+    {
+        Outline = [new(0, 0), new(5, 0), new(5, 8), new(0, 8)]
+    });
+    Equal(RoomLayoutPlanner.UnassignedArea(doc), 40);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

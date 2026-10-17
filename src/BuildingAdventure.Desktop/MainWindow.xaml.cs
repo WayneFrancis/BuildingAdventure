@@ -174,6 +174,8 @@ public partial class MainWindow : Window
             GenerateDoorsCheckBox.IsChecked = saved.GenerateDoors;
             GenerateWindowsCheckBox.IsChecked = saved.GenerateWindows;
             GenerateStairsCheckBox.IsChecked = saved.GenerateStairs;
+            GeneratorPurposeBox.SelectedIndex =
+                Math.Clamp(saved.GeneratorPurposeIndex, 0, 4);
             MapModeBox.SelectedIndex = Math.Clamp(saved.MapModeIndex, 0, 2);
             if (double.IsFinite(saved.ReferenceOpacity))
                 AlignmentOpacitySlider.Value =
@@ -219,6 +221,7 @@ public partial class MainWindow : Window
             GenerateDoors = GenerateDoorsCheckBox.IsChecked == true,
             GenerateWindows = GenerateWindowsCheckBox.IsChecked == true,
             GenerateStairs = GenerateStairsCheckBox.IsChecked == true,
+            GeneratorPurposeIndex = Math.Max(0, GeneratorPurposeBox.SelectedIndex),
             MapModeIndex = Math.Max(0, MapModeBox.SelectedIndex),
             ReferenceOpacity = AlignmentOpacitySlider.Value
         };
@@ -579,7 +582,15 @@ public partial class MainWindow : Window
         Corridors = GenerateCorridorsCheckBox.IsChecked == true,
         Doors = GenerateDoorsCheckBox.IsChecked == true,
         Windows = GenerateWindowsCheckBox.IsChecked == true,
-        Stairs = GenerateStairsCheckBox.IsChecked == true
+        Stairs = GenerateStairsCheckBox.IsChecked == true,
+        Purpose = Math.Clamp(GeneratorPurposeBox.SelectedIndex, 0, 4) switch
+        {
+            1 => BuildingUse.Inn,
+            2 => BuildingUse.Shop,
+            3 => BuildingUse.Dungeon,
+            4 => BuildingUse.Mixed,
+            _ => BuildingUse.Residence
+        }
     };
 
     private int[] CheckedGeneratorFloors() =>

@@ -208,8 +208,12 @@ public static class BuildingGenerator
                 floor = BuildingStoreys.GetFloor(proposed, index);
                 addedCorridors++;
             }
-            var corridor = corridorId == Guid.Empty ? null :
-                floor.Rooms.FirstOrDefault(room => room.Id == corridorId);
+            var corridor = corridorId != Guid.Empty
+                ? floor.Rooms.FirstOrDefault(room => room.Id == corridorId)
+                : options.Corridors
+                    ? floor.Rooms.FirstOrDefault(r =>
+                        r.Type.Equals("Hallway", StringComparison.OrdinalIgnoreCase))
+                    : null;
 
             if (options.Rooms)
             {
@@ -227,7 +231,20 @@ public static class BuildingGenerator
             // same half-metre lattice. This avoids "zero rooms" where a
             // geometrically usable area still exists.
             int thisFloorRooms = 0;
-            int targetRooms = 1 + random.Next(3);
+            if (corridor is not null)
+            {
+                int planned = RoomLayoutPlanner.FillHallFrontage(
+                    proposed, index, corridor.Id, options.Purpose,
+                    random, out var arranged);
+                if (planned > 0)
+                {
+                    proposed = arranged;
+                    floor = BuildingStoreys.GetFloor(proposed, index);
+                    addedRooms += planned;
+                    thisFloorRooms += planned;
+                }
+            }
+            int targetRooms = thisFloorRooms > 0 ? 0 : 1 + random.Next(3);
             bool TryPlace(int x, int y, int width, int height)
             {
                 List<Point2> shape =
@@ -259,8 +276,10 @@ public static class BuildingGenerator
                     !BuildingConnectivity.ShareWall(shape, corridor.Outline, 1.1))
                     return false;
 
-                string type = RoomTypes[random.Next(RoomTypes.Length)];
                 var nextFloor = BuildingStoreys.GetFloor(proposed, index);
+                string type = RoomLayoutPlanner.ChooseRoomType(
+                    options.Purpose, index, width * height / 4.0,
+                    nextFloor.Rooms, random);
                 nextFloor.Rooms.Add(new RoomDefinition
                 {
                     Name = $"{type} {nextFloor.Rooms.Count + 1}",
@@ -355,6 +374,15 @@ public static class BuildingGenerator
 
         int roomsWithoutDoors = options.Doors ? indices.Sum(i =>
             BuildingConnectivity.CountRoomsWithoutDoors(proposed, i)) : 0;
+        var areaSummary = string.Join("; ", indices.Select(i =>
+        {
+            var f = BuildingStoreys.GetFloor(proposed, i);
+            double total = PolygonGeometry.Area(f.Perimeter);
+            double remaining = RoomLayoutPlanner.UnassignedArea(f);
+            double coverage = total > 0 ? (total - remaining) / total * 100 : 0;
+            return $"{BuildingStoreys.FloorLabel(i)} {coverage:0.#}% assigned, " +
+                $"{remaining:0.#} m² unused";
+        }));
         string floorSummary = string.Join(", ", indices.Select(BuildingStoreys.FloorLabel));
         string description = $"Seed {seed}: {addedFootprints} new perimeter(s), " +
             $"{addedRooms} room(s), {addedCorridors} corridor(s), " +
@@ -362,7 +390,7 @@ public static class BuildingGenerator
             $"{addedStairs} stair flight(s) across {floorSummary}. " +
             (options.Doors && roomsWithoutDoors > 0 ?
                 $"{roomsWithoutDoors} room(s) still without door access. " : "") +
-            string.Join("; ", roomsPerFloor) +
+            string.Join("; ", roomsPerFloor) + ". " + areaSummary +
             (skippedFloors.Count > 0 ? " | No rooms fit: " +
                 string.Join(", ", skippedFloors.Select(BuildingStoreys.FloorLabel)) : "");
         suggestion = new BuildingSuggestion(proposed, seed, indices, description);

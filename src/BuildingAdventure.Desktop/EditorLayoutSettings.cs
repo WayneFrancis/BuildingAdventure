@@ -28,6 +28,7 @@ internal sealed class EditorLayoutSettings
     public bool GenerateDoors { get; set; } = true;
     public bool GenerateWindows { get; set; }
     public bool GenerateStairs { get; set; }
+    public int GeneratorPurposeIndex { get; set; }
 
     private static string SettingsFile => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

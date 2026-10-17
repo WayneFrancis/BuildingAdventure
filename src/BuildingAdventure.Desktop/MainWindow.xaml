@@ -130,6 +130,15 @@
                             <TextBlock TextWrapping="Wrap" Foreground="#566579"
                                        Text="Suggest connected floor layouts or selected feature types. Green previews include new rooms, doors, windows and stairs. Nothing changes until accepted."
                                        Margin="0,0,0,8"/>
+                            <TextBlock FontWeight="SemiBold" Text="Building purpose" Margin="0,0,0,5"/>
+                            <ComboBox x:Name="GeneratorPurposeBox" Padding="5" SelectedIndex="0"
+                                      Margin="0,0,0,12">
+                                <ComboBoxItem Content="Residence"/>
+                                <ComboBoxItem Content="Inn or tavern"/>
+                                <ComboBoxItem Content="Shop or workshop"/>
+                                <ComboBoxItem Content="Dungeon"/>
+                                <ComboBoxItem Content="Mixed use"/>
+                            </ComboBox>
                             <TextBlock FontWeight="SemiBold" Text="Generate features" Margin="0,0,0,6"/>
                             <WrapPanel Margin="0,0,0,10">
                                 <CheckBox x:Name="GenerateRoomsCheckBox" Content="Rooms" IsChecked="True" Margin="0,0,12,6"/>

@@ -4,6 +4,30 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.16 — Space-efficient, purpose-aware room layouts (development branch)
+
+- **Fill frontage rather than scatter rooms:** on a clear, rectangular floor
+  with a straight central hallway, the generator divides both sides into
+  contiguous rooms using the available space, instead of stopping after
+  a few randomly positioned rectangles. Existing room outlines remain
+  untouched; each new room must pass the existing geometry checks.
+- **Building purpose:** select Residence, Inn or tavern, Shop or workshop,
+  Dungeon, or Mixed use in the generator. Room roles now depend on building
+  purpose, available area and floor level: for instance, upstairs inn
+  rooms favour guest accommodation, basement rooms favour storage, and
+  compact residential rooms can become bathrooms or pantries. Repeated
+  room names are avoided where possible.
+- **Review floor usage:** the suggestion description reports the assigned
+  floor area as a percentage and the square metres still unused for
+  every selected floor. Rectangular hallway layouts are intended to use
+  most or all of the remaining frontage, while irregular/partly
+  completed plans remain conservative.
+- **Still a first planning pass:** this does not yet enforce realistic
+  room adjacency rules across building purposes, windows/daylighting,
+  accessible circulation, exits or construction standards. Generation
+  remains a preview, with the existing Accept/Remember/Regenerate
+  controls unchanged.
+
 ## v0.15 — Configurable connected-layout suggestions (development branch)
 
 - **Generate features independently** in GENERATOR / SUGGESTIONS:
