@@ -71,6 +71,13 @@
                     <Expander x:Name="BuildingSection" Header="BUILDING" IsExpanded="True"
                               Margin="0,0,0,7" Padding="0,3,0,0">
                         <StackPanel Margin="0,8,0,0">
+                    <TextBlock Text="Map visibility" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                    <ComboBox x:Name="MapModeBox" SelectedIndex="0" SelectionChanged="MapModeChanged"
+                              Margin="0,0,0,12" Padding="5">
+                        <ComboBoxItem Content="Editor"/>
+                        <ComboBoxItem Content="Game Master"/>
+                        <ComboBoxItem Content="Player preview"/>
+                    </ComboBox>
                     <TextBlock Text="Building name" FontWeight="SemiBold" Margin="0,0,0,5"/>
                     <TextBox x:Name="NameBox" Text="Untitled Building" TextChanged="NameBox_TextChanged"
                              GotKeyboardFocus="NameBox_GotKeyboardFocus"
@@ -91,6 +98,10 @@
                         <CheckBox x:Name="ShowAboveCheckBox" Content="Above"
                                   Checked="AlignmentChanged" Unchecked="AlignmentChanged"/>
                     </WrapPanel>
+                    <CheckBox x:Name="AllFloorSilhouettesCheckBox"
+                              Content="Show silhouettes of every other floor"
+                              Checked="AlignmentChanged" Unchecked="AlignmentChanged"
+                              Margin="0,0,0,7"/>
                     <TextBlock Text="Reference visibility" Margin="0,0,0,4"
                                Foreground="#566579"/>
                     <Slider x:Name="AlignmentOpacitySlider" Minimum="0.15" Maximum="0.85"
@@ -105,6 +116,56 @@
                     </WrapPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,14"
                                Text="Each floor has its own perimeter. Add Floor copies the outline initially; select that floor and use Split Perimeter, Remove Corner or drag corners to reshape it independently. Stairs must remain inside both connected floors."/>
+                        </StackPanel>
+                    </Expander>
+                    <Expander x:Name="GeneratorSection" Header="GENERATOR / SUGGESTIONS"
+                              IsExpanded="False" Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBlock TextWrapping="Wrap" Foreground="#566579"
+                                       Text="Generate a new building or suggest additional rooms on selected floors. Changes remain a green preview until accepted."
+                                       Margin="0,0,0,8"/>
+                            <TextBlock FontWeight="SemiBold" Text="Floors to complete" Margin="0,0,0,6"/>
+                            <StackPanel x:Name="GeneratorFloorChecks" Margin="0,0,0,10"/>
+                            <WrapPanel Margin="0,0,0,8">
+                                <Button Content="Suggest / Regenerate" Click="Suggest_Click"
+                                        Padding="7,5" Margin="0,0,5,0"/>
+                                <Button x:Name="AcceptSuggestionButton" Content="Accept"
+                                        Click="AcceptSuggestion_Click" IsEnabled="False" Padding="7,5"/>
+                            </WrapPanel>
+                            <TextBlock Text="New whole-building draft" Margin="0,8,0,5"/>
+                            <WrapPanel Margin="0,0,0,9">
+                                <ComboBox x:Name="WholeBuildingFloorsBox" Width="85" SelectedIndex="1"
+                                          Padding="4" Margin="0,0,5,0">
+                                    <ComboBoxItem Content="1 floor"/>
+                                    <ComboBoxItem Content="2 floors"/>
+                                    <ComboBoxItem Content="3 floors"/>
+                                    <ComboBoxItem Content="4 floors"/>
+                                </ComboBox>
+                                <Button Content="Suggest entire building" Click="SuggestWholeBuilding_Click"
+                                        Padding="6,5"/>
+                            </WrapPanel>
+                            <TextBlock x:Name="SuggestionInfoText" Text="No pending suggestion."
+                                       TextWrapping="Wrap" Foreground="#316D4B" Margin="0,0,0,10"/>
+                            <WrapPanel Margin="0,0,0,8">
+                                <Button x:Name="RememberSuggestionButton" Content="Remember"
+                                        IsEnabled="False" Click="RememberSuggestion_Click"
+                                        Padding="7,5" Margin="0,0,5,0"/>
+                                <Button Content="Discard preview" Click="DiscardSuggestion_Click"
+                                        Padding="7,5"/>
+                            </WrapPanel>
+                            <TextBlock Text="Saved candidates" FontWeight="SemiBold" Margin="0,8,0,5"/>
+                            <ListBox x:Name="SuggestionMemoryList" MaxHeight="160" MinHeight="64"
+                                     SelectionChanged="MemorySelectionChanged" Margin="0,0,0,7"/>
+                            <WrapPanel>
+                                <Button x:Name="RecallSuggestionButton" Content="Preview saved"
+                                        IsEnabled="False" Click="RecallSuggestion_Click"
+                                        Padding="6,5" Margin="0,0,5,5"/>
+                                <Button x:Name="RemoveSuggestionButton" Content="Remove"
+                                        IsEnabled="False" Click="RemoveSuggestion_Click"
+                                        Padding="6,5" Margin="0,0,5,5"/>
+                                <Button x:Name="ClearSuggestionsButton" Content="Clear list"
+                                        Click="ClearSuggestions_Click" Padding="6,5" Margin="0,0,0,5"/>
+                            </WrapPanel>
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="StaircasesSection" Header="STAIRCASES" IsExpanded="False"
@@ -250,6 +311,12 @@
                         <Button x:Name="DeleteDoorButton" Content="Delete door" IsEnabled="False"
                                 Click="DeleteDoor_Click" Padding="6,4"/>
                     </WrapPanel>
+                    <CheckBox x:Name="SecretDoorCheckBox" Content="Secret door" IsEnabled="False"
+                              Checked="SecretDoorChanged" Unchecked="SecretDoorChanged"
+                              Margin="0,0,0,6"/>
+                    <CheckBox x:Name="RevealedDoorCheckBox" Content="Revealed to players" IsEnabled="False"
+                              Checked="SecretDoorChanged" Unchecked="SecretDoorChanged"
+                              Margin="0,0,0,10"/>
                     <Button x:Name="CentreDoorButton" Content="Centre door on wall segment"
                             IsEnabled="False" Click="CentreDoor_Click" Padding="6,5"
                             Margin="0,0,0,10"/>

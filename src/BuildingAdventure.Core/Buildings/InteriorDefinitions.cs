@@ -25,8 +25,14 @@ public sealed class DoorDefinition
     public Guid Id { get; set; } = Guid.NewGuid();
     public Point2 Centre { get; set; }
     public double Width { get; set; } = 0.9;
+    public bool IsSecret { get; set; }
+    public bool IsRevealed { get; set; }
 
-    public DoorDefinition Copy() => new() { Id = Id, Centre = Centre, Width = Width };
+    public DoorDefinition Copy() => new()
+    {
+        Id = Id, Centre = Centre, Width = Width,
+        IsSecret = IsSecret, IsRevealed = IsRevealed
+    };
 }
 
 

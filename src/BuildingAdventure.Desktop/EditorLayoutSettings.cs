@@ -21,6 +21,8 @@ internal sealed class EditorLayoutSettings
     public bool ShowBelow { get; set; }
     public bool ShowAbove { get; set; }
     public double ReferenceOpacity { get; set; } = 0.45;
+    public bool AllFloorSilhouettes { get; set; }
+    public int MapModeIndex { get; set; }
 
     private static string SettingsFile => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

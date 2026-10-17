@@ -8,6 +8,7 @@ using BuildingAdventure.Core.Geometry;
 namespace BuildingAdventure.Desktop.Controls;
 
 public enum EditorTool { Select, DrawPerimeter, SplitPerimeter, RemoveCorner, DrawRoom, SplitRoom, MergeRooms, MoveWall, AddDoor, AddWindow, PlaceStairs, Pan }
+public enum MapVisibilityMode { Editor, GameMaster, Player }
 
 /// <summary>Interactive metre-based editor for a single building floor.</summary>
 public sealed class FloorPlanSurface : FrameworkElement
@@ -56,6 +57,9 @@ public sealed class FloorPlanSurface : FrameworkElement
     private int _stairFloorIndex;
     private List<AdjacentFloorPlan> _referenceFloors = new();
     private double _referenceOpacity = 0.40;
+    private List<AdjacentFloorPlan> _silhouetteFloors = new();
+    private BuildingDocument? _suggestedFloor;
+    private MapVisibilityMode _displayMode;
     private bool _draggingStair;
     private bool _rotatingStair;
     private double _rotationStartPointerAngle;
@@ -99,6 +103,25 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     public Func<double?>? WindowWidthProvider { get; set; }
     public bool HighlightUnassigned { get; set; }
+    public MapVisibilityMode DisplayMode => _displayMode;
+
+    public void SetDisplayMode(MapVisibilityMode mode)
+    {
+        _displayMode = mode;
+        InvalidateVisual();
+    }
+
+    public void SetFloorSilhouettes(IReadOnlyList<AdjacentFloorPlan> floors)
+    {
+        _silhouetteFloors = floors.ToList();
+        InvalidateVisual();
+    }
+
+    public void SetSuggestionPreview(BuildingDocument? suggestion)
+    {
+        _suggestedFloor = suggestion is null ? null : BuildingStoreys.Copy(suggestion);
+        InvalidateVisual();
+    }
 
     /// <summary>Refresh the placement ghost when dimension input changes.</summary>
     public void RefreshStairPreview() => InvalidateVisual();
@@ -574,6 +597,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         dc.DrawRectangle(Brushes.White, null, new Rect(RenderSize));
         DrawGrid(dc);
         DrawFloorReferences(dc);
+        DrawFloorSilhouettes(dc);
 
         var openings = BuildingStoreys.GetOpenings(_staircases, _stairFloorIndex);
         Brush[] fills =
@@ -627,6 +651,8 @@ public sealed class FloorPlanSurface : FrameworkElement
         // patch fills the empty wedge left by flat-ended strokes at corners
         // and T-junctions; opening endpoints never receive those patches.
         var wallPlan = Document();
+        if (_displayMode == MapVisibilityMode.Player)
+            wallPlan = SecretDoorVisibility.PhysicalPlanForPlayer(wallPlan);
         var wallPieces = WallConstruction.SolidPieces(wallPlan);
         double outlinePadding = 1 / _pixelsPerMetre;
         foreach (var piece in wallPieces)
@@ -666,6 +692,8 @@ public sealed class FloorPlanSurface : FrameworkElement
         }
         foreach (var door in _doors)
         {
+            if (_displayMode == MapVisibilityMode.Player &&
+                !SecretDoorVisibility.IsVisibleToPlayer(door)) continue;
             if (!FloorGeometry.TryFindDoorWall(door, walls, out var wall) || wall is null)
                 continue;
             double length = wall.Length;
@@ -677,7 +705,12 @@ public sealed class FloorPlanSurface : FrameworkElement
                                    door.Centre.Y + dy * door.Width / 2);
             var openEnd = new Point2(hinge.X - dy * door.Width, hinge.Y + dx * door.Width);
             dc.DrawLine(new Pen(Brushes.White, 6), ToScreen(hinge), ToScreen(latch));
-            Pen doorPen = new(door.Id == _selectedDoorId ? Brushes.OrangeRed : Brushes.SaddleBrown, 2);
+            Pen doorPen = new(door.Id == _selectedDoorId ? Brushes.OrangeRed :
+                door.IsSecret ? Brushes.MediumVioletRed : Brushes.SaddleBrown, 2)
+            {
+                DashStyle = door.IsSecret && _displayMode != MapVisibilityMode.Player
+                    ? DashStyles.Dash : DashStyles.Solid
+            };
             dc.DrawLine(doorPen, ToScreen(hinge), ToScreen(openEnd));
             dc.DrawEllipse(Brushes.White, doorPen, ToScreen(hinge), 2.5, 2.5);
             if (door.Id == _selectedDoorId && Tool == EditorTool.Select)
@@ -835,7 +868,9 @@ public sealed class FloorPlanSurface : FrameworkElement
                     beginning, ToScreen(_draftCursor.Value));
         }
 
-        if (_outline.Count == 0 && _draft.Count == 0)
+        DrawSuggestionPreview(dc);
+
+        if (_outline.Count == 0 && _draft.Count == 0 && _suggestedFloor is null)
         {
             DrawText(dc, "Choose Draw Perimeter and click to place the first corner.",
                      new Point(20, 22), 15, Brushes.SlateGray);
@@ -864,6 +899,49 @@ public sealed class FloorPlanSurface : FrameworkElement
             current = new CombinedGeometry(GeometryCombineMode.Exclude,
                 current, BuildGeometry(opening.Outline, true));
         return current;
+    }
+
+    private void DrawFloorSilhouettes(DrawingContext dc)
+    {
+        foreach (var other in _silhouetteFloors)
+        {
+            if (other.Floor.Perimeter.Count < 3) continue;
+            var color = other.IsAbove
+                ? Color.FromArgb(180, 15, 143, 136)
+                : Color.FromArgb(180, 132, 91, 194);
+            var brush = new SolidColorBrush(color);
+            var pen = new Pen(brush, 2.2)
+            {
+                DashStyle = new DashStyle([6d, 3d, 2d, 3d], 0)
+            };
+            dc.DrawGeometry(null, pen, BuildGeometry(other.Floor.Perimeter, true));
+            Point anchor = ToScreen(other.Floor.Perimeter[0]);
+            DrawText(dc, "FLOOR " + (other.FloorIndex + 1) + " SILHOUETTE",
+                new Point(anchor.X + 5, anchor.Y - 34), 10, brush);
+        }
+    }
+
+    private void DrawSuggestionPreview(DrawingContext dc)
+    {
+        if (_suggestedFloor is null) return;
+        var proposed = _suggestedFloor;
+        if (proposed.Perimeter.Count >= 3 &&
+            !_outline.SequenceEqual(proposed.Perimeter))
+        {
+            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(35, 42, 171, 90)),
+                new Pen(Brushes.ForestGreen, 3) { DashStyle = DashStyles.Dash },
+                BuildGeometry(proposed.Perimeter, true));
+        }
+        var currentIds = _rooms.Select(r => r.Id).ToHashSet();
+        foreach (var room in proposed.Rooms.Where(r => !currentIds.Contains(r.Id)))
+        {
+            var shape = BuildGeometry(room.Outline, true);
+            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(85, 35, 173, 100)),
+                new Pen(Brushes.ForestGreen, 2.3) { DashStyle = DashStyles.Dash },
+                shape);
+            Point at = ToScreen(FindRoomLabelPoint(room.Outline));
+            DrawText(dc, "+ " + room.Name, at, 12, Brushes.DarkGreen);
+        }
     }
 
     private void DrawFloorReferences(DrawingContext dc)
@@ -1049,6 +1127,13 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
         if (e.ChangedButton != MouseButton.Left) return;
+
+        if (_displayMode == MapVisibilityMode.Player)
+        {
+            Say("Player preview is presentation-only. Switch to Editor to make changes.");
+            e.Handled = true;
+            return;
+        }
 
         if (Tool is EditorTool.DrawPerimeter or EditorTool.DrawRoom)
         {
@@ -1937,6 +2022,19 @@ public sealed class FloorPlanSurface : FrameworkElement
         PushUndo(previous);
         RaiseChanged();
         Say(message);
+    }
+
+    public void SetSelectedDoorVisibility(bool secret, bool revealed)
+    {
+        var door = _doors.FirstOrDefault(d => d.Id == _selectedDoorId);
+        if (door is null || (door.IsSecret == secret &&
+            door.IsRevealed == (secret && revealed))) return;
+        var previous = Snapshot();
+        door.IsSecret = secret;
+        door.IsRevealed = secret && revealed;
+        PushUndo(previous);
+        RaiseChanged();
+        Say(secret ? "Secret door updated." : "Door is now ordinary.");
     }
 
     public void SetSelectedDoorWidth(double width)

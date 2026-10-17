@@ -4,9 +4,36 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
-## v0.11 — Centre openings on wall segments and restore window layout (development branch)
+## v0.12 — Generator suggestions, secret doors and floor silhouettes (development branch)
 
 The editor currently supports:
+
+- **Procedural building suggestions**: GENERATOR / SUGGESTIONS lets you
+  select existing floors by checkbox, suggest new rooms within each
+  selected perimeter, regenerate alternatives, preview green dashed
+  additions, and Accept one validated candidate as a single undoable
+  change. For empty floors it suggests a starting perimeter too.
+  Suggest entire building drafts a completely new 1–4 floor building
+  with independent room layouts on each floor, subject to confirmation
+  before replacing the current building.
+- **Remember generated candidates**: Remember stores an entire proposed
+  building for Preview saved, Remove, or Clear list. Saved variants persist
+  at \`%LOCALAPPDATA%\BuildingAdventure\suggestion-memory.json\` (up to
+  50 entries). Recalled candidates remain previews until accepted, and
+  accepting an old variant warns when the underlying building has changed.
+- **Secret doors and visibility previews**: select a door and mark it
+  secret, then optionally reveal it. Editor and GM mode highlight secret
+  doors; Player preview displays undiscovered doors as solid wall without
+  a doorway symbol. Secret rooms, passages, and player map export are
+  planned future stages.
+- **All-floor silhouettes**: the FLOORS panel can show every other floor's
+  exterior footprint as a dashed labelled silhouette, distinct from
+  detailed Above/Below adjacent-floor alignment guides.
+- **Current generator limits**: this initial pass checks polygon and
+  staircase geometry, and preserves hand-authored structures when
+  completing selected floors. It does not yet generate circulation
+  routes, entrances, guaranteed room access, furniture or realistic
+  architectural space-use plans. Those are subsequent generator passes.
 
 - **Centre selected openings on a wall segment**: select a window and
   click *Centre window on room wall segment*, or select a door and click
@@ -249,6 +276,11 @@ Run the geometry checks without third-party test packages:
 | Centre window within its room facade | Select window, expand WINDOWS and click Centre window on room wall segment |
 | Centre door in a wall section | Select door, expand DOORS and click Centre door on wall segment |
 | Preserve window size and position | Close the application normally; the window and sidebar layout restore on next launch |
+| Generate selected floors | Check floor boxes in GENERATOR, select Suggest / Regenerate and Accept the preview |
+| Suggest a complete new building | Select a floor count and choose Suggest entire building; Accept replaces the current building after confirmation |
+| Save/recall variants | Remember, Preview saved, Remove and Clear list in the generator panel |
+| View floor silhouettes | Enable Show silhouettes of every other floor in FLOORS |
+| Preview secret doors | Select a door, mark Secret door, choose Player preview to see the concealed wall |
 | Collapse sidebar settings | Click a section's header to expand or collapse it |
 | Move a door | In Select / Edit, drag the door centre marker to a valid wall position |
 | Resize a door with handles | Select the door, then drag either square endpoint; the other endpoint remains fixed |

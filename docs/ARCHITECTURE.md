@@ -337,6 +337,40 @@ ceiling heights, or 3D wall meshes.
   without blocking building editing. No building geometry or saved
   document JSON schema changes are required.
 
+## Generator suggestions, secret visibility and floor silhouettes (v0.12)
+
+- BuildingGenerator.TrySuggest creates a detached, validated building
+  candidate for only the selected floor indices. It generates starting
+  rectangular footprints where the selected floor is empty, then
+  attempts room additions on a 0.5-metre lattice using a seeded RNG.
+  Proposed rooms are accepted one at a time only if whole-building
+  validation succeeds. Existing stairs, rooms, doors and windows remain.
+- TrySuggestWholeBuilding creates a fresh 1–4 floor candidate; the ground
+  is generated first, subsequent floors inherit its footprint, and all
+  floors get independently generated room layouts.
+- Regeneration always works against CurrentDocument, never the previous
+  preview. The editor displays green dashed suggested perimeters and
+  new rooms on the active floor without editing the actual model.
+  Users can switch existing floors to inspect proposals before Accept.
+  Accept records a single complete-building undo step.
+- SuggestionMemory stores complete candidate buildings, random seeds,
+  floor selections and source fingerprints in separate AppData JSON.
+  Remember/Remove/Clear persist immediately; Recall produces another
+  preview. Applying an older candidate after the underlying building
+  changed requires user confirmation. Stored entries are capped at 50.
+- The first generator is deliberately geometry-first; architectural
+  circulation, door placement, room-purpose constraints, procedural
+  passages and sophisticated completion are future improvements.
+- DoorDefinition has backward-compatible IsSecret/IsRevealed booleans.
+  SecretDoorVisibility.PhysicalPlanForPlayer constructs a separate
+  rendering copy omitting unrevealed secret door *openings*, so the wall
+  becomes physically continuous in Player preview, not just visually
+  missing a symbol. Editor and GM modes show marked secret door symbols.
+  Player preview is not a security boundary or exported player map.
+- Optional all-floor silhouettes show the perimeters of every *other*
+  storey, labelled and dashed, without their interior walls. They
+  complement rather than replace detailed adjacent floor references.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.

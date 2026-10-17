@@ -22,6 +22,11 @@ public partial class MainWindow : Window
     private string? _nameBeforeEdit;
     private EditorLayoutSettings? _savedLayout;
     private WindowState _previousWindowState = WindowState.Normal;
+    private BuildingSuggestion? _pendingSuggestion;
+    private string _suggestionSource = "";
+    private bool _pendingWholeBuilding;
+    private readonly List<SavedSuggestionEntry> _suggestionMemory = SuggestionMemory.Load();
+    private bool _loadingDoorVisibility;
 
     public MainWindow()
     {
@@ -33,6 +38,7 @@ public partial class MainWindow : Window
                 _previousWindowState = WindowState;
         };
         EditorSurface.UsesGlobalHistory = true;
+        UpdateMemoryList();
         EditorSurface.HighlightUnassigned = true;
         EditorSurface.WindowWidthProvider = () =>
             TryReadMetres(WindowWidthBox.Text, out double width) &&
@@ -44,6 +50,7 @@ public partial class MainWindow : Window
             var before = CurrentDocument();
             BuildingStoreys.SetFloor(before, _activeFloorIndex, previousFloor);
             _history.RecordBefore(before, _activeFloorIndex);
+            ClearPendingSuggestion();
             Refresh();
         };
         EditorSurface.SelectionChanged += (_, _) =>
@@ -96,6 +103,7 @@ public partial class MainWindow : Window
     [
         ("Building", BuildingSection),
         ("Floors", FloorsSection),
+        ("Generator", GeneratorSection),
         ("Staircases", StaircasesSection),
         ("WallConstruction", WallConstructionSection),
         ("Perimeter", PerimeterSection),
@@ -151,6 +159,8 @@ public partial class MainWindow : Window
             HighlightUnassignedCheckBox.IsChecked = saved.HighlightUnassigned;
             ShowBelowCheckBox.IsChecked = saved.ShowBelow;
             ShowAboveCheckBox.IsChecked = saved.ShowAbove;
+            AllFloorSilhouettesCheckBox.IsChecked = saved.AllFloorSilhouettes;
+            MapModeBox.SelectedIndex = Math.Clamp(saved.MapModeIndex, 0, 2);
             if (double.IsFinite(saved.ReferenceOpacity))
                 AlignmentOpacitySlider.Value =
                     Math.Clamp(saved.ReferenceOpacity,
@@ -189,6 +199,8 @@ public partial class MainWindow : Window
             HighlightUnassigned = HighlightUnassignedCheckBox.IsChecked == true,
             ShowBelow = ShowBelowCheckBox.IsChecked == true,
             ShowAbove = ShowAboveCheckBox.IsChecked == true,
+            AllFloorSilhouettes = AllFloorSilhouettesCheckBox.IsChecked == true,
+            MapModeIndex = Math.Max(0, MapModeBox.SelectedIndex),
             ReferenceOpacity = AlignmentOpacitySlider.Value
         };
 
@@ -274,6 +286,10 @@ public partial class MainWindow : Window
         PlaceStairsButton.FontWeight = EditorSurface.Tool == EditorTool.PlaceStairs ? FontWeights.Bold : FontWeights.Normal;
         PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
         HintText.Text = _hint;
+        AcceptSuggestionButton.IsEnabled = RememberSuggestionButton.IsEnabled =
+            _pendingSuggestion is not null;
+        SuggestionInfoText.Text = _pendingSuggestion?.Description ??
+            "No pending suggestion. Select floors and choose Suggest.";
         ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
         string fileLabel = _filePath is null ? "Untitled" : Path.GetFileName(_filePath);
         Title = $"{NameBox.Text} — {fileLabel}{(IsDirty() ? " *" : "")} — BuildingAdventure";
@@ -285,6 +301,7 @@ public partial class MainWindow : Window
         _loading = true;
         _building = new BuildingDocument();
         _activeFloorIndex = 0;
+        ClearPendingSuggestion();
         _history.Clear();
         _nameBeforeEdit = null;
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
@@ -316,6 +333,7 @@ public partial class MainWindow : Window
             _loading = true;
             _building = BuildingStoreys.Copy(document);
             _activeFloorIndex = 0;
+            ClearPendingSuggestion();
             _history.Clear();
             _nameBeforeEdit = null;
             EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
@@ -416,6 +434,45 @@ public partial class MainWindow : Window
         if (door is not null)
             DoorWidthBox.Text = door.Width.ToString(
                 "R", System.Globalization.CultureInfo.CurrentCulture);
+        _loadingDoorVisibility = true;
+        try
+        {
+            SecretDoorCheckBox.IsEnabled = door is not null;
+            RevealedDoorCheckBox.IsEnabled = door?.IsSecret == true;
+            SecretDoorCheckBox.IsChecked = door?.IsSecret == true;
+            RevealedDoorCheckBox.IsChecked = door?.IsRevealed == true;
+        }
+        finally
+        {
+            _loadingDoorVisibility = false;
+        }
+    }
+
+    private void SecretDoorChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loadingDoorVisibility || EditorSurface is null ||
+            SecretDoorCheckBox is null || RevealedDoorCheckBox is null)
+            return;
+        bool secret = SecretDoorCheckBox.IsChecked == true;
+        bool revealed = secret && RevealedDoorCheckBox.IsChecked == true;
+        EditorSurface.SetSelectedDoorVisibility(secret, revealed);
+        RevealedDoorCheckBox.IsEnabled = secret && EditorSurface.HasSelectedDoor;
+    }
+
+    private void MapModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (EditorSurface is null || MapModeBox is null) return;
+        var mode = Math.Clamp(MapModeBox.SelectedIndex, 0, 2) switch
+        {
+            1 => MapVisibilityMode.GameMaster,
+            2 => MapVisibilityMode.Player,
+            _ => MapVisibilityMode.Editor
+        };
+        EditorSurface.SetDisplayMode(mode);
+        _hint = mode == MapVisibilityMode.Player
+            ? "Player preview: undiscovered secret doors appear as solid walls."
+            : "Map view updated.";
+        Refresh();
     }
 
     private void ApplyDoor_Click(object sender, RoutedEventArgs e)
@@ -470,15 +527,234 @@ public partial class MainWindow : Window
         Refresh();
     }
 
+    private void ClearPendingSuggestion()
+    {
+        _pendingSuggestion = null;
+        _suggestionSource = "";
+        _pendingWholeBuilding = false;
+        EditorSurface?.SetSuggestionPreview(null);
+    }
+
+    private void UpdateSuggestionPreview()
+    {
+        if (EditorSurface is null) return;
+        EditorSurface.SetSuggestionPreview(
+            _pendingSuggestion is not null &&
+            _activeFloorIndex < BuildingStoreys.FloorCount(_pendingSuggestion.Building)
+                ? BuildingStoreys.GetFloor(_pendingSuggestion.Building, _activeFloorIndex)
+                : null);
+    }
+
+    private int[] CheckedGeneratorFloors() =>
+        GeneratorFloorChecks.Children.OfType<CheckBox>()
+            .Where(cb => cb.IsChecked == true)
+            .Select(cb => (int)cb.Tag).OrderBy(i => i).ToArray();
+
+    private void BeginSuggestion(BuildingSuggestion proposal, bool whole)
+    {
+        _pendingSuggestion = proposal.Copy();
+        _suggestionSource = CurrentJson();
+        _pendingWholeBuilding = whole;
+        UpdateSuggestionPreview();
+        _hint = "Suggestion previewed in green. Switch floors to inspect, then Accept or Remember.";
+        Refresh();
+    }
+
+    private void Suggest_Click(object sender, RoutedEventArgs e)
+    {
+        int[] floors = CheckedGeneratorFloors();
+        var seed = Random.Shared.Next(1, int.MaxValue);
+        if (!BuildingGenerator.TrySuggest(CurrentDocument(), floors, seed,
+            out var proposal, out var reason))
+        {
+            _hint = reason;
+            Refresh();
+            return;
+        }
+        BeginSuggestion(proposal, whole: false);
+    }
+
+    private void SuggestWholeBuilding_Click(object sender, RoutedEventArgs e)
+    {
+        int count = Math.Clamp(WholeBuildingFloorsBox.SelectedIndex + 1, 1, 4);
+        int seed = Random.Shared.Next(1, int.MaxValue);
+        if (!BuildingGenerator.TrySuggestWholeBuilding(count, seed,
+            out var proposal, out var reason))
+        {
+            _hint = reason;
+            Refresh();
+            return;
+        }
+        BeginSuggestion(proposal, whole: true);
+    }
+
+    private void AcceptSuggestion_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingSuggestion is null) return;
+        var before = CurrentDocument();
+        string fingerprint = CurrentJson();
+        bool changedBase = _suggestionSource != fingerprint;
+        if (_pendingWholeBuilding || changedBase)
+        {
+            string explanation = _pendingWholeBuilding
+                ? "Accepting this whole-building draft REPLACES the current building."
+                : "The building changed since this suggestion was saved. Applying it will REPLACE the current building with the saved candidate.";
+            if (MessageBox.Show(this, explanation +
+                    "\n\nThe current design can be restored with Ctrl+Z. Continue?",
+                "Apply suggested building", MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                return;
+        }
+
+        if (!BuildingStoreys.Validate(_pendingSuggestion.Building, out var reason))
+        {
+            _hint = "The suggested layout is invalid: " + reason;
+            Refresh();
+            return;
+        }
+
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = BuildingStoreys.Copy(_pendingSuggestion.Building);
+        _activeFloorIndex = Math.Min(_activeFloorIndex,
+            BuildingStoreys.FloorCount(_building) - 1);
+        ClearPendingSuggestion();
+        NameBox.Text = _building.Name;
+        RebuildFloorPicker();
+        ShowFloor(_activeFloorIndex);
+        _hint = "Suggestion accepted on selected floors. Ctrl+Z restores the previous building.";
+        Refresh();
+    }
+
+    private void DiscardSuggestion_Click(object sender, RoutedEventArgs e)
+    {
+        ClearPendingSuggestion();
+        _hint = "Suggestion discarded; the building was not changed.";
+        Refresh();
+    }
+
+    private void UpdateMemoryList()
+    {
+        if (SuggestionMemoryList is null) return;
+        int selected = SuggestionMemoryList.SelectedIndex;
+        SuggestionMemoryList.Items.Clear();
+        foreach (var entry in _suggestionMemory)
+            SuggestionMemoryList.Items.Add(entry.Label);
+        if (selected >= 0 && selected < SuggestionMemoryList.Items.Count)
+            SuggestionMemoryList.SelectedIndex = selected;
+        bool hasSelection = SuggestionMemoryList.SelectedIndex >= 0 &&
+            SuggestionMemoryList.SelectedIndex < _suggestionMemory.Count;
+        RecallSuggestionButton.IsEnabled = RemoveSuggestionButton.IsEnabled = hasSelection;
+        ClearSuggestionsButton.IsEnabled = _suggestionMemory.Count > 0;
+    }
+
+    private void MemorySelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SuggestionMemoryList is null || RecallSuggestionButton is null ||
+            RemoveSuggestionButton is null || ClearSuggestionsButton is null)
+            return;
+        bool selected = SuggestionMemoryList.SelectedIndex >= 0 &&
+            SuggestionMemoryList.SelectedIndex < _suggestionMemory.Count;
+        RecallSuggestionButton.IsEnabled = RemoveSuggestionButton.IsEnabled = selected;
+        ClearSuggestionsButton.IsEnabled = _suggestionMemory.Count > 0;
+    }
+
+    private void RememberSuggestion_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingSuggestion is null) return;
+        if (_suggestionMemory.Count >= SuggestionMemory.MaximumItems)
+        {
+            _hint = "Suggestion memory is full. Remove entries before remembering another.";
+            Refresh();
+            return;
+        }
+
+        var candidate = _pendingSuggestion.Copy();
+        _suggestionMemory.Add(new SavedSuggestionEntry
+        {
+            Label = $"{DateTime.Now:dd MMM HH:mm} — {candidate.Description}",
+            Seed = candidate.Seed,
+            FloorIndexes = candidate.FloorIndexes.ToArray(),
+            Building = BuildingStoreys.Copy(candidate.Building),
+            WholeBuilding = _pendingWholeBuilding,
+            SourceFingerprint = _suggestionSource
+        });
+        bool saved = SuggestionMemory.Save(_suggestionMemory);
+        UpdateMemoryList();
+        SuggestionMemoryList.SelectedIndex = _suggestionMemory.Count - 1;
+        _hint = saved
+            ? "Candidate remembered and saved for later recall."
+            : "Candidate remembered for this session, but could not save to AppData.";
+        Refresh();
+    }
+
+    private void RecallSuggestion_Click(object sender, RoutedEventArgs e)
+    {
+        int index = SuggestionMemoryList.SelectedIndex;
+        if (index < 0 || index >= _suggestionMemory.Count) return;
+        var entry = _suggestionMemory[index];
+        _pendingSuggestion = new BuildingSuggestion(
+            BuildingStoreys.Copy(entry.Building), entry.Seed,
+            entry.FloorIndexes.ToArray(), entry.Label);
+        _suggestionSource = entry.SourceFingerprint;
+        _pendingWholeBuilding = entry.WholeBuilding;
+        UpdateSuggestionPreview();
+        _hint = "Saved candidate previewed; Accept to apply it (may replace newer edits).";
+        Refresh();
+    }
+
+    private void RemoveSuggestion_Click(object sender, RoutedEventArgs e)
+    {
+        int index = SuggestionMemoryList.SelectedIndex;
+        if (index < 0 || index >= _suggestionMemory.Count) return;
+        _suggestionMemory.RemoveAt(index);
+        bool saved = SuggestionMemory.Save(_suggestionMemory);
+        UpdateMemoryList();
+        _hint = saved ? "Saved candidate removed." :
+            "Removed from this session; disk update failed.";
+        Refresh();
+    }
+
+    private void ClearSuggestions_Click(object sender, RoutedEventArgs e)
+    {
+        if (_suggestionMemory.Count == 0) return;
+        if (MessageBox.Show(this, "Permanently clear all remembered suggestions?",
+                "Clear suggestion memory", MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+        _suggestionMemory.Clear();
+        bool saved = SuggestionMemory.Save(_suggestionMemory);
+        UpdateMemoryList();
+        _hint = saved ? "Saved suggestion list cleared." :
+            "List cleared in this session; disk update failed.";
+        Refresh();
+    }
+
     private void RebuildFloorPicker()
     {
         if (FloorPicker is null) return;
+        var priorSelection = GeneratorFloorChecks?.Children
+            .OfType<CheckBox>().ToDictionary(
+                cb => (int)cb.Tag, cb => cb.IsChecked == true) ??
+            new Dictionary<int, bool>();
         bool prior = _loading;
         _loading = true;
         FloorPicker.Items.Clear();
         for (int i = 0; i < BuildingStoreys.FloorCount(_building); i++)
             FloorPicker.Items.Add(i == 0 ? "Ground Floor" : _building.UpperFloors[i - 1].Name);
         FloorPicker.SelectedIndex = _activeFloorIndex;
+        if (GeneratorFloorChecks is not null)
+        {
+            GeneratorFloorChecks.Children.Clear();
+            for (int i = 0; i < BuildingStoreys.FloorCount(_building); i++)
+                GeneratorFloorChecks.Children.Add(new CheckBox
+                {
+                    Content = BuildingStoreys.FloorLabel(i),
+                    Tag = i,
+                    IsChecked = priorSelection.TryGetValue(i, out bool selected)
+                        ? selected : i == 0,
+                    Margin = new Thickness(0, 0, 0, 5)
+                });
+        }
         _loading = prior;
     }
 
@@ -488,6 +764,7 @@ public partial class MainWindow : Window
         _loading = true;
         _activeFloorIndex = index;
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, index));
+        UpdateSuggestionPreview();
         LoadWallThicknessControls();
         EditorSurface.SetStairOverlay(_building.Staircases, index);
         UpdateAlignmentReferences();
@@ -572,6 +849,17 @@ public partial class MainWindow : Window
             ShowBelowCheckBox.IsChecked == true,
             ShowAboveCheckBox.IsChecked == true);
         EditorSurface.SetFloorReferences(references, AlignmentOpacitySlider.Value);
+        if (AllFloorSilhouettesCheckBox?.IsChecked == true)
+        {
+            var all = Enumerable.Range(0, BuildingStoreys.FloorCount(_building))
+                .Where(i => i != _activeFloorIndex)
+                .Select(i => new AdjacentFloorPlan(
+                    i, i > _activeFloorIndex, BuildingStoreys.GetFloor(_building, i)))
+                .ToList();
+            EditorSurface.SetFloorSilhouettes(all);
+        }
+        else
+            EditorSurface.SetFloorSilhouettes([]);
     }
 
     private void AlignmentChanged(object sender, RoutedEventArgs e) =>
@@ -850,6 +1138,7 @@ public partial class MainWindow : Window
         _loading = true;
         _building = BuildingStoreys.Copy(state.Building);
         _activeFloorIndex = state.FloorIndex;
+        ClearPendingSuggestion();
         _nameBeforeEdit = null;
         NameBox.Text = _building.Name;
         RebuildFloorPicker();

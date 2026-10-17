@@ -2821,5 +2821,206 @@ Check("Centring door and window are undoable and preserve saved JSON", () =>
     Equal(restored.Building.Doors[0].Centre.X, 8);
 });
 
+Check("Whole-building generator previews three valid independently populated floors", () =>
+{
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(3, 1234,
+        out var suggestion, out var reason), reason);
+    Assert(BuildingStoreys.FloorCount(suggestion.Building) == 3);
+    Assert(suggestion.FloorIndexes.SequenceEqual([0, 1, 2]));
+    Assert(suggestion.Building.SchemaVersion == 2);
+    Assert(BuildingStoreys.Validate(suggestion.Building, out reason), reason);
+    for (int i = 0; i < 3; i++)
+    {
+        var floor = BuildingStoreys.GetFloor(suggestion.Building, i);
+        Assert(floor.Perimeter.Count == 4);
+        Assert(floor.Rooms.Count > 0);
+    }
+});
+
+Check("Whole-building generation supports one and four floors", () =>
+{
+    foreach (int count in new[] { 1, 4 })
+    {
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(count, 321,
+            out var result, out var reason), reason);
+        Assert(BuildingStoreys.FloorCount(result.Building) == count);
+        Assert(BuildingStoreys.Validate(result.Building, out reason), reason);
+    }
+    Assert(!BuildingGenerator.TrySuggestWholeBuilding(5, 42,
+        out _, out _));
+});
+
+Check("Generator creates an initial perimeter without modifying the input", () =>
+{
+    var blank = new BuildingDocument();
+    Assert(BuildingGenerator.TrySuggest(blank, [0], 867,
+        out var suggestion, out var reason), reason);
+    Assert(blank.Perimeter.Count == 0 && blank.Rooms.Count == 0);
+    Assert(suggestion.Building.Perimeter.Count == 4);
+    Assert(suggestion.Building.Rooms.Count > 0);
+    Assert(BuildingStoreys.Validate(suggestion.Building, out reason), reason);
+});
+
+Check("Generator only edits checked floors, including upper floors", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    Assert(BuildingGenerator.TrySuggest(two, [1], 99,
+        out var suggestion, out reason), reason);
+    Assert(suggestion.Building.Rooms.Count == 0);
+    Assert(suggestion.Building.UpperFloors[0].Rooms.Count > 0);
+    Assert(two.UpperFloors[0].Rooms.Count == 0);
+    Assert(BuildingStoreys.Validate(suggestion.Building, out reason), reason);
+});
+
+Check("Generator leaves existing room geometry and door locations intact", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Rooms = [new RoomDefinition { Name = "Existing",
+            Outline = [new(0, 0), new(3, 0), new(3, 3), new(0, 3)] }],
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0) }]
+    };
+    Assert(FloorGeometry.Validate(doc, out var reason), reason);
+    Assert(BuildingGenerator.TrySuggest(doc, [0], 1938,
+        out var proposal, out reason), reason);
+    Assert(proposal.Building.Rooms.Count > 1);
+    Assert(proposal.Building.Rooms[0].Id == doc.Rooms[0].Id);
+    Assert(proposal.Building.Rooms[0].Outline.SequenceEqual(doc.Rooms[0].Outline));
+    Equal(proposal.Building.Doors[0].Centre.X, 5);
+    Assert(doc.Rooms.Count == 1);
+});
+
+Check("Regenerating from the same base retains originals without accumulating edits", () =>
+{
+    var original = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingGenerator.TrySuggest(original, [0], 101,
+        out var first, out var reason), reason);
+    Assert(BuildingGenerator.TrySuggest(original, [0], 202,
+        out var second, out reason), reason);
+    Assert(original.Rooms.Count == 0);
+    Assert(first.Building.Rooms.Count > 0);
+    Assert(second.Building.Rooms.Count > 0);
+    Assert(first.Seed != second.Seed);
+    Assert(BuildingStoreys.Validate(first.Building, out reason), reason);
+    Assert(BuildingStoreys.Validate(second.Building, out reason), reason);
+});
+
+Check("Generator copies candidates so remembered variants are independent", () =>
+{
+    var original = new BuildingDocument();
+    Assert(BuildingGenerator.TrySuggest(original, [0], 811,
+        out var suggestion, out var reason), reason);
+    var remembered = suggestion.Copy();
+    remembered.Building.Rooms[0].Name = "Remembered candidate";
+    Assert(suggestion.Building.Rooms[0].Name != "Remembered candidate");
+    remembered.Building.Perimeter[0] = new Point2(500, 500);
+    Assert(suggestion.Building.Perimeter[0] != new Point2(500, 500));
+});
+
+Check("Generator rejects empty or invalid floor selections", () =>
+{
+    var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(!BuildingGenerator.TrySuggest(doc, [], 101,
+        out _, out var reason));
+    Assert(reason.Contains("at least one"));
+    Assert(!BuildingGenerator.TrySuggest(doc, [5], 101,
+        out _, out reason));
+    Assert(reason.Contains("no longer exists"));
+});
+
+Check("Generator acceptance can be undone as a single document change", () =>
+{
+    var before = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingGenerator.TrySuggest(before, [0], 654,
+        out var preview, out var reason), reason);
+    var journal = new BuildingEditHistory();
+    journal.RecordBefore(before, 0);
+    Assert(journal.TryUndo(preview.Building, 0, out var previous));
+    Assert(previous.Building.Rooms.Count == 0);
+    Assert(journal.TryRedo(previous.Building, 0, out var restored));
+    Assert(restored.Building.Rooms.Count == preview.Building.Rooms.Count);
+});
+
+Check("Ordinary doors are visible to players, secret doors begin hidden", () =>
+{
+    var ordinary = new DoorDefinition { Centre = new Point2(2, 0) };
+    var secret = new DoorDefinition
+    {
+        Centre = new Point2(7, 0), IsSecret = true, IsRevealed = false
+    };
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [ordinary, secret]
+    };
+    Assert(FloorGeometry.Validate(building, out var reason), reason);
+    var playerPlan = SecretDoorVisibility.PhysicalPlanForPlayer(building);
+    Assert(playerPlan.Doors.Count == 1);
+    Assert(playerPlan.Doors.Single().Id == ordinary.Id);
+    Assert(building.Doors.Count == 2);
+    Assert(SecretDoorVisibility.IsVisibleToPlayer(ordinary));
+    Assert(!SecretDoorVisibility.IsVisibleToPlayer(secret));
+    Equal(WallConstruction.SolidPieces(playerPlan).Sum(p => p.Length),
+        WallConstruction.SolidPieces(building).Sum(p => p.Length) + secret.Width);
+});
+
+Check("Revealed secret door becomes visible without altering the source", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0),
+            IsSecret = true, IsRevealed = true }]
+    };
+    var plan = SecretDoorVisibility.PhysicalPlanForPlayer(building);
+    Assert(plan.Doors.Count == 1);
+    Assert(SecretDoorVisibility.IsVisibleToPlayer(building.Doors[0]));
+});
+
+Check("Secret door flags persist in JSON and detached history snapshots", () =>
+{
+    var doc = new BuildingDocument
+    {
+        Perimeter = rectangle.ToList(),
+        Doors = [new DoorDefinition { Centre = new Point2(5, 0),
+            IsSecret = true }]
+    };
+    var loaded = BuildingDocumentJson.Deserialize(BuildingDocumentJson.Serialize(doc));
+    Assert(loaded.Doors[0].IsSecret);
+    Assert(!loaded.Doors[0].IsRevealed);
+    var history = new BuildingEditHistory();
+    history.RecordBefore(doc, 0);
+    var revealed = BuildingStoreys.Copy(doc);
+    revealed.Doors[0].IsRevealed = true;
+    Assert(history.TryUndo(revealed, 0, out var earlier));
+    Assert(!earlier.Building.Doors[0].IsRevealed);
+    Assert(history.TryRedo(earlier.Building, 0, out var current));
+    Assert(current.Building.Doors[0].IsRevealed);
+});
+
+Check("Generator avoids placing named rooms across existing stair footprints", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = [new(0, 0), new(16, 0), new(16, 12), new(0, 12)]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var withUpper, out var reason), reason);
+    var stairs = new StaircaseDefinition
+    {
+        LowerFloorIndex = 0, Centre = new Point2(4, 4),
+        Length = 3.6, Width = 1.4
+    };
+    Assert(BuildingStoreys.TryAddStaircase(withUpper, stairs,
+        out var source, out reason), reason);
+    Assert(BuildingGenerator.TrySuggest(source, [0, 1], 1642,
+        out var result, out reason), reason);
+    foreach (int index in new[] { 0, 1 })
+    foreach (var room in BuildingStoreys.GetFloor(result.Building, index).Rooms)
+        Assert(!PolygonGeometry.ContainsPoint(room.Outline, stairs.Centre));
+    Assert(BuildingStoreys.Validate(result.Building, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
