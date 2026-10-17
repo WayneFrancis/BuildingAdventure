@@ -491,6 +491,26 @@ ceiling heights, or 3D wall meshes.
 - Building purpose is an option for the generator, not a building JSON
   schema change. Local UI preferences retain the selected purpose.
 
+## Purpose-first residential frontage (v0.17)
+
+- On a sufficiently large, clear rectangular residential ground floor, the
+  frontage planner reserves one room of at least 23 square metres facing the
+  hall before splitting the remaining available width. The other hall side
+  is then laid out using the updated room list, so the large-space
+  reservation is made once. No existing room is moved or overwritten.
+- A room-use-specific priority order allocates important unique functions
+  before repeating bedrooms or guest accommodation. The area thresholds
+  still avoid making a bathroom as large as a living room, or naming an
+  undersized rectangle a living room. Floor elevation influences selection.
+- Proposed room names omit a numeric suffix until a duplicate name appears.
+  User-authored names and room IDs remain unchanged.
+- Existing whole-building validation, detached previews, undo and JSON
+  document schemas are unmodified.
+- Floor deletion must distinguish the root-level ground floor from the
+  UpperFloors collection when promoting a floor across elevation zero.
+  Room-only generation failures now distinguish lack of usable space from
+  absent optional generator features.
+
 ## Current project boundaries
 
 - BuildingAdventure.Core: polygon, room, shared-wall, door and JSON geometry operations.
