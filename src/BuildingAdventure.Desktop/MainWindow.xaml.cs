@@ -1669,9 +1669,8 @@ public partial class MainWindow : Window
         Guid? selected = EditorSurface.SelectedChimneyId;
         if (!selected.HasValue) return;
         var before = CurrentDocument();
-        var updated = BuildingStoreys.Copy(before);
-        updated.Chimneys.RemoveAll(ch => ch.Id == selected.Value);
-        if (!BuildingStoreys.Validate(updated, out var reason))
+        if (!BuildingStoreys.TryRemoveChimney(before, selected.Value,
+                out var updated, out var reason))
         {
             _hint = "Cannot delete fireplace: " + reason;
             Refresh();
