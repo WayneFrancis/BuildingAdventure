@@ -297,6 +297,85 @@ public static class RoomLayoutPlanner
         return added;
     }
 
+    /// <summary>
+    /// Absorb thin (under 1.25m) residual strips into a newly proposed
+    /// rectangular room when the facing exterior wall spans that side.
+    /// Never reshape pre-existing user rooms or move the drawn perimeter.
+    /// </summary>
+    public static int ExtendSuggestedRoomsToExterior(BuildingDocument original,
+        BuildingDocument proposed, int floorIndex, out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(proposed);
+        var unchangedIds = BuildingStoreys.GetFloor(original, floorIndex)
+            .Rooms.Select(r => r.Id).ToHashSet();
+        int extended = 0;
+        for (int pass = 0; pass < 3; pass++)
+        {
+            var floor = BuildingStoreys.GetFloor(updated, floorIndex);
+            var walls = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
+                .Where(w => w.IsExterior).ToList();
+            bool changed = false;
+            foreach (var room in floor.Rooms.Where(r => !unchangedIds.Contains(r.Id)
+                && r.Type != "Hallway" && r.Outline.Count == 4))
+            {
+                double left = room.Outline.Min(p => p.X),
+                    right = room.Outline.Max(p => p.X),
+                    top = room.Outline.Min(p => p.Y),
+                    bottom = room.Outline.Max(p => p.Y);
+                if (!room.Outline.All(p =>
+                    (Math.Abs(p.X - left) < 1e-6 ||
+                     Math.Abs(p.X - right) < 1e-6) &&
+                    (Math.Abs(p.Y - top) < 1e-6 ||
+                     Math.Abs(p.Y - bottom) < 1e-6)))
+                    continue;
+
+                foreach (var wall in walls)
+                {
+                    double lx = left, rx = right, ty = top, by = bottom;
+                    if (Math.Abs(wall.A.X - wall.B.X) < 1e-6)
+                    {
+                        double x = wall.A.X;
+                        if (Math.Min(wall.A.Y, wall.B.Y) > top + 1e-6 ||
+                            Math.Max(wall.A.Y, wall.B.Y) < bottom - 1e-6)
+                            continue;
+                        if (x < left && left - x < 1.25 && left - x > 1e-5)
+                            lx = x;
+                        else if (x > right && x - right < 1.25 && x - right > 1e-5)
+                            rx = x;
+                        else continue;
+                    }
+                    else if (Math.Abs(wall.A.Y - wall.B.Y) < 1e-6)
+                    {
+                        double y = wall.A.Y;
+                        if (Math.Min(wall.A.X, wall.B.X) > left + 1e-6 ||
+                            Math.Max(wall.A.X, wall.B.X) < right - 1e-6)
+                            continue;
+                        if (y < top && top - y < 1.25 && top - y > 1e-5)
+                            ty = y;
+                        else if (y > bottom && y - bottom < 1.25 && y - bottom > 1e-5)
+                            by = y;
+                        else continue;
+                    }
+                    else continue;
+
+                    var trial = BuildingStoreys.Copy(updated);
+                    var next = BuildingStoreys.GetFloor(trial, floorIndex);
+                    var edited = next.Rooms.First(r => r.Id == room.Id);
+                    edited.Outline = Rectangle(lx, ty, rx, by);
+                    BuildingStoreys.SetFloor(trial, floorIndex, next);
+                    if (!BuildingStoreys.Validate(trial, out _)) continue;
+                    updated = trial;
+                    extended++;
+                    changed = true;
+                    break;
+                }
+                if (changed) break;
+            }
+            if (!changed) break;
+        }
+        return extended;
+    }
+
     private static double[] SplitLongSpans(IReadOnlyList<double> cuts)
     {
         var result = new List<double>();
