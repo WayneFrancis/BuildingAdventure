@@ -463,11 +463,16 @@ public static class BuildingConnectivity
             }
         }
 
-        string[] priority = [
-            "Kitchen", "Common room", "Living room", "Dining room",
-            "Parlour", "Great hall", "Shop floor", "Workshop",
-            "Bedroom", "Study", "Guest room", "Chamber"
-        ];
+        // The communal hall was the focal heated space of many
+        // medieval residences. In a generated hall-house, favour its
+        // hearth over an arbitrary fireplace in the food-storage wing.
+        // Modern/legacy houses retain the established kitchen priority.
+        string[] priority = baseFloor.Rooms.Any(r => r.Type == "Great hall")
+            ? ["Great hall", "Kitchen", "Parlour", "Living room",
+               "Common room", "Dining room", "Workshop", "Bedroom"]
+            : ["Kitchen", "Common room", "Living room", "Dining room",
+               "Parlour", "Great hall", "Shop floor", "Workshop",
+               "Bedroom", "Study", "Guest room", "Chamber"];
         var rooms = baseFloor.Rooms.Where(r => priority.Contains(r.Type,
             StringComparer.OrdinalIgnoreCase))
             .OrderBy(r => Array.FindIndex(priority, p =>
