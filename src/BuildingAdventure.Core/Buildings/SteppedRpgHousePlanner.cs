@@ -160,20 +160,21 @@ public static class SteppedRpgHousePlanner
         if(!stairEnvelope.All(poly=>
             FloorGeometry.IsWithinPolygon(poly,cap))) return false;
 
-        // Assemble a single contiguous hallway polygon, preserving
-        // precise orthogonal wall fragments and floor dimensions.
-        var c=new RoomDefinition{Type="Hallway",Name="Stair landing",Outline=cap};
-        var a=new RoomDefinition{Type="Hallway",Name="Stair approach",Outline=approach};
-        var b=new RoomDefinition{Type="Hallway",Name="Cross passage",Outline=cross};
-        var scratch=new BuildingDocument
+        // Assemble one canonical 10-vertex passage outline from the
+        // three NONOVERLAPPING rectangles. Mapping the canonical
+        // winding back through P supports all reflections and rotations
+        // without relying on polygon-union ordering heuristics.
+        var hall=new List<Point2>
         {
-            Perimeter=footprint.ToList(),
-            Rooms=[c,a,b]
+            P(0,0),P(coreWidth,0),
+            P(coreWidth,cutY),P(width,cutY),
+            P(width,cutY+crossDepth),P(0,cutY+crossDepth),
+            P(0,cutY),P(coreWidth-approachWidth,cutY),
+            P(coreWidth-approachWidth,capDepth),P(0,capDepth)
         };
-        if(!RoomMerging.TryMergeRooms(scratch,c.Id,a.Id,out var merged1,out _) ||
-            !RoomMerging.TryMergeRooms(merged1,c.Id,b.Id,out var merged2,out _))
+        if(!PolygonGeometry.IsValidOutline(hall,out _) ||
+           !FloorGeometry.IsWithinPolygon(hall,footprint))
             return false;
-        var hall=merged2.Rooms.Single().Outline;
         var pockets=new[]
         {
             Rect(0,capDepth,coreWidth-approachWidth,cutY),
