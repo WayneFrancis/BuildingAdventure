@@ -521,6 +521,117 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// Absorb narrow exterior slivers beside a rectangular hall into its
+    /// circulation area. An L footprint can have an outside wall 0.762m
+    /// away from one part of the hall; that is too thin for a room, yet
+    /// must not be omitted from the plan.
+    /// </summary>
+    public static int AbsorbNarrowPerimeterGapsIntoHall(
+        BuildingDocument source, int floorIndex, out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        int absorbed = 0;
+        // Each pass merges a single boundary strip. Further steps must
+        // not assume the hall stays rectangular after the first merge.
+        for (int pass = 0; pass < 8; pass++)
+        {
+            var level = BuildingStoreys.GetFloor(updated, floorIndex);
+            var hall = level.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+            if (hall is null || hall.Outline.Count != 4) break;
+            double left = hall.Outline.Min(p => p.X);
+            double right = hall.Outline.Max(p => p.X);
+            double top = hall.Outline.Min(p => p.Y);
+            double bottom = hall.Outline.Max(p => p.Y);
+            bool changed = false;
+
+            for (int k = 0; k < level.Perimeter.Count; k++)
+            {
+                var a = level.Perimeter[k];
+                var b = level.Perimeter[(k + 1) % level.Perimeter.Count];
+                List<Point2>? merged = null;
+                List<Point2>? sliver = null;
+                if (Math.Abs(a.Y - b.Y) < 1e-6)
+                {
+                    double x0 = Math.Max(left, Math.Min(a.X, b.X));
+                    double x1 = Math.Min(right, Math.Max(a.X, b.X));
+                    if (x1 - x0 < 1) continue;
+                    if (a.Y < top - 1e-6 && top - a.Y <= 1.25)
+                    {
+                        sliver = Rectangle(x0, a.Y, x1, top);
+                        merged = [new(left,top),new(x0,top),new(x0,a.Y),
+                            new(x1,a.Y),new(x1,top),new(right,top),
+                            new(right,bottom),new(left,bottom)];
+                    }
+                    else if (a.Y > bottom + 1e-6 && a.Y - bottom <= 1.25)
+                    {
+                        sliver = Rectangle(x0, bottom, x1, a.Y);
+                        merged = [new(left,top),new(right,top),new(right,bottom),
+                            new(x1,bottom),new(x1,a.Y),new(x0,a.Y),
+                            new(x0,bottom),new(left,bottom)];
+                    }
+                }
+                else if (Math.Abs(a.X - b.X) < 1e-6)
+                {
+                    double y0 = Math.Max(top, Math.Min(a.Y, b.Y));
+                    double y1 = Math.Min(bottom, Math.Max(a.Y, b.Y));
+                    if (y1 - y0 < 1) continue;
+                    if (a.X < left - 1e-6 && left - a.X <= 1.25)
+                    {
+                        sliver = Rectangle(a.X, y0, left, y1);
+                        merged = [new(left,top),new(right,top),
+                            new(right,bottom),new(left,bottom),new(left,y1),
+                            new(a.X,y1),new(a.X,y0),new(left,y0)];
+                    }
+                    else if (a.X > right + 1e-6 && a.X - right <= 1.25)
+                    {
+                        sliver = Rectangle(right, y0, a.X, y1);
+                        merged = [new(left,top),new(right,top),new(right,y0),
+                            new(a.X,y0),new(a.X,y1),new(right,y1),
+                            new(right,bottom),new(left,bottom)];
+                    }
+                }
+                if (merged is null || sliver is null ||
+                    !FloorGeometry.IsWithinPolygon(sliver, level.Perimeter))
+                    continue;
+
+                // Remove redundant straight-edge points, including when a
+                // sliver touches an exterior corner of the hall.
+                bool simplifying;
+                do
+                {
+                    simplifying = false;
+                    for (int i = 0; i < merged.Count && merged.Count > 4; i++)
+                    {
+                        var prev = merged[(i + merged.Count - 1) % merged.Count];
+                        var mid = merged[i];
+                        var next = merged[(i + 1) % merged.Count];
+                        double cross = (mid.X - prev.X) * (next.Y - mid.Y) -
+                            (mid.Y - prev.Y) * (next.X - mid.X);
+                        if (prev.DistanceTo(mid) > 1e-5 &&
+                            Math.Abs(cross) > 1e-5) continue;
+                        merged.RemoveAt(i);
+                        simplifying = true;
+                        break;
+                    }
+                } while (simplifying);
+
+                if (!PolygonGeometry.IsValidOutline(merged, out _)) continue;
+                var trial = BuildingStoreys.Copy(updated);
+                var floor = BuildingStoreys.GetFloor(trial, floorIndex);
+                floor.Rooms.First(r => r.Id == hall.Id).Outline = merged;
+                BuildingStoreys.SetFloor(trial, floorIndex, floor);
+                if (!BuildingStoreys.Validate(trial, out _)) continue;
+                updated = trial;
+                absorbed++;
+                changed = true;
+                break;
+            }
+            if (!changed) break;
+        }
+        return absorbed;
+    }
+
+    /// <summary>
     /// Choose useful rooms in architectural priority order, not in a random
     /// order which may omit the kitchen or create multiple living rooms.
     /// Repeatable accommodation roles (bedrooms, guest rooms and cells) may
