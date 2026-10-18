@@ -298,6 +298,85 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// Replace redundant generated Passage rectangles with open hallway
+    /// space, and join awkward small leftover rooms to a larger neighbour
+    /// to make a natural orthogonal L-shaped room. Uses the existing
+    /// polygon-union algorithm; never remodels a hand-drawn room passed
+    /// in <paramref name="originalRoomIds"/> (except to extend a hall
+    /// with a newly generated passage). The entire multi-storey building
+    /// is validated after every accepted union.
+    /// </summary>
+    public static int ConsolidateGeneratedRooms(BuildingDocument source,
+        int floorIndex, IReadOnlyCollection<Guid> originalRoomIds,
+        out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        var original = originalRoomIds.ToHashSet();
+        int mergedCount = 0;
+        for (int pass = 0; pass < 24; pass++)
+        {
+            var floor = BuildingStoreys.GetFloor(updated, floorIndex);
+            bool changed = false;
+            var candidates = floor.Rooms.Where(r => !original.Contains(r.Id) &&
+                    r.Type is not ("Hallway" or "Stairwell"))
+                .OrderBy(r => r.Type == "Passage" ? 0 : 1)
+                .ThenBy(r => PolygonGeometry.Area(r.Outline))
+                .ToArray();
+
+            foreach (var candidate in candidates)
+            {
+                double w = candidate.Outline.Max(p => p.X) -
+                    candidate.Outline.Min(p => p.X);
+                double h = candidate.Outline.Max(p => p.Y) -
+                    candidate.Outline.Min(p => p.Y);
+                double area = PolygonGeometry.Area(candidate.Outline);
+                bool passage = candidate.Type == "Passage";
+                bool awkward = Math.Min(w, h) < 2.5 ||
+                    (area < 9 && candidate.Type is "Storage" or "Closet" or
+                        "Storeroom" or "Pantry" or "Other");
+                if (!passage && !awkward) continue;
+
+                var neighbours = floor.Rooms.Where(r => r.Id != candidate.Id &&
+                        (passage && r.Type == "Hallway" ||
+                         r.Type is not ("Hallway" or "Stairwell" or "Passage") &&
+                         !original.Contains(r.Id)))
+                    .Where(r => BuildingConnectivity.ShareWall(
+                        r.Outline, candidate.Outline, 1.0))
+                    .OrderBy(r => passage && r.Type == "Hallway" ? 0 : 1)
+                    .ThenByDescending(r => PolygonGeometry.Area(r.Outline))
+                    .ToArray();
+                foreach (var host in neighbours)
+                {
+                    double joinedArea = area + PolygonGeometry.Area(host.Outline);
+                    if (host.Type != "Hallway" &&
+                        (joinedArea > 60 || PolygonGeometry.Area(host.Outline) < 8))
+                        continue;
+                    // Merge the disposable generated fragment INTO the
+                    // meaningful room, retaining its type, name and ID.
+                    if (!RoomMerging.TryMergeRooms(floor, host.Id, candidate.Id,
+                            out var united, out _))
+                        continue;
+                    var after = united.Rooms.First(r => r.Id == host.Id);
+                    // For a service fragment, an actual L-shape is the
+                    // point; a rectangular union would be better handled
+                    // during the original frontage partition pass.
+                    if (!passage && after.Outline.Count < 6) continue;
+                    var trial = BuildingStoreys.Copy(updated);
+                    BuildingStoreys.SetFloor(trial, floorIndex, united);
+                    if (!BuildingStoreys.Validate(trial, out _)) continue;
+                    updated = trial;
+                    mergedCount++;
+                    changed = true;
+                    break;
+                }
+                if (changed) break;
+            }
+            if (!changed) break;
+        }
+        return mergedCount;
+    }
+
+    /// <summary>
     /// Absorb thin (under 1.25m) residual strips into a newly proposed
     /// rectangular room when the facing exterior wall spans that side.
     /// Never reshape pre-existing user rooms or move the drawn perimeter.
