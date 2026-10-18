@@ -41,6 +41,10 @@
             <Separator/>
             <Button x:Name="SelectButton" Content="Select / Edit" Click="SelectTool_Click" Padding="9,4"/>
             <Button x:Name="DeleteSelectionButton" Content="Delete Selected" Click="Delete_Click" Padding="9,4" IsEnabled="False"/>
+            <TextBlock x:Name="CurrentSelectionText" Text="Selected: None"
+                       VerticalAlignment="Center" FontWeight="SemiBold"
+                       Foreground="#1A5276" Margin="10,0,6,0" MaxWidth="230"
+                       TextTrimming="CharacterEllipsis"/>
             <Button x:Name="DrawButton" Content="Draw Perimeter" Click="DrawTool_Click" Padding="9,4"/>
             <Button x:Name="SplitButton" Content="Split Perimeter" Click="SplitPerimeter_Click" Padding="9,4"/>
             <Button x:Name="RemoveCornerButton" Content="Remove Corner" Click="RemoveCornerTool_Click" Padding="9,4"/>
