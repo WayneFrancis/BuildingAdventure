@@ -123,12 +123,56 @@ public static class RoomLayoutPlanner
                 var widths = ChooseFrontageWidths(cells, depth, target,
                     use, floorIndex,
                     BuildingStoreys.GetFloor(updated, floorIndex).Rooms, random);
-                double position = start;
-                for (int part = 0; part < widths.Count; part++)
+                // Reuse lower-floor divider positions when the rooms occupy
+                // the same corridor-side band. This gives bedrooms upstairs
+                // sensible walls above living/kitchen partitions below.
+                var partitions = new List<double>();
+                if (BuildingStoreys.HasFloor(updated, floorIndex - 1))
                 {
-                    double boundary = part == widths.Count - 1
-                        ? end : Math.Min(end, position + widths[part] / 2.0);
-                    if (boundary - position < 1) { position = boundary; continue; }
+                    var below = BuildingStoreys.GetFloor(updated, floorIndex - 1);
+                    foreach (var lowerRoom in below.Rooms.Where(r =>
+                        r.Type is not ("Hallway" or "Stairwell")))
+                    {
+                        double lo = horizontal
+                            ? lowerRoom.Outline.Min(p => p.Y)
+                            : lowerRoom.Outline.Min(p => p.X);
+                        double hi = horizontal
+                            ? lowerRoom.Outline.Max(p => p.Y)
+                            : lowerRoom.Outline.Max(p => p.X);
+                        if (lo >= sideHigh - 0.1 || hi <= sideLow + 0.1)
+                            continue;
+                        double axisLo = horizontal
+                            ? lowerRoom.Outline.Min(p => p.X)
+                            : lowerRoom.Outline.Min(p => p.Y);
+                        double axisHi = horizontal
+                            ? lowerRoom.Outline.Max(p => p.X)
+                            : lowerRoom.Outline.Max(p => p.Y);
+                        partitions.Add(axisLo);
+                        partitions.Add(axisHi);
+                    }
+                }
+                var boundaries = new List<double> { start };
+                var aligned = partitions.Where(p => p > start + 1.25 &&
+                    p < end - 1.25).Distinct().OrderBy(p => p).ToList();
+                foreach (double cut in aligned)
+                    if (cut - boundaries[^1] >= 1.25 &&
+                        end - cut >= 1.25) boundaries.Add(cut);
+                if (boundaries.Count == 1)
+                {
+                    double position = start;
+                    foreach (int width in widths.Take(widths.Count - 1))
+                    {
+                        position = Math.Min(end, position + width / 2.0);
+                        if (position - boundaries[^1] >= 1.0 && end - position >= 1.0)
+                            boundaries.Add(position);
+                    }
+                }
+                boundaries.Add(end);
+                for (int part = 0; part < boundaries.Count - 1; part++)
+                {
+                    double position = boundaries[part];
+                    double boundary = boundaries[part + 1];
+                    if (boundary - position < 1) continue;
                     double from = Math.Min(near, far);
                     double to = Math.Max(near, far);
                     List<Point2> outline = horizontal
@@ -136,8 +180,8 @@ public static class RoomLayoutPlanner
                         : Rectangle(from, position, to, boundary);
                     double area = PolygonGeometry.Area(outline);
                     var current = BuildingStoreys.GetFloor(updated, floorIndex);
-                    string type = ChooseRoomType(use, floorIndex, area,
-                        current.Rooms, random);
+                    string type = ChooseRoomTypeForOutline(use, floorIndex, area,
+                        current.Rooms, outline, random);
                     var candidate = BuildingStoreys.Copy(updated);
                     var edited = BuildingStoreys.GetFloor(candidate, floorIndex);
                     edited.Rooms.Add(new RoomDefinition
@@ -152,7 +196,6 @@ public static class RoomLayoutPlanner
                         updated = candidate;
                         added++;
                     }
-                    position = boundary;
                 }
             }
         }
@@ -235,8 +278,8 @@ public static class RoomLayoutPlanner
             {
                 var trial = BuildingStoreys.Copy(updated);
                 var editable = BuildingStoreys.GetFloor(trial, floorIndex);
-                string type = ChooseRoomType(use, floorIndex, proposal.Area,
-                    editable.Rooms, random);
+                string type = ChooseRoomTypeForOutline(use, floorIndex, proposal.Area,
+                    editable.Rooms, proposal.Outline, random);
                 editable.Rooms.Add(new RoomDefinition
                 {
                     Type = type, Name = NextRoomName(type, editable.Rooms),
@@ -272,6 +315,36 @@ public static class RoomLayoutPlanner
             result.Add(cuts[i]);
         }
         return result.ToArray();
+    }
+
+    /// <summary>
+    /// Prefer culinary service relationships over an arbitrary sequence of
+    /// room names. A shared partition is the prerequisite for a direct
+    /// door; room naming alone does not invent an impossible connection.
+    /// </summary>
+    public static string ChooseRoomTypeForOutline(BuildingUse use, int floorIndex,
+        double area, IReadOnlyList<RoomDefinition> existing,
+        IReadOnlyList<Point2> outline, Random random)
+    {
+        string basic = ChooseRoomType(use, floorIndex, area, existing, random);
+        if (floorIndex != 0 || use is not (BuildingUse.Residence or BuildingUse.Inn))
+            return basic;
+        bool Has(string type) => existing.Any(r =>
+            r.Type.Equals(type, StringComparison.OrdinalIgnoreCase));
+        bool Borders(string type) => existing.Any(r =>
+            r.Type.Equals(type, StringComparison.OrdinalIgnoreCase) &&
+            BuildingConnectivity.ShareWall(r.Outline, outline, 1.2));
+
+        if (!Has("Kitchen") && area >= 8 &&
+            (Borders("Living room") || Borders("Common room")))
+            return "Kitchen";
+        if (Borders("Kitchen"))
+        {
+            if (!Has("Dining room") && area >= 7) return "Dining room";
+            if (!Has("Pantry") && area <= 14) return "Pantry";
+            if (!Has("Storeroom") && area <= 22) return "Storeroom";
+        }
+        return basic;
     }
 
     /// <summary>
