@@ -337,7 +337,7 @@ public static class RoomLayoutPlanner
                 // dining rooms just because it is slimmer than a bedroom.
                 bool usefulStore = candidate.Type is "Storeroom" or
                     "Storage" or "Pantry" or "Buttery" or "Stockroom" &&
-                    area >= 6 && Math.Min(w, h) >= 1.6;
+                    area >= 8 && Math.Min(w, h) >= 1.6;
                 bool awkward = !usefulStore &&
                     (Math.Min(w, h) < 2.5 ||
                      (area < 9 && candidate.Type is "Storage" or "Closet" or
