@@ -4,6 +4,51 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.29 — Universal selection, fireplace deletion and L-shaped generated rooms (development)
+
+The example `example.json` shows a deliberately hand-shaped six-vertex
+**Room A** adjoining the nearly rectangular **Room B** along a slightly
+angled common wall. Such nonrectangular rooms are valid and are
+preserved by editing and JSON round-tripping. Automatic generation is
+no longer restricted to keeping every residual rectangle separate.
+
+- **Click to select fireplaces or chimney flues** on any affected level.
+  Both fireplace faces on a shared chimney select the same stack.
+  An orange border/fill identifies the selected masonry. A new
+  **Fireplaces & Chimneys** panel provides a one-click delete command.
+  Deleting a stack removes its fireplace(s) and all upper/lower flues
+  together, preserving the unrelated rooms, doors, windows and stairs.
+  Removal is validated and recorded in global Undo/Redo.
+- **One Delete command for the selected item** (keyboard Delete,
+  Edit → Delete selected item, or toolbar Delete Selected):
+  fireplace/chimney, staircase, window, door, selected vertex, or
+  selected room. Selecting a whole room deletes it; selecting one
+  of its corners deletes the corner. Explicit per-type Delete buttons
+  continue working. If a deleted room contained a fireplace, its
+  orphaned chimney is removed in the same undoable edit.
+- **Strong room selection feedback:** selected room fill and a thick
+  blue/white wall outline are overlaid *after* all room-wall drawing,
+  with a visible `SELECTED: Room name` label. The toolbar also displays
+  the exact current selection so the effect of Delete is clear.
+- **Avoid redundant passages:** the generator attempts to join new
+  narrow `Passage` rectangles to their adjacent main hallway before
+  creating unrelated circulation spaces. Where a small generated
+  service fragment cannot be kept usefully on its own, it can be
+  joined to an adjacent generated room. The existing robust
+  polygon-union algorithm retains concave/L-shaped outlines, the
+  larger room's role/name and legitimate external doors, but removes
+  any doorway left on the dissolved partition. Every result is
+  validated on the full multi-storey building, and **existing user
+  rooms remain unchanged**.
+- **Multi-floor generation preserved:** passages are consolidated
+  only *after* temporary staircase enclosures have been merged into
+  the hallway; this avoids disrupting the stairwell reservation
+  algorithm.
+- Added tests for passage consolidation, generating nonrectangular
+  bedroom/service-wing unions, preserving hand-drawn L-shaped room
+  outlines, the exact six-corner Room A / angled boundary of
+  `example.json`, and validated multi-floor chimney stack deletion.
+
 ## v0.28 — Proportion-aware rooms and slim L-wing circulation (development)
 
 The user-supplied `L.json` revealed a ground-floor 25-foot-long,
