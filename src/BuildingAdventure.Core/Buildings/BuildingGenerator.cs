@@ -640,6 +640,18 @@ public static class BuildingGenerator
                     proposed, index, out var withConnectedHall);
                 proposed = withConnectedHall;
             }
+            if (options.Rooms && options.Corridors)
+            {
+                // Storage bands can otherwise sit between a bedroom or
+                // dining room and the ONLY hallway: a generated door into
+                // that store is not a satisfactory route through the house.
+                // Carve an edge access passage before planning any doors.
+                var preserved = BuildingStoreys.GetFloor(original, index)
+                    .Rooms.Select(r => r.Id).ToArray();
+                RoomLayoutPlanner.OpenDirectAccessPastGeneratedStores(
+                    proposed, index, preserved, out var accessible);
+                proposed = accessible;
+            }
             if (options.Doors)
             {
                 addedDoors += BuildingConnectivity.AddDoors(
