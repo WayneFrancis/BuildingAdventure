@@ -85,6 +85,7 @@ public partial class MainWindow : Window
         RebuildFloorPicker();
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
         UpdateAlignmentReferences();
+        GridScaleBox.SelectedIndex = _building.GridFeet == 10 ? 2 : _building.GridFeet == 5 ? 1 : 0;
         _lastSavedJson = CurrentJson();
         Loaded += (_, _) =>
         {
@@ -332,7 +333,8 @@ public partial class MainWindow : Window
             EditableFloorHint.Text =
                 $"Editing {BuildingStoreys.FloorLabel(_activeFloorIndex)} — Select / Edit to select rooms";
         }
-        ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
+        ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m — " +
+            (_building.GridFeet == 0 ? "1 m grid" : $"{_building.GridFeet} ft grid");
         string fileLabel = _filePath is null ? "Untitled" : Path.GetFileName(_filePath);
         Title = $"{NameBox.Text} — {fileLabel}{(IsDirty() ? " *" : "")} — BuildingAdventure";
     }
@@ -734,8 +736,9 @@ public partial class MainWindow : Window
             return;
         }
         int seed = Random.Shared.Next(1, int.MaxValue);
+        int gridFeet = GridScaleBox.SelectedIndex switch { 1 => 5, 2 => 10, _ => 0 };
         if (!BuildingGenerator.TrySuggestWholeBuilding(count, seed,
-            SelectedGeneratorOptions(), out var proposal, out var reason))
+            SelectedGeneratorOptions(), out var proposal, out var reason, gridFeet))
         {
             _hint = reason;
             Refresh();
@@ -794,6 +797,7 @@ public partial class MainWindow : Window
             ProposalFloorPicker.SelectedItem is not ComboBoxItem item ||
             item.Tag is not int floorIndex) return;
         var proposal = _pendingSuggestion.Building;
+        WholeBuildingPreviewSurface.SetGridFeet(proposal.GridFeet);
         WholeBuildingPreviewSurface.LoadDocument(
             BuildingStoreys.GetFloor(proposal, floorIndex));
         WholeBuildingPreviewSurface.SetStairOverlay(proposal.Staircases, floorIndex);
@@ -886,6 +890,7 @@ public partial class MainWindow : Window
         bool acceptedWholeBuilding = _pendingWholeBuilding;
         _history.RecordBefore(before, _activeFloorIndex);
         _building = BuildingStoreys.Copy(_pendingSuggestion.Building);
+        GridScaleBox.SelectedIndex = _building.GridFeet == 10 ? 2 : _building.GridFeet == 5 ? 1 : 0;
         int acceptedFloorCount = BuildingStoreys.FloorCount(_building);
         _activeFloorIndex = Math.Clamp(_activeFloorIndex,
             BuildingStoreys.LowestFloorIndex(_building),
@@ -1073,6 +1078,7 @@ public partial class MainWindow : Window
         if (!BuildingStoreys.HasFloor(_building, index)) return;
         _loading = true;
         _activeFloorIndex = index;
+        EditorSurface.SetGridFeet(_building.GridFeet);
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, index));
         UpdateSuggestionPreview();
         LoadWallThicknessControls();
@@ -1646,6 +1652,27 @@ public partial class MainWindow : Window
     {
         if (EditorSurface is not null)
             EditorSurface.SnapToGrid = SnapCheckBox.IsChecked == true;
+    }
+
+    private void GridScaleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || EditorSurface is null || GridScaleBox is null) return;
+        int selected = GridScaleBox.SelectedIndex switch { 1 => 5, 2 => 10, _ => 0 };
+        if (_building.GridFeet == selected)
+        {
+            EditorSurface.SetGridFeet(selected);
+            return;
+        }
+        var before = CurrentDocument();
+        var changed = BuildingStoreys.Copy(before);
+        changed.GridFeet = selected;
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = changed;
+        ClearPendingSuggestion();
+        EditorSurface.SetGridFeet(selected);
+        _hint = selected == 0 ? "Metric grid selected." :
+            $"Using {selected}-foot squares for drawing and grid display.";
+        Refresh();
     }
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e) => Refresh();
