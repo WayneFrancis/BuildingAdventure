@@ -296,6 +296,19 @@ public static class BuildingGenerator
                     BuildingConnectivity.AddDoors(result, level, out var withAccess);
                     result = withAccess;
                 }
+                // Some stepped outlines need a much wider stair wing
+                // initially. A compact stair cap + side approach +
+                // short cross-passage can recover the two broad room
+                // wings without moving the existing flight or entrance.
+                int reclaimedIrregular = IrregularHallRepair.Reclaim(
+                    result, level, Array.Empty<Guid>(), options.Purpose,
+                    out var repartitioned);
+                result = repartitioned;
+                if (reclaimedIrregular > 0 && options.Doors)
+                {
+                    BuildingConnectivity.AddDoors(result, level, out var opened);
+                    result = opened;
+                }
                 // Critical final pass: access spurs cannot be validated
                 // until staircase enclosures have been removed and ALL
                 // generated storage partitions are in their final place.
@@ -975,6 +988,17 @@ public static class BuildingGenerator
                     addedDoors += BuildingConnectivity.AddDoors(
                         proposed, index, out var withWingAccess);
                     proposed = withWingAccess;
+                }
+                int irregularRooms = IrregularHallRepair.Reclaim(
+                    proposed, index, protectedRooms, options.Purpose,
+                    out var withIrregularRooms);
+                proposed = withIrregularRooms;
+                addedRooms += irregularRooms;
+                if (irregularRooms > 0 && options.Doors)
+                {
+                    addedDoors += BuildingConnectivity.AddDoors(
+                        proposed, index, out var withIrregularDoors);
+                    proposed = withIrregularDoors;
                 }
                 // Storage created by the final consolidation or recovery
                 // pass needs a fresh accessibility check, after doors
