@@ -60,6 +60,22 @@ public partial class MainWindow : Window
             var before = CurrentDocument();
             BuildingStoreys.SetFloor(before, _activeFloorIndex, previousFloor);
             _history.RecordBefore(before, _activeFloorIndex);
+
+            // Deleting an entire room must not leave a chimney linked
+            // to a room ID that no longer exists, which would prevent
+            // the building from being saved or validated.
+            var edited = CurrentDocument();
+            int oldStacks = edited.Chimneys.Count;
+            edited.Chimneys.RemoveAll(ch => ch.HearthRoomIds.Count > 0 &&
+                (!BuildingStoreys.HasFloor(edited, ch.HearthFloorIndex) ||
+                 ch.HearthRoomIds.Any(id =>
+                     !BuildingStoreys.GetFloor(edited, ch.HearthFloorIndex)
+                         .Rooms.Any(r => r.Id == id))));
+            if (edited.Chimneys.Count != oldStacks)
+            {
+                _building = edited;
+                EditorSurface.SetChimneyOverlay(_building.Chimneys);
+            }
             ClearPendingSuggestion();
             Refresh();
         };
@@ -299,6 +315,14 @@ public partial class MainWindow : Window
         ApplyWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
         CentreWindowButton.IsEnabled = EditorSurface.HasSelectedWindow;
         DeleteStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
+        DeleteChimneyButton.IsEnabled = EditorSurface.HasSelectedChimney;
+        SelectedChimneyText.Text = EditorSurface.HasSelectedChimney
+            ? "Selected chimney / fireplace — Delete removes its shared flue stack on all floors."
+            : "Select a fireplace (FP) or flue (FL) on the plan.";
+        DeleteSelectionButton.IsEnabled = EditorSurface.HasSelectedChimney ||
+            EditorSurface.SelectedStaircaseId.HasValue ||
+            EditorSurface.HasSelectedDoor || EditorSurface.HasSelectedWindow ||
+            EditorSurface.HasSelectedVertex || EditorSurface.SelectedRoom is not null;
         ApplyStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
         OpeningText.Text = $"{BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex).Count} opening(s) in this slab";
@@ -1640,6 +1664,48 @@ public partial class MainWindow : Window
             EditorSurface.RefreshStairPreview();
     }
 
+    private void DeleteChimney_Click(object sender, RoutedEventArgs e)
+    {
+        Guid? selected = EditorSurface.SelectedChimneyId;
+        if (!selected.HasValue) return;
+        var before = CurrentDocument();
+        var updated = BuildingStoreys.Copy(before);
+        updated.Chimneys.RemoveAll(ch => ch.Id == selected.Value);
+        if (!BuildingStoreys.Validate(updated, out var reason))
+        {
+            _hint = "Cannot delete fireplace: " + reason;
+            Refresh();
+            return;
+        }
+        _history.RecordBefore(before, _activeFloorIndex);
+        _building = updated;
+        ClearPendingSuggestion();
+        EditorSurface.SetChimneyOverlay(_building.Chimneys);
+        _hint = "Fireplace and its entire chimney/flue stack deleted.";
+        Refresh();
+    }
+
+    private void DeleteSelectedItem()
+    {
+        if (EditorSurface.HasSelectedChimney)
+            DeleteChimney_Click(this, new RoutedEventArgs());
+        else if (EditorSurface.SelectedStaircaseId.HasValue)
+            DeleteStairs_Click(this, new RoutedEventArgs());
+        else if (EditorSurface.HasSelectedWindow)
+            EditorSurface.DeleteSelectedWindow();
+        else if (EditorSurface.HasSelectedDoor)
+            EditorSurface.DeleteSelectedDoor();
+        else if (EditorSurface.HasSelectedVertex)
+            EditorSurface.DeleteSelectedVertex();
+        else if (EditorSurface.SelectedRoom is not null)
+            EditorSurface.DeleteSelectedRoom();
+        else
+        {
+            _hint = "Select a room, door, window, staircase, fireplace or corner to delete.";
+            Refresh();
+        }
+    }
+
     private void DeleteStairs_Click(object sender, RoutedEventArgs e)
     {
         Guid? id = EditorSurface.SelectedStaircaseId;
@@ -1717,7 +1783,7 @@ public partial class MainWindow : Window
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
     private void Undo_Click(object sender, RoutedEventArgs e) => UndoDocument();
     private void Redo_Click(object sender, RoutedEventArgs e) => RedoDocument();
-    private void Delete_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedVertex();
+    private void Delete_Click(object sender, RoutedEventArgs e) => DeleteSelectedItem();
     private void Cancel_Click(object sender, RoutedEventArgs e) => EditorSurface.CancelDrawing();
     private void Finish_Click(object sender, RoutedEventArgs e) => EditorSurface.FinishDrawing();
     private void SelectTool_Click(object sender, RoutedEventArgs e)
@@ -1805,11 +1871,7 @@ public partial class MainWindow : Window
         else if (e.Key == Key.Escape) EditorSurface.CancelDrawing();
         else if (e.Key == Key.Delete && !NameBox.IsKeyboardFocusWithin && !RoomNameBox.IsKeyboardFocusWithin)
         {
-            if (EditorSurface.SelectedStaircaseId.HasValue)
-                DeleteStairs_Click(this, new RoutedEventArgs());
-            else if (EditorSurface.HasSelectedWindow) EditorSurface.DeleteSelectedWindow();
-            else if (EditorSurface.HasSelectedDoor) EditorSurface.DeleteSelectedDoor();
-            else EditorSurface.DeleteSelectedVertex();
+            DeleteSelectedItem();
         }
         else return;
         e.Handled = true;
