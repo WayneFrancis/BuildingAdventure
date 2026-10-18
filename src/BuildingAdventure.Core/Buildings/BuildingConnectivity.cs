@@ -252,9 +252,10 @@ public static class BuildingConnectivity
         double minY = ground.Perimeter.Min(p => p.Y);
         double maxY = ground.Perimeter.Max(p => p.Y);
         double hallLength = vertical ? hBottom - hTop : hRight - hLeft;
-        // A 3.6 m run needs space at both ends for access / landings.
-        double pocketLength = Math.Floor(Math.Min(5.0, hallLength) * 2) / 2;
-        if (pocketLength < 4.5)
+        // The 3.6 m flight and two 1.0 m landing areas require 5.6 m.
+        // Reserve a 6.0 m bay so neither endpoint terminates at a wall.
+        double pocketLength = 6.0;
+        if (hallLength < pocketLength)
         {
             reason = "The hall is too short to reserve a landing beside the stairs.";
             return false;
@@ -299,9 +300,7 @@ public static class BuildingConnectivity
             double sideCentre = leftSide
                 ? sideStart + halfWidth + wallClearance
                 : sideEnd - halfWidth - wallClearance;
-            double runCentre = farEnd
-                ? to - halfLength - wallClearance
-                : from + halfLength + wallClearance;
+            double runCentre = (from + to) / 2;
             var centre = vertical
                 ? new Point2(sideCentre, runCentre)
                 : new Point2(runCentre, sideCentre);
@@ -337,6 +336,7 @@ public static class BuildingConnectivity
                     LowerFloorIndex = lower,
                     Centre = centre,
                     Length = 3.6, Width = 1.4,
+                    LandingLength = 1.0,
                     RotationDegrees = vertical ? 0 : 90
                 };
                 if (!BuildingStoreys.TryAddStaircase(candidate, stair,
