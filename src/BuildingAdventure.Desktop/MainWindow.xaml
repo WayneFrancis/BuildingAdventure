@@ -385,31 +385,61 @@
         </Border>
         <Border Background="#FFFFFF">
             <Grid>
-                <local:FloorPlanSurface x:Name="EditorSurface"/>
-                <!-- Detached proposed building: this view never edits the active document. -->
-                <Grid x:Name="WholeBuildingPreviewPanel" Visibility="Collapsed"
-                      Background="White" Panel.ZIndex="1">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <Border Grid.Row="0" Background="#E8F2EB" Padding="10">
-                        <StackPanel>
-                            <TextBlock x:Name="ProposedBuildingHeader" FontWeight="Bold"
-                                       Text="PROPOSED BUILDING — NOT YET ACCEPTED"/>
-                            <TextBlock Text="Browse the proposed floors here. Accept All commits them; Discard preview leaves your building unchanged."
-                                       TextWrapping="Wrap" Margin="0,4,0,8"/>
-                            <WrapPanel>
-                                <Button Content="Previous floor" Click="PreviousProposalFloor_Click" Padding="8,5" Margin="0,0,8,0"/>
-                                <ComboBox x:Name="ProposalFloorPicker" MinWidth="180"
-                                          SelectionChanged="ProposalFloorPicker_SelectionChanged"
-                                          Padding="5" Margin="0,0,8,0"/>
-                                <Button Content="Next floor" Click="NextProposalFloor_Click" Padding="8,5"/>
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
-                    <local:FloorPlanSurface x:Name="WholeBuildingPreviewSurface" Grid.Row="1"
-                                             IsHitTestVisible="False"/>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border x:Name="WorkingFloorNavigationBar" Grid.Row="0"
+                        Background="#E7EEF9" Padding="9,6">
+                    <WrapPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="WorkingFloorCountText" FontWeight="Bold"
+                                   Text="WORKING BUILDING — 1 FLOOR"
+                                   VerticalAlignment="Center" Margin="0,0,15,0"/>
+                        <Button Content="Previous floor" Click="PreviousWorkingFloor_Click"
+                                Padding="8,5" Margin="0,0,7,0"/>
+                        <ComboBox x:Name="WorkingFloorPicker" MinWidth="185"
+                                  SelectionChanged="WorkingFloorPicker_SelectionChanged"
+                                  Padding="4" Margin="0,0,7,0"/>
+                        <Button Content="Next floor" Click="NextWorkingFloor_Click"
+                                Padding="8,5"/>
+                        <TextBlock x:Name="EditableFloorHint" Text="Select / Edit to change rooms"
+                                   VerticalAlignment="Center" Margin="14,0,0,0"/>
+                    </WrapPanel>
+                </Border>
+                <Grid Grid.Row="1">
+                    <local:FloorPlanSurface x:Name="EditorSurface"/>
+                    <!-- The draft is deliberately read-only. Accept commits all
+                         levels, collapses this overlay and exposes the editor. -->
+                    <Grid x:Name="WholeBuildingPreviewPanel" Visibility="Collapsed"
+                          Background="White" Panel.ZIndex="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Background="#E8F2EB" Padding="10">
+                            <StackPanel>
+                                <TextBlock x:Name="ProposedBuildingHeader" FontWeight="Bold"
+                                           Text="PROPOSED BUILDING — NOT YET ACCEPTED"/>
+                                <TextBlock Text="Browse every proposed floor below. The plan is read-only until you accept the draft."
+                                           TextWrapping="Wrap" Margin="0,4,0,8"/>
+                                <WrapPanel>
+                                    <Button Content="Previous floor" Click="PreviousProposalFloor_Click"
+                                            Padding="8,5" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ProposalFloorPicker" MinWidth="180"
+                                              SelectionChanged="ProposalFloorPicker_SelectionChanged"
+                                              Padding="5" Margin="0,0,8,0"/>
+                                    <Button Content="Next floor" Click="NextProposalFloor_Click"
+                                            Padding="8,5" Margin="0,0,15,0"/>
+                                    <Button Content="Accept all proposed floors" Click="AcceptSuggestion_Click"
+                                            Padding="8,5" Margin="0,0,8,0"/>
+                                    <Button Content="Discard preview" Click="DiscardSuggestion_Click"
+                                            Padding="8,5"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <local:FloorPlanSurface x:Name="WholeBuildingPreviewSurface"
+                                                 Grid.Row="1" IsHitTestVisible="False"/>
+                    </Grid>
                 </Grid>
             </Grid>
         </Border>
