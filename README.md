@@ -4,6 +4,49 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.21 — Tabletop grids, habitable-room glazing, landings and chimney stacks (development branch)
+
+- **RPG map scales:** select metric, **5 ft squares** or **10 ft squares**
+  in BUILDING → Tabletop map grid. The drawing grid and point snapping
+  use exact 1.524 m / 3.048 m cells. Room areas, exterior-wall dimensions
+  and other floor summaries display feet / square feet in imperial mode.
+  New whole-building **exterior footprints** align exactly to those
+  squares. The choice survives JSON save/reopen, Undo and Redo.
+  **Known limitation:** the current automatic internal room/corridor
+  partitioner still works in metric increments, so interior walls are
+  not yet guaranteed to follow tabletop grid lines. Existing geometry
+  is not rescaled when the grid choice changes.
+- **Windows by habitable room:** Windows are enabled by default for new
+  editor preferences. Generation attempts one exterior window for each
+  eligible exterior-facing room, rather than a maximum of two windows
+  per floor. Hallways, stairwells, storerooms, cellars, closets, pantries,
+  utilities and similar enclosed spaces are exempt. Kitchens normally
+  get windows, but one containing a fireplace may omit them. No window
+  is invented for an internal room lacking a valid exterior wall.
+  Proposed glazing avoids the perimeter around a stairwell and a chimney.
+  Windows are now processed **after** stairs in multi-feature passes.
+- **Real landing reservations:** newly generated stairs require 1 m
+  of clear platform at **both ends** on **both connected storeys**;
+  they cannot overlap interior walls or pass beyond the perimeter.
+  Generated stairwell bays are now 6 m long rather than 5 m.
+  The landing size can be edited in the STAIRCASES panel and is shown
+  as a dashed area on the plan. Previously saved stairs with zero landing
+  clearance remain loadable, and can be upgraded in the editor.
+- **Linked fireplaces/chimneys:** optional *Fireplace / chimney stack*
+  generation tries exterior walls first and then interior ones. One
+  chimney definition is saved for the whole building, rendered at the
+  same world position on every level whose floor plate covers its
+  footprint, including a basement if the footprint is fully beneath
+  the chimney. Validation excludes overlapping stair runs/landings,
+  interior walls and nearby door/window openings. This is a schematic
+  fireplace/flue marker, not a full smoke, flue, structural or fire-code
+  simulation. Automatic chimney insertion can be skipped if no
+  suitable wall position passes all validation.
+- Added regression tests for two clear stair landings, per-room window
+  coverage and exemptions, exact imperial footprint sizes, stairwell
+  glazing clearance, grid JSON persistence, and basement chimney
+  continuity.
+
 ## v0.20 — Visible floor count, editable acceptance and wall-hugging stairs (development branch)
 
 - **Always-visible working-floor navigator:** the drawing area now shows how
