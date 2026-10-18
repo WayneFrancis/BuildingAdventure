@@ -4807,5 +4807,90 @@ Check("Stepped upper-floor footprint can use a shorter interior hallway", () =>
     Assert(BuildingStoreys.GetFloor(draft.Building,1).Rooms.Count>1);
     Assert(BuildingStoreys.Validate(draft.Building,out reason),reason);
 });
+Check("Two blank floors with smaller inset upstairs generate aligned hall and working stairs", () =>
+{
+    foreach (int grid in new[] { 0, 5, 10 })
+    foreach (int variant in new[] { 0, 1, 2 })
+    {
+        double step = grid == 0 ? 0.5 : grid * 0.3048;
+        double width = 12 * step, height = 8 * step;
+        // Use realistically-sized plans in metric mode as well; the
+        // failure is relative hallway alignment, not absolute size.
+        if (grid == 0) { width = 12.0; height = 9.0; step = 0.5; }
+        var original = new BuildingDocument
+        {
+            GridFeet = grid,
+            Perimeter =
+            [
+                new(0,0),new(width,0),new(width,height),new(0,height)
+            ]
+        };
+        Assert(BuildingStoreys.TryAddFloor(original, out var two,
+            out var reason), reason);
+        var upper = BuildingStoreys.GetFloor(two, 1);
+        // Exactly one grid cell inset; for variant 2 the first floor
+        // is also shifted, so both perpendicular axes change.
+        double left = step * (variant == 1 ? 0 : 1);
+        double right = width - step * (variant == 2 ? 0 : 1);
+        double top = step * (variant == 2 ? 0 : 1);
+        double bottom = height - step * (variant == 1 ? 0 : 1);
+        upper.Perimeter =
+        [
+            new(left, top),new(right, top),
+            new(right, bottom),new(left, bottom)
+        ];
+        BuildingStoreys.SetFloor(two, 1, upper);
+        Assert(BuildingStoreys.Validate(two, out reason), reason);
+        var opts = new GenerationOptions
+        {
+            Rooms = true, Corridors = true, Doors = true,
+            Stairs = true, Windows = false,
+            Purpose = BuildingUse.Residence
+        };
+        Assert(BuildingGenerator.TrySuggest(two, [0, 1], 610 + variant,
+            opts, out var suggestion, out reason),
+            $"Grid={grid} variant={variant}: {reason}");
+        Assert(suggestion.Building.Staircases.Count == 1,
+            "A shared stair connection must be planned on blank floors.");
+        var staircase = suggestion.Building.Staircases.Single();
+        Assert(staircase.LandingLength >= 1.0);
+        foreach (int index in new[] { 0, 1 })
+        {
+            var floor = BuildingStoreys.GetFloor(suggestion.Building, index);
+            var hallway = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+            Assert(hallway is not null);
+            Assert(PolygonGeometry.ContainsPoint(hallway.Outline, staircase.Centre),
+                "The flights must be inside the common circulation area.");
+            Assert(floor.Rooms.Any(r => r.Type != "Hallway"),
+                "Room generation must still proceed after reserving stairs.");
+        }
+        Assert(BuildingStoreys.Validate(suggestion.Building, out reason), reason);
+        Assert(two.Staircases.Count == 0,
+            "The original unallocated drawing must remain unchanged.");
+    }
+});
+
+Check("Two blank offset storeys fit an aligned stair corridor before other rooms", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(13,0),new(13,10),new(0,10)]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    var upper = BuildingStoreys.GetFloor(two, 1);
+    upper.Perimeter = [new(0.75,0.5),new(11.75,0.5),
+        new(11.75,8.5),new(0.75,8.5)];
+    BuildingStoreys.SetFloor(two, 1, upper);
+    Assert(BuildingConnectivity.TryAddAlignedHallwaysAndStairs(
+        two, 0, out var staged, out reason), reason);
+    var stair = staged.Staircases.Single();
+    foreach (int level in new[] { 0, 1 })
+    {
+        var floor = BuildingStoreys.GetFloor(staged, level);
+        Assert(floor.Rooms.Count == 1);
+        Assert(PolygonGeometry.ContainsPoint(floor.Rooms[0].Outline, stair.Centre));
+    }
+    Assert(BuildingStoreys.Validate(staged, out reason), reason);
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
