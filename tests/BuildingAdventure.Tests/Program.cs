@@ -7166,6 +7166,42 @@ Check("example9 restores 1.1m route to upper stairhead and assigns right exterio
     Assert(SteppedLayoutFinisher.Refine(original,0,
         original.Rooms.Select(r=>r.Id).ToArray(),out _) == 0,
         "Hand-authored rooms must be protected.");
+
+    // The stepped outer wall could equally be on the other side,
+    // or rotated on the editor's canvas. The same gap should be
+    // closed without assuming that the step faces right or down.
+    foreach(int quarterTurn in new[]{0,1,2,3})
+    foreach(bool mirror in new[]{false,true})
+    {
+        Point2 Rotate(Point2 p)
+        {
+            double x=mirror ? -p.X : p.X, y=p.Y;
+            return quarterTurn switch
+            {
+                1=>new Point2(-y,x),
+                2=>new Point2(-x,-y),
+                3=>new Point2(y,-x),
+                _=>new Point2(x,y)
+            };
+        }
+        var variant=BuildingStoreys.Copy(original);
+        variant.UpperFloors.Clear();
+        variant.Staircases.Clear();
+        variant.Chimneys.Clear();
+        variant.Doors.Clear();
+        variant.Windows.Clear();
+        variant.Perimeter=variant.Perimeter.Select(Rotate).ToList();
+        foreach(var room in variant.Rooms)
+            room.Outline=room.Outline.Select(Rotate).ToList();
+        Assert(BuildingStoreys.Validate(variant,out reason),reason);
+        int recovered=SteppedLayoutFinisher.Refine(variant,0,
+            Array.Empty<Guid>(),out var joined);
+        Assert(recovered==1,
+            $"Step sliver wasn't closed at rotation {quarterTurn}, mirror={mirror}");
+        Assert(BuildingStoreys.Validate(joined,out reason),reason);
+        Assert(RoomLayoutPlanner.UnassignedArea(joined)<0.02,
+            "A mirrored or rotated exterior edge must not leave a 3.375m² gap.");
+    }
 });
 
 Console.WriteLine($"{passed} passed; {failed} failed.");
