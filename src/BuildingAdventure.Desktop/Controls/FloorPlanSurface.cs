@@ -1332,7 +1332,16 @@ public sealed class FloorPlanSurface : FrameworkElement
             return;
         }
 
-        if (Tool == EditorTool.Select && SelectSuggestedRoom(position))
+        // Existing door symbols must remain clickable even while a
+        // suggestion preview is overlaid on the same rooms. Without this
+        // guard the suggested room swallowed every door-leaf click.
+        bool overExistingDoor = Tool == EditorTool.Select &&
+            _doors.Count > 0 &&
+            DoorHitTesting.FindDoorAt(_doors,
+                FloorGeometry.BuildWalls(_outline, _rooms),
+                ToWorld(position), _pixelsPerMetre, _selectedDoorId) is not null;
+        if (Tool == EditorTool.Select && !overExistingDoor &&
+            SelectSuggestedRoom(position))
         {
             e.Handled = true;
             return;
@@ -1447,21 +1456,17 @@ public sealed class FloorPlanSurface : FrameworkElement
                 return;
             }
 
-            if (e.ClickCount >= 2 && TryInsertCorner(position, perimeterOnly: false))
+            if (e.ClickCount >= 2 && !overExistingDoor &&
+                TryInsertCorner(position, perimeterOnly: false))
             {
                 e.Handled = true;
                 return;
             }
 
-            if (TrySelectVertex(position))
-            {
-                _selectedChimneyId = null;
-                _beforeDrag = Snapshot();
-                _draggingVertex = true;
-                _dragOriginalPoint = SelectedVertices()![_selectedVertex];
-                CaptureMouse();
-            }
-            else if (TrySelectDoor(position))
+            // Door gap/leaf has priority over room polygons AND their
+            // editable corner grips. A door symbol must not start a room
+            // vertex drag or just select the room beneath its open leaf.
+            if (TrySelectDoor(position))
             {
                 _selectedChimneyId = null;
                 _selectedWindowId = null;
@@ -1469,6 +1474,14 @@ public sealed class FloorPlanSurface : FrameworkElement
                 _selectedVertex = -1;
                 _selectedRoomId = null;
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
+            }
+            else if (TrySelectVertex(position))
+            {
+                _selectedChimneyId = null;
+                _beforeDrag = Snapshot();
+                _draggingVertex = true;
+                _dragOriginalPoint = SelectedVertices()![_selectedVertex];
+                CaptureMouse();
             }
             else if (TrySelectChimney(position))
             {
@@ -2669,15 +2682,15 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private bool TrySelectDoor(Point position)
     {
-        foreach (var door in _doors)
-        {
-            if ((ToScreen(door.Centre) - position).Length <= 11)
-            {
-                _selectedDoorId = door.Id;
-                return true;
-            }
-        }
-        return false;
+        // The glyph includes the leaf swinging into a room, not only its
+        // centre point on the wall. Select the closest visible symbol
+        // before falling back to vertices or room-polygon hit testing.
+        var door = DoorHitTesting.FindDoorAt(
+            _doors, FloorGeometry.BuildWalls(_outline, _rooms),
+            ToWorld(position), _pixelsPerMetre, _selectedDoorId);
+        if (door is null) return false;
+        _selectedDoorId = door.Id;
+        return true;
     }
 
     private bool TrySelectVertex(Point position)
