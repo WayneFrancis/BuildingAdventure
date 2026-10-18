@@ -688,6 +688,9 @@ public partial class MainWindow : Window
 
     private void ShowGeneratorFailure(string reason)
     {
+        // A failed replacement/re-roll must not leave the previously
+        // previewed (and now misleading) rooms showing as the new result.
+        ClearPendingSuggestion();
         _generatorStatus = "No new suggestion: " + reason;
         _hint = _generatorStatus;
         Refresh();
