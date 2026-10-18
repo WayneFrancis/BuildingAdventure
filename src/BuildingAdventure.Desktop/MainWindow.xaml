@@ -78,6 +78,15 @@
                         <ComboBoxItem Content="Game Master"/>
                         <ComboBoxItem Content="Player preview"/>
                     </ComboBox>
+                    <TextBlock Text="Tabletop map grid" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                    <ComboBox x:Name="GridScaleBox" SelectedIndex="0" Padding="5"
+                              SelectionChanged="GridScaleChanged" Margin="0,0,0,5">
+                        <ComboBoxItem Content="Metric — 1 metre squares"/>
+                        <ComboBoxItem Content="RPG — 5 foot squares"/>
+                        <ComboBoxItem Content="RPG — 10 foot squares"/>
+                    </ComboBox>
+                    <TextBlock Text="Foot grids use exact conversions (5 ft = 1.524 m, 10 ft = 3.048 m). The visible grid and drawing snap follow this choice. Existing walls are not rescaled."
+                               Foreground="#566579" TextWrapping="Wrap" Margin="0,0,0,12"/>
                     <TextBlock Text="Building name" FontWeight="SemiBold" Margin="0,0,0,5"/>
                     <TextBox x:Name="NameBox" Text="Untitled Building" TextChanged="NameBox_TextChanged"
                              GotKeyboardFocus="NameBox_GotKeyboardFocus"
@@ -280,7 +289,7 @@
                                Margin="0,0,0,8" Foreground="#7B550F"/>
                     <TextBlock x:Name="SlabAreaText" Text="Slab area: —" Margin="0,0,0,8"/>
                     <TextBlock x:Name="LengthText" Text="Wall length: —" Margin="0,0,0,16"/>
-                    <CheckBox x:Name="SnapCheckBox" Content="Snap to 0.5 m grid" IsChecked="True"
+                    <CheckBox x:Name="SnapCheckBox" Content="Snap to selected grid (0.5 m in metric)" IsChecked="True"
                               Checked="SnapChanged" Unchecked="SnapChanged" Margin="0,0,0,18"/>
                     <Button x:Name="FinishButton" Content="Finish drawing" Click="Finish_Click"
                             Padding="8" Margin="0,0,0,10"/>
