@@ -346,12 +346,17 @@ public partial class MainWindow : Window
     {
         if (!ConfirmDiscard()) return;
         _loading = true;
-        _building = new BuildingDocument();
+        _building = new BuildingDocument
+        {
+            GridFeet = GridScaleBox.SelectedIndex switch { 1 => 5, 2 => 10, _ => 0 }
+        };
         _activeFloorIndex = 0;
         ClearPendingSuggestion();
         _history.Clear();
         _nameBeforeEdit = null;
+        EditorSurface.SetGridFeet(_building.GridFeet);
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
+        EditorSurface.SetChimneyOverlay(_building.Chimneys);
         LoadWallThicknessControls();
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
         RebuildFloorPicker();
@@ -379,11 +384,15 @@ public partial class MainWindow : Window
             var document = BuildingDocumentJson.Deserialize(File.ReadAllText(dialog.FileName));
             _loading = true;
             _building = BuildingStoreys.Copy(document);
-            _activeFloorIndex = 0;
+            GridScaleBox.SelectedIndex = _building.GridFeet == 10 ? 2 : _building.GridFeet == 5 ? 1 : 0;
+            _activeFloorIndex = BuildingStoreys.HasFloor(_building, 0)
+                ? 0 : BuildingStoreys.LowestFloorIndex(_building);
             ClearPendingSuggestion();
             _history.Clear();
             _nameBeforeEdit = null;
-            EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, 0));
+            EditorSurface.SetGridFeet(_building.GridFeet);
+            EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, _activeFloorIndex));
+            EditorSurface.SetChimneyOverlay(_building.Chimneys);
             LoadWallThicknessControls();
             EditorSurface.SetStairOverlay(_building.Staircases, 0);
             RebuildFloorPicker();
@@ -1568,12 +1577,15 @@ public partial class MainWindow : Window
     {
         _loading = true;
         _building = BuildingStoreys.Copy(state.Building);
+        GridScaleBox.SelectedIndex = _building.GridFeet == 10 ? 2 : _building.GridFeet == 5 ? 1 : 0;
         _activeFloorIndex = state.FloorIndex;
         ClearPendingSuggestion();
         _nameBeforeEdit = null;
         NameBox.Text = _building.Name;
         RebuildFloorPicker();
+        EditorSurface.SetGridFeet(_building.GridFeet);
         EditorSurface.LoadDocument(BuildingStoreys.GetFloor(_building, _activeFloorIndex));
+        EditorSurface.SetChimneyOverlay(_building.Chimneys);
         LoadWallThicknessControls();
         EditorSurface.SetStairOverlay(_building.Staircases, _activeFloorIndex);
         UpdateAlignmentReferences();
