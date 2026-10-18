@@ -641,6 +641,127 @@ public static class BuildingConnectivity
         return false;
     }
 
+    /// <summary>
+    /// Plan two EMPTY storeys as one connected circulation problem.
+    /// Independently centring a full-width corridor on each footprint
+    /// can shift the bands apart when upstairs is inset or smaller.
+    /// Both separately valid corridors can then have no common 0.9m-wide
+    /// flight + 1m landings, even though the floor area is ample.
+    ///
+    /// Try aligned corridor bands, retaining each floor's own long-axis
+    /// endpoints, and accept a trial only after a staircase validates on
+    /// BOTH levels. No caller document is mutated on failure.
+    /// </summary>
+    public static bool TryAddAlignedHallwaysAndStairs(BuildingDocument source,
+        int lower, out BuildingDocument updated, out string reason)
+    {
+        updated = BuildingStoreys.Copy(source);
+        reason = "";
+        if (!BuildingStoreys.HasFloor(source, lower) ||
+            !BuildingStoreys.HasFloor(source, lower + 1))
+        {
+            reason = "The two adjoining floors do not exist.";
+            return false;
+        }
+
+        var down = BuildingStoreys.GetFloor(source, lower);
+        var up = BuildingStoreys.GetFloor(source, lower + 1);
+        if (down.Rooms.Count > 0 || up.Rooms.Count > 0)
+        {
+            reason = "Aligned blank-floor planning is only available before either floor has rooms.";
+            return false;
+        }
+        if (down.Perimeter.Count < 3 || up.Perimeter.Count < 3)
+        {
+            reason = "Both floors must have an exterior perimeter.";
+            return false;
+        }
+        double xMin = Math.Max(down.Perimeter.Min(p => p.X),
+            up.Perimeter.Min(p => p.X));
+        double xMax = Math.Min(down.Perimeter.Max(p => p.X),
+            up.Perimeter.Max(p => p.X));
+        double yMin = Math.Max(down.Perimeter.Min(p => p.Y),
+            up.Perimeter.Min(p => p.Y));
+        double yMax = Math.Min(down.Perimeter.Max(p => p.Y),
+            up.Perimeter.Max(p => p.Y));
+        if (xMax - xMin < 2.0 || yMax - yMin < 2.0)
+        {
+            reason = "The two floor perimeters do not share enough interior area.";
+            return false;
+        }
+
+        // The common corridor CROSS-band must coincide on both floors.
+        // On a rectangular pair its long direction may use each
+        // storey's full length, including the ground floor entrance.
+        foreach (bool horizontal in (xMax - xMin >= yMax - yMin)
+            ? new[] { true, false } : new[] { false, true })
+        {
+            double commonNear = horizontal ? yMin : xMin;
+            double commonFar = horizontal ? yMax : xMax;
+            double axisMin = horizontal ? xMin : yMin;
+            double axisMax = horizontal ? xMax : yMax;
+            if (commonFar - commonNear < 2.0 ||
+                axisMax - axisMin < 5.0) continue;
+
+            double center = (commonNear + commonFar) / 2.0;
+            // Search centred and several off-centre placements. The
+            // stair flight can then avoid future window/door positions.
+            foreach (double offset in new[] { 0.0, -0.5, 0.5, -1.0, 1.0, -1.5, 1.5 })
+            {
+                double near = center - 1.0 + offset, far = near + 2.0;
+                if (near < commonNear - 1e-6 || far > commonFar + 1e-6)
+                    continue;
+
+                foreach (bool fullLength in new[] { true, false })
+                {
+                    var trial = BuildingStoreys.Copy(source);
+                    bool fitted = true;
+                    foreach (int index in new[] { lower, lower + 1 })
+                    {
+                        var floor = BuildingStoreys.GetFloor(trial, index);
+                        double from = fullLength
+                            ? (horizontal ? floor.Perimeter.Min(p => p.X)
+                                : floor.Perimeter.Min(p => p.Y)) : axisMin;
+                        double to = fullLength
+                            ? (horizontal ? floor.Perimeter.Max(p => p.X)
+                                : floor.Perimeter.Max(p => p.Y)) : axisMax;
+                        List<Point2> shape = horizontal
+                            ? [new(from,near),new(to,near),
+                                new(to,far),new(from,far)]
+                            : [new(near,from),new(far,from),
+                                new(far,to),new(near,to)];
+                        if (!FloorGeometry.IsWithinPolygon(shape, floor.Perimeter))
+                        {
+                            fitted = false;
+                            break;
+                        }
+                        floor.Rooms.Add(new RoomDefinition
+                        {
+                            Name = "Hallway 1", Type = "Hallway", Outline = shape
+                        });
+                        BuildingStoreys.SetFloor(trial, index, floor);
+                        if (!BuildingStoreys.Validate(trial, out _))
+                        {
+                            fitted = false;
+                            break;
+                        }
+                    }
+                    if (!fitted) continue;
+
+                    if (AddStairs(trial, [lower, lower + 1],
+                            out var connected) != 1) continue;
+                    updated = connected;
+                    reason = "";
+                    return true;
+                }
+            }
+        }
+        reason = "The two blank floors overlap, but no aligned hallway and " +
+            "stair flight with clear landings could be fitted. " +
+            "Try a wider shared area or simplify a sharp indentation.";
+        return false;
+    }
+
     public static int AddStairs(BuildingDocument building,
         IReadOnlyCollection<int> selectedFloors, out BuildingDocument updated)
     {
