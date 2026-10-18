@@ -4,6 +4,39 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.35 — Meaningfully different room layouts on each regeneration (development)
+
+Previously, Regenerate chose a new random seed but the medieval
+hall-house planner did **not use that seed**. It always tried the same
+first valid orientation and room configuration, producing the same
+plan repeatedly with new room identifiers.
+
+- **Seeded architectural choices:** regenerated residences now vary
+  which end holds service rooms, hall orientation where supported,
+  kitchen-to-storage partition position, pantry versus buttery,
+  screens-passage width, service-bay depth, private parlour inclusion
+  and parlour size. Every accepted option still passes whole-building
+  geometry, stair and door validation.
+- **Different room layouts, not different IDs:** the Regenerate button
+  compares the proposed room roles and geometry with both the accepted
+  building and any previous preview. It retries with fresh seeds up
+  to 10 times rather than presenting an identical arrangement.
+- **Honest failure on overconstrained footprints:** if a different
+  valid room layout cannot be found around the retained perimeter,
+  stairs and chosen features, the editor reports this rather than
+  pretending a fresh identical suggestion is a new design.
+- **Reproducibility:** a specified seed gives the same historical
+  arrangement when the building constraints are unchanged. The
+  unseeded direct planner remains compatible with its earlier
+  deterministic behaviour.
+- **Historical purpose preserved:** pantry and buttery are both
+  service spaces, usually with a single internal door. A buttery
+  does not automatically receive a living-room window.
+- **Regression tests** exercise multiple seeds and actual
+  replacement of an already accepted house, verifying changes to
+  genuine room geometry, service-room roles and/or room count.
+  Existing stair, hand-drawn-room and whole-building checks remain.
+
 ## v0.34 — A historical hall-house layout, not a central corridor (development)
 
 The editor now offers **Medieval hall-house layout (residences)** under
