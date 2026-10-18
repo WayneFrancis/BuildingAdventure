@@ -30,7 +30,8 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
 - **Fireplace location and size:** heating is placed inside a living,
   common, cooking or other inhabited room if there is a suitable wall,
   **never inside a hallway**. The domestic schematic fireplace mass is
-  approx. 1.4m along a wall by 0.7m deep, adjusted to the wall direction.
+  approx. 1.4m along a wall by 0.7m deep for a modest residence,
+  increasing to 2.4m by 0.9m for an inn's large communal hearth.
   A shared chimney crosses the floors at one world coordinate; the
   drawing labels a room's hearth *FIREPLACE* and a nonhabitable space's
   chimney continuation *FLUE*. Since period hearths ranged from open
@@ -48,6 +49,12 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
   - Open hearths, wall fireplaces and chimney history:
     https://www.medieval.eu/open-hearths-ovens-fireplaces/
     and https://www.wealddown.co.uk/museum-news/history-of-the-hearth/
+  - Large medieval kitchen hearths are not a fixed size: Historic England
+    records a circa 3m fireplace at Padley Hall and a circa 3.5m-wide
+    fireplace at Scargill. Our 1.4m/2.4m widths are tabletop-scaled
+    planning defaults, not assertions about a historical average:
+    https://historicengland.org.uk/listing/the-list/list-entry/1017587
+    https://historicengland.org.uk/listing/the-list/list-entry/1017320
 
 ## v0.21 — Tabletop grids, habitable-room glazing, landings and chimney stacks (development branch)
 
