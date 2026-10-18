@@ -27,7 +27,7 @@ internal sealed class EditorLayoutSettings
     public bool GenerateCorridors { get; set; } = true;
     public bool GenerateDoors { get; set; } = true;
     public bool GenerateWindows { get; set; } = true;
-    public bool GenerateStairs { get; set; }
+    public bool GenerateStairs { get; set; } = true;
     public bool GenerateFireplaces { get; set; }
     public int GeneratorPurposeIndex { get; set; }
 
