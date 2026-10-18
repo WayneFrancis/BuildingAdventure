@@ -621,7 +621,37 @@ public static class BuildingConnectivity
             {
                 var upstairsHall = upper.Rooms.FirstOrDefault(r => r.Type == "Hallway");
                 if (upstairsHall is null) continue;
-                foreach (var stair in HallwayStairCandidates(hallway, lower))
+                // Upper storeys may have a smaller or offset perimeter.
+                // In that case use the common rectangle of the two halls
+                // as a second candidate bay rather than sampling only the
+                // lower hall and repeatedly failing upper-floor clearance.
+                double jointLeft = Math.Max(hallway.Outline.Min(p => p.X),
+                    upstairsHall.Outline.Min(p => p.X));
+                double jointRight = Math.Min(hallway.Outline.Max(p => p.X),
+                    upstairsHall.Outline.Max(p => p.X));
+                double jointTop = Math.Max(hallway.Outline.Min(p => p.Y),
+                    upstairsHall.Outline.Min(p => p.Y));
+                double jointBottom = Math.Min(hallway.Outline.Max(p => p.Y),
+                    upstairsHall.Outline.Max(p => p.Y));
+                IEnumerable<StaircaseDefinition> options =
+                    HallwayStairCandidates(hallway, lower);
+                if (jointRight - jointLeft >= 2 && jointBottom - jointTop >= 2)
+                {
+                    var common = new RoomDefinition
+                    {
+                        Name = "Common circulation area", Type = "Hallway",
+                        Outline =
+                        [
+                            new(jointLeft, jointTop),
+                            new(jointRight, jointTop),
+                            new(jointRight, jointBottom),
+                            new(jointLeft, jointBottom)
+                        ]
+                    };
+                    options = HallwayStairCandidates(common, lower)
+                        .Concat(options);
+                }
+                foreach (var stair in options)
                 {
                     var reservations = new List<List<Point2>>
                     {
