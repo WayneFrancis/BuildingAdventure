@@ -3987,5 +3987,53 @@ Check("Hall-only multi-floor stair suggestions never block a pre-existing corrid
     Assert(source.Staircases.Count == 0);
 });
 
+Check("Stairs in a new three-level residence hug an exterior stairwell wall", () =>
+{
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true, Stairs = true,
+        Purpose = BuildingUse.Residence
+    };
+    foreach (int seed in new[] { 812, 1783, 42024 })
+    {
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(3, seed, options,
+            out var proposal, out var reason), reason);
+        Assert(BuildingStoreys.FloorCount(proposal.Building) == 3);
+        foreach (var stair in proposal.Building.Staircases)
+        {
+            var lower = BuildingStoreys.GetFloor(proposal.Building, stair.LowerFloorIndex);
+            var bay = lower.Rooms.Single(r => r.Type == "Stairwell");
+            var flight = BuildingStoreys.StairFootprint(stair);
+            double left = bay.Outline.Min(p => p.X), right = bay.Outline.Max(p => p.X);
+            double top = bay.Outline.Min(p => p.Y), bottom = bay.Outline.Max(p => p.Y);
+            double nearest = new[]
+            {
+                flight.Min(p => p.X) - left, right - flight.Max(p => p.X),
+                flight.Min(p => p.Y) - top, bottom - flight.Max(p => p.Y)
+            }.Min();
+            Assert(nearest >= 0.19 && nearest <= 0.21,
+                "The flight must be set 0.2m inside its stairwell wall.");
+            Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+        }
+    }
+});
+
+Check("Automatic stairs without corridors no longer float in the middle of the building", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    int added = BuildingConnectivity.AddStairs(two, [0, 1], out var proposal);
+    Assert(added == 1);
+    var stair = proposal.Staircases.Single();
+    var flight = BuildingStoreys.StairFootprint(stair);
+    double gap = new[]
+    {
+        flight.Min(p => p.X), 10 - flight.Max(p => p.X),
+        flight.Min(p => p.Y), 8 - flight.Max(p => p.Y)
+    }.Min();
+    Assert(gap >= 0.19 && gap <= 0.21, "A staircase must hug a perimeter wall.");
+    Assert(BuildingStoreys.Validate(proposal, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
