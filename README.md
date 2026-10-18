@@ -4,6 +4,46 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.43 — example9: missing stepped-edge rooms and stranded stairhead (development)
+
+The accepted `example9.json` shows two independent faults on an
+L-shaped two-storey house with a **98.25m²** exterior footprint:
+
+- Only **94.875m²** of each floor is allocated. **3.375m²** along the
+  stepped right-hand wall is blank, including a half-metre strip beside
+  the front living room / upper bedroom and an unassigned ledge at the
+  beginning of the cross passage.
+- The horizontal staircase occupies the near exterior wing. Its upper
+  arrival landing ends in a dead-end pocket; the only possible route
+  back around the flight passes through a **0.30m** gap between the
+  stair opening and a room wall. A valid staircase footprint alone
+  does not guarantee access to the upstairs hall.
+
+The new **`SteppedLayoutFinisher`** repairs this type of generated draft:
+
+- Shift the near side-room boundary from **1.5m to 2.3m** behind the
+  original flight, allowing a **1.1m continuous walkable bypass** from
+  the upper landing to the main corridor; leave the flight, its opening
+  and both end landings where they were.
+- Extend the front room to the **actual notched exterior** (a compact
+  six-vertex L outline), then extend the cross passage into the short
+  sliver where the notch begins. The floor now allocates **98.25m²**
+  without adding a useless 0.5m-wide room.
+- Validate the *entire* resulting building and leave existing
+  exterior openings, chimneys, fireplace-room links and room identity
+  unchanged. Never reshape pre-existing user-authored rooms. The
+  transform is idempotent.
+- Run this conservative completion on both whole-building and
+  selected-floor generation, with or without auto-generated doors.
+- Regression tests reconstruct both floors, original staircase,
+  all doors/windows and fireplace from `example9.json`; additionally
+  test **four orientations × two mirrored versions** of the stepped
+  exterior.
+
+This correction applies during **generation/regeneration**; merely
+opening an already saved floorplan does not alter it. Other types
+of irregular footprints may still need additional archetype rules.
+
 ## v0.42 — Accessible side-stair approach from example7/example8 (development)
 
 The supplied `example7(1).json` shows an awkward generated side stair:
