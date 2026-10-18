@@ -4,6 +4,28 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.38 — Door selection matches the visible symbol (development)
+
+Clicking a rendered door's open leaf previously selected the room beneath
+it. The Select tool recognised door hits only 11–12 screen pixels from its
+centre marker, despite drawing an open swing into the room. Room vertices
+also took priority over the door selection fallback, and proposed-room
+overlays could intercept clicks on actual doors.
+
+- Door hit-testing now covers the centre, the wall opening and the full
+  **swinging leaf**, using a small pixel-based tolerance independent of zoom.
+- The nearest valid door is selected where symbols are close; invalid or
+  stale openings without a real supporting wall are ignored.
+- In Select mode, existing doors take priority over room vertices and
+  polygons. Double-clicking a door cannot accidentally insert a room
+  corner into its supporting wall.
+- Pending room suggestions no longer intercept a click on an existing
+  door. Room selection still works outside the visible door symbol.
+- Drag and resize handles for the selected door remain unchanged.
+- Regression tests check the leaf, gap, centre, zoom levels, diagonal
+  walls, overlapping selection priorities and misses in ordinary room
+  space.
+
 ## v0.37 — Compact two-storey RPG house archetype (development)
 
 The default two-floor residence suggestion in the desktop editor can now
