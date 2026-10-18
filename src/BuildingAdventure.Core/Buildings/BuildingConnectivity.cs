@@ -439,6 +439,9 @@ public static class BuildingConnectivity
                 if (matchingHall is null ||
                     !ShareWall(outline, matchingHall.Outline, 2.0))
                 {
+                    lastError = $"Hall/stair adjacency mismatch on floor {index}; " +
+                        $"hall={matchingHall?.Outline.Count ?? 0} vertices; " +
+                        $"stair bay={sideStart:0.#}..{sideEnd:0.#} / {from:0.#}..{to:0.#}.";
                     roomsFit = false;
                     break;
                 }
