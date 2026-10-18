@@ -7204,5 +7204,154 @@ Check("example9 restores 1.1m route to upper stairhead and assigns right exterio
     }
 });
 
+Check("example10 broad L-house generates kitchen and properly sized dining and bedrooms", () =>
+{
+    List<Point2> perimeter =
+    [
+        new(0,0),new(11.5,0),new(11.5,5),
+        new(13.5,5),new(13.5,8.5),new(0,8.5)
+    ];
+    var flight=new StaircaseDefinition
+    {
+        LowerFloorIndex=0,Centre=new(2.5,0.7),
+        Length=2.8,Width=1,RotationDegrees=90,LandingLength=1
+    };
+    var blank=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=perimeter.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=perimeter.ToList()}],
+        Staircases=[flight.Copy()]
+    };
+    Assert(BuildingStoreys.Validate(blank,out var reason),reason);
+    var distinctLayouts=new List<BuildingDocument>();
+    foreach(int seed in new[]{7,11,26,41,71,101})
+    {
+        Assert(BalancedSteppedRpgHousePlanner.TryGenerate(blank,seed,
+            out var house,out reason),
+            "Balanced example10 generation seed "+seed+": "+reason);
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        Assert(house.Staircases.Single().Id==flight.Id &&
+            house.Staircases.Single().Centre.DistanceTo(flight.Centre)<1e-8,
+            "Never silently reposition the user's accepted staircase.");
+        var lower=BuildingStoreys.GetFloor(house,0);
+        var upper=BuildingStoreys.GetFloor(house,1);
+        Assert(lower.Rooms.Count(r=>r.Type=="Living room")==1,
+            "Do not generate two living rooms but no kitchen.");
+        Assert(lower.Rooms.Count(r=>r.Type=="Kitchen")==1);
+        Assert(lower.Rooms.Any(r=>r.Type=="Dining room"));
+        Assert(lower.Rooms.Any(r=>r.Type=="Study"));
+        Assert(upper.Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(upper.Rooms.Any(r=>r.Type=="Sitting room"));
+        Assert(upper.Rooms.Count(r=>r.Type=="Bathroom")==1);
+        var hall=lower.Rooms.Single(r=>r.Type=="Hallway");
+        Assert(PolygonGeometry.Area(hall.Outline)<14,
+            "Common room should contain the stairs instead of a 37m² hallway.");
+        double ShortSide(RoomDefinition r)=>
+            Math.Min(r.Outline.Max(p=>p.X)-r.Outline.Min(p=>p.X),
+                r.Outline.Max(p=>p.Y)-r.Outline.Min(p=>p.Y));
+        Assert(ShortSide(lower.Rooms.Single(r=>r.Type=="Dining room"))>=3.05,
+            "RPG dining room must be at least 10 feet wide, not 5.7 feet.");
+        Assert(ShortSide(lower.Rooms.Single(r=>r.Type=="Study"))>=3.05,
+            "Study must be a practical room, not a 1.75m strip.");
+        var bedrooms=upper.Rooms.Where(r=>r.Type=="Bedroom").ToArray();
+        Assert(bedrooms.All(r=>ShortSide(r)>=3.05),
+            "Every bedroom must have at least 10 feet usable width.");
+        var bedroomAreas=bedrooms.Select(r=>
+            PolygonGeometry.Area(r.Outline)).ToArray();
+        Assert(bedroomAreas.Max()/bedroomAreas.Min()<1.75,
+            "Bedrooms should be comparably sized, not 34m² versus 9m².");
+        Assert(bedroomAreas.Max()<27);
+        var downstairsLiving=lower.Rooms.Single(r=>r.Type=="Living room");
+        var upstairsSitting=upper.Rooms.Single(r=>r.Type=="Sitting room");
+        var stairReservations=new[] {BuildingStoreys.StairFootprint(flight),
+            BuildingStoreys.StairOpeningFootprint(flight)}
+            .Concat(BuildingStoreys.StairLandings(flight));
+        Assert(stairReservations.All(part=>
+            FloorGeometry.IsWithinPolygon(part,downstairsLiving.Outline) &&
+            FloorGeometry.IsWithinPolygon(part,upstairsSitting.Outline)),
+            "Staircase belongs in the downstairs common room and upstairs sitting room.");
+        bool On(Point2 p,IReadOnlyList<Point2> ring)=>
+            Enumerable.Range(0,ring.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(p,
+                    ring[i],ring[(i+1)%ring.Count]).DistanceTo(p)<1e-5);
+        foreach(var index in new[]{0,1})
+        {
+            var floor=BuildingStoreys.GetFloor(house,index);
+            var corridor=floor.Rooms.Single(r=>r.Type=="Hallway");
+            foreach(var room in floor.Rooms.Where(r=>r.Id!=corridor.Id))
+                Assert(floor.Doors.Any(d=>
+                    On(d.Centre,room.Outline) &&
+                    On(d.Centre,corridor.Outline)),
+                    room.Name+" must have independent corridor access on floor "+index);
+            Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(floor))<0.01,
+                "Every part of the L-shaped exterior must be allocated.");
+        }
+        Assert(!lower.Rooms.Where(r=>r.Type!="Hallway")
+            .All(g=>upper.Rooms.Any(u=>g.Outline.SequenceEqual(u.Outline))),
+            "Both storeys should not be copies of identical room divisions.");
+        if (!distinctLayouts.Any(p=>
+            BuildingGenerator.SameRoomLayout(p,house,[0,1])))
+            distinctLayouts.Add(house);
+    }
+    Assert(distinctLayouts.Count>=2,"Several seeds should vary the balanced plan.");
+    Assert(blank.Rooms.Count==0 &&
+        blank.UpperFloors[0].Rooms.Count==0);
+});
+
+Check("Regenerate example10 accepted L-house through balanced room-first archetype", () =>
+{
+    List<Point2> perimeter =
+    [
+        new(0,0),new(11.5,0),new(11.5,5),
+        new(13.5,5),new(13.5,8.5),new(0,8.5)
+    ];
+    var oldStair=new StaircaseDefinition
+    {
+        LowerFloorIndex=0,Centre=new(2.5,0.7),
+        Length=2.8,Width=1,RotationDegrees=90,LandingLength=1
+    };
+    List<Point2> R(double x0,double y0,double x1,double y1)=>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var original=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=perimeter.ToList(),
+        Rooms=[
+            new RoomDefinition{Name="Living room",Type="Living room",
+                Outline=R(5,0,11.5,5)},
+            new RoomDefinition{Name="Living room 2",Type="Living room",
+                Outline=R(0,2.3,3.6,5.25)}
+        ],
+        UpperFloors=[new StoreyDefinition
+        {
+            Perimeter=perimeter.ToList(),
+            Rooms=[
+                new RoomDefinition{Name="Bedroom",Type="Bedroom",
+                    Outline=R(5,0,11.5,5)}
+            ]
+        }],
+        Staircases=[oldStair]
+    };
+    // Regeneration must delete the old draft's rooms, so it can plan
+    // both levels independently around the SAME accepted stair.
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Stairs=true,CompactRpgHouseLayout=true
+    };
+    Assert(BuildingGenerator.TryRegenerate(original,[0,1],28,options,
+        out var suggestion,out var reason),reason);
+    Assert(suggestion.Description.Contains("Balanced L-shaped RPG house"),
+        "Wide L-shaped houses must prefer the balanced planner.");
+    var proposed=suggestion.Building;
+    Assert(BuildingStoreys.Validate(proposed,out reason),reason);
+    Assert(proposed.Staircases.Single().Id==oldStair.Id);
+    Assert(proposed.Rooms.Count(r=>r.Type=="Kitchen")==1);
+    Assert(proposed.Rooms.Count(r=>r.Type=="Living room")==1);
+    Assert(proposed.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+    Assert(original.Rooms.Count==2 &&
+        !original.Rooms.Any(r=>r.Type=="Kitchen"),
+        "Regeneration must never mutate the accepted document.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
