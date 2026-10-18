@@ -4,6 +4,46 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.42 — Accessible side-stair approach from example7/example8 (development)
+
+The supplied `example7(1).json` shows an awkward generated side stair:
+the 10.73m² Utility room takes the middle of the left wing while the
+33.77m² L-shaped Hallway snakes around its back. There is a narrow
+stair-side squeeze rather than a direct approach to the lower landing.
+The companion `example8.json` moves the service room down to the end
+of the house. That is the more usable RPG-house arrangement.
+
+- **Room placement:** where this exact generated eight-corner
+  corridor/service-wing pattern is detected, replace it with a short,
+  **1.8m-deep cross passage** and an approximately **1.35m-wide
+  exterior-wall stair aisle**. Shift the remaining Utility (or the
+  upstairs Bathroom) into a larger rectangular rear room.
+- **On this 108m² footprint:** circulation shrinks from **33.77m²**
+  to **28.02m²**; the Utility and Bathroom grow from **10.73m²** to
+  **16.48m²**. The entire footprint stays accounted for.
+- **Avoid another stair squeeze:** the cross passage overlaps the
+  *lower* landing so a person approaches its foot directly, without
+  having to squeeze beside the flight. The connecting hall polygon
+  includes both existing landing rectangles on both floors.
+- **Keep access functional:** merely preserving a door's coordinate
+  can accidentally change a former Hallway-to-Study doorway into a
+  Study-to-Bathroom doorway. Rebuild doorway connections affected by
+  the room shift, and require every room to have its own door into
+  the new hallway before accepting the replacement.
+- **Safety:** preserve the actual stair footprint, opening, chimney,
+  existing kitchen, front door and all unaffected rooms. Require
+  every resulting floor to validate, retain a complete internal
+  door network, and never reshape previously accepted user rooms
+  unless those floors are explicitly regenerated.
+- **Scope:** this is an additional *generated-layout* correction for
+  an existing single side-stair-wing pattern. Other irregular
+  perimeter plans continue through the broader RPG archetypes.
+- **Observed fireplace/unassigned-space report:** both source files
+  allocate all 108m² on both levels; the ground-floor chimney is
+  attached to the Kitchen. No nonzero unassigned region is encoded
+  in either upload, so any remaining discrepancy in the editor
+  will need an additional screenshot or newly exported file.
+
 ## v0.41 — Physically accessible L-house stairs and opposite up/down arrows (development)
 
 The accepted `example6(3).json` makes two stair problems visible:
