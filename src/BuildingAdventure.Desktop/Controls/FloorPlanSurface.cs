@@ -155,6 +155,13 @@ public sealed class FloorPlanSurface : FrameworkElement
     /// </summary>
     public bool UsesGlobalHistory { get; set; }
     public double PixelsPerMetre => _pixelsPerMetre;
+    public int GridFeet { get; private set; }
+
+    public void SetGridFeet(int feet)
+    {
+        GridFeet = feet is 5 or 10 ? feet : 0;
+        InvalidateVisual();
+    }
     public bool IsDrawing => _draft.Count > 0;
     public bool HasPendingStep =>
         _draft.Count > 0 || _partitionStart.HasValue || _mergePrimaryRoomId.HasValue;
@@ -1150,21 +1157,26 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private void DrawGrid(DrawingContext dc)
     {
+        // The world is stored in metres; a tabletop square is exactly
+        // 5 or 10 feet, never rounded to a convenient metric approximation.
+        double cell = GridFeet == 0 ? 1 : GridFeet * 0.3048;
+        double pixelCell = cell * _pixelsPerMetre;
+        if (pixelCell < 5) return; // Avoid unreadably dense lines.
         var minor = new Pen(new SolidColorBrush(Color.FromRgb(238, 241, 245)), 1);
         var major = new Pen(new SolidColorBrush(Color.FromRgb(212, 221, 231)), 1);
-        int minX = (int)Math.Floor(-_origin.X / _pixelsPerMetre);
-        int maxX = (int)Math.Ceiling((ActualWidth - _origin.X) / _pixelsPerMetre);
-        int minY = (int)Math.Floor(-_origin.Y / _pixelsPerMetre);
-        int maxY = (int)Math.Ceiling((ActualHeight - _origin.Y) / _pixelsPerMetre);
+        int minX = (int)Math.Floor(-_origin.X / pixelCell);
+        int maxX = (int)Math.Ceiling((ActualWidth - _origin.X) / pixelCell);
+        int minY = (int)Math.Floor(-_origin.Y / pixelCell);
+        int maxY = (int)Math.Ceiling((ActualHeight - _origin.Y) / pixelCell);
         for (int x = minX; x <= maxX; x++)
         {
-            double sx = x * _pixelsPerMetre + _origin.X;
+            double sx = x * pixelCell + _origin.X;
             dc.DrawLine(x % 5 == 0 ? major : minor,
                         new Point(sx, 0), new Point(sx, ActualHeight));
         }
         for (int y = minY; y <= maxY; y++)
         {
-            double sy = y * _pixelsPerMetre + _origin.Y;
+            double sy = y * pixelCell + _origin.Y;
             dc.DrawLine(y % 5 == 0 ? major : minor,
                         new Point(0, sy), new Point(ActualWidth, sy));
         }
@@ -2829,11 +2841,15 @@ public sealed class FloorPlanSurface : FrameworkElement
         foreach (var room in _rooms) yield return room.Outline;
     }
 
-    private Point2 SnapToGridPoint(Point2 point) =>
-        !SnapToGrid || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)
-            ? point
-            : new Point2(Math.Round(point.X * 2, MidpointRounding.AwayFromZero) / 2,
-                         Math.Round(point.Y * 2, MidpointRounding.AwayFromZero) / 2);
+    private Point2 SnapToGridPoint(Point2 point)
+    {
+        if (!SnapToGrid || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            return point;
+        double step = GridFeet == 0 ? 0.5 : GridFeet * 0.3048;
+        return new Point2(
+            Math.Round(point.X / step, MidpointRounding.AwayFromZero) * step,
+            Math.Round(point.Y / step, MidpointRounding.AwayFromZero) * step);
+    }
 
     private static bool IsSamePoint(Point2 a, Point2 b) => a.DistanceTo(b) < 1e-7;
     private Point2 ToWorld(Point point) =>
