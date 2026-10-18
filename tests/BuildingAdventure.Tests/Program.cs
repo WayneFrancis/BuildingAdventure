@@ -6636,6 +6636,28 @@ Check("Regenerate stepped example6 house without another 77-percent hallway", ()
         CompactRpgHouseLayout=true,Windows=false,Fireplaces=false
     };
     Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    Assert(SteppedRpgHousePlanner.TryGenerate(source,7,
+        out var architected,out reason),
+        "Direct two-floor stepped RPG layout: "+reason);
+    Assert(BuildingStoreys.Validate(architected,out reason),reason);
+    Assert(architected.Rooms.Count==5 &&
+        architected.UpperFloors[0].Rooms.Count==5);
+    Assert(architected.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+    Assert(architected.Rooms.Any(r=>r.Type=="Living room") &&
+        architected.Rooms.Any(r=>r.Type=="Kitchen"));
+    Assert(architected.Staircases.Single().Id==source.Staircases.Single().Id);
+    Assert(architected.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))>=88.74 &&
+        architected.UpperFloors[0].Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))>=88.74,
+        "Direct architecture must allocate the entire stepped perimeter.");
+    var withoutStairs=BuildingStoreys.Copy(source);
+    withoutStairs.Staircases.Clear();
+    Assert(SteppedRpgHousePlanner.TryGenerate(withoutStairs,7,
+        out var newlyStaired,out reason),
+        "Unconstrained stepped house should generate its own stair: "+reason);
+    Assert(newlyStaired.Staircases.Count==1);
+    Assert(BuildingStoreys.Validate(newlyStaired,out reason),reason);
+    Assert(source.Rooms.Count==0 && source.Staircases.Count==1,
+        "The source blank building and existing staircase must remain unchanged.");
     var attempts=new List<string>();
     int valid=0;
     foreach(int seed in new[]{7,12,17,23,37,43,61,77,101})
