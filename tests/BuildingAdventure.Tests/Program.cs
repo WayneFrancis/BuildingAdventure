@@ -4548,5 +4548,77 @@ Check("Living room with a street entrance still gets an internal hallway door", 
     Assert(BuildingStoreys.Validate(updated, out reason), reason);
 });
 
+Check("New two-storey homes contain a connected flight and a single open stair hall", () =>
+{
+    foreach (int gridFeet in new[] { 0, 5, 10 })
+    foreach (int seed in new[] { 812, 1783 })
+    {
+        var options = new GenerationOptions
+        {
+            Rooms = true, Corridors = true, Doors = true,
+            Stairs = true, Windows = true, Purpose = BuildingUse.Residence
+        };
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(2, seed, options,
+            out var draft, out var reason, gridFeet), reason);
+        Assert(BuildingStoreys.FloorCount(draft.Building) == 2);
+        Assert(draft.Building.Staircases.Count == 1,
+            "One flight must connect the two storeys.");
+        foreach (int index in new[] { 0, 1 })
+        {
+            var floor = BuildingStoreys.GetFloor(draft.Building, index);
+            var hall = floor.Rooms.Single(r => r.Type == "Hallway");
+            Assert(PolygonGeometry.ContainsPoint(
+                hall.Outline, draft.Building.Staircases.Single().Centre),
+                "The stair alcove must form part of the open hallway.");
+            Assert(!floor.Rooms.Any(r => r.Type == "Stairwell"));
+        }
+        Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
+    }
+});
+
+Check("Exact hallway ends meet custom imperial perimeter walls without narrow gaps", () =>
+{
+    foreach (double width in new[] { 10.668, 12.192, 13.716 })
+    {
+        var doc = new BuildingDocument
+        {
+            GridFeet = 5,
+            Perimeter = [new(0,0),new(width,0),
+                new(width,9.144),new(0,9.144)]
+        };
+        Assert(BuildingConnectivity.TryAddCorridor(doc, 0,
+            out var placed, out var hallId));
+        var hall = placed.Rooms.Single(r => r.Id == hallId);
+        Assert(Math.Abs(hall.Outline.Min(p => p.X)) < 1e-8);
+        Assert(Math.Abs(hall.Outline.Max(p => p.X) - width) < 1e-8);
+        Assert(BuildingStoreys.Validate(placed, out var reason), reason);
+    }
+});
+
+Check("Complete opening span, not just centre, must clear kitchen fireplace", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(12,0),new(12,8),new(0,8)],
+        Windows = [new WindowDefinition
+        {
+            Centre = new Point2(5.4, 0), Width = 1.2
+        }],
+        Chimneys = [new ChimneyDefinition
+        {
+            Centre = new Point2(4, 0.37),
+            Width = 1.4, Depth = 0.7
+        }]
+    };
+    Assert(BuildingStoreys.WindowConflictsWithChimney(building, 0,
+        building.Windows.Single(), building.Chimneys.Single()));
+    Assert(!BuildingStoreys.Validate(building, out var reason));
+    Assert(reason.Contains("window", StringComparison.OrdinalIgnoreCase));
+    building.Windows[0].Centre = new Point2(8, 0);
+    Assert(!BuildingStoreys.WindowConflictsWithChimney(building, 0,
+        building.Windows.Single(), building.Chimneys.Single()));
+    Assert(BuildingStoreys.Validate(building, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
