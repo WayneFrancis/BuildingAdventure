@@ -6271,5 +6271,75 @@ Check("Regeneration preserves compact RPG stairs and changes selected room geome
     Assert(accepted.Rooms.Count==6);
 });
 
+Check("Selecting a door works on its visible swing leaf far from the centre", () =>
+{
+    var wall = new WallSegment(new(5,0), new(5,8), false);
+    var door = new DoorDefinition { Centre = new(5,4), Width=0.9 };
+    var walls = new List<WallSegment> { wall };
+    // Drawn door: hinge=(5,3.55), open leaf swings left to (4.1,3.55).
+    // This point lies inside the adjoining room and 29px from the
+    // centre at 40px/m, beyond the old 11px centre-only hit area.
+    var onLeaf = new Point2(4.28,3.55);
+    Assert(onLeaf.DistanceTo(door.Centre)*40>12,
+        "The regression cursor must miss the old centre hit target.");
+    Assert(DoorHitTesting.FindDoorAt([door],walls,onLeaf,40)?.Id==door.Id,
+        "Clicking the drawn door leaf should select the door, not the room.");
+    Assert(DoorHitTesting.FindDoorAt([door],walls,new(5,4.2),40)?.Id==door.Id,
+        "Clicking within the door gap should select the door.");
+    Assert(DoorHitTesting.FindDoorAt([door],walls,new(5,4),40)?.Id==door.Id,
+        "Clicking the centre marker should still select the door.");
+    Assert(DoorHitTesting.FindDoorAt([door],walls,new(3,5),40) is null,
+        "Clicking empty room space should not pick a distant door.");
+    Assert(DoorHitTesting.FindDoorAt([door],walls,new(5.4,3.55),40) is null,
+        "The door leaf only swings on one side; don't capture the opposite room.");
+});
+
+Check("Door leaf selection uses stable pixel tolerance at different zoom levels", () =>
+{
+    var wall = new WallSegment(new(5,0),new(5,8),false);
+    var door = new DoorDefinition { Centre=new(5,4),Width=0.9 };
+    foreach (double zoom in new[] { 20.0, 40.0, 80.0, 150.0 })
+    {
+        var nearLeaf = new Point2(4.28,3.55 + 8.0/zoom);
+        Assert(DoorHitTesting.FindDoorAt([door],[wall],nearLeaf,zoom)?.Id==door.Id,
+            $"Door should remain selectable 8px from its leaf at zoom {zoom}.");
+        var beyond = new Point2(4.28,3.55 + 25.0/zoom);
+        if (zoom >= 40)
+            Assert(DoorHitTesting.FindDoorAt([door],[wall],beyond,zoom) is null,
+                $"Door hit target should not swallow broad room space at zoom {zoom}.");
+    }
+});
+
+Check("Door selection chooses nearest door and excludes stale geometry", () =>
+{
+    var wall = new WallSegment(new(5,0),new(5,8),false);
+    var first = new DoorDefinition {Centre=new(5,2),Width=0.9};
+    var second = new DoorDefinition {Centre=new(5,6),Width=0.9};
+    var walls = new List<WallSegment>{wall};
+    Assert(DoorHitTesting.FindDoorAt([first,second],walls,
+        new Point2(4.3,5.55),40,first.Id)?.Id==second.Id,
+        "Previously selected farther door must not steal the next door click.");
+    var stale = new DoorDefinition {Centre=new(25,25),Width=0.9};
+    Assert(DoorHitTesting.FindDoorAt([stale],walls,
+        new Point2(25,25),40) is null,
+        "Only doors supported by a real wall can be hit.");
+    Assert(DoorHitTesting.FindDoorAt([first],walls,
+        new Point2(5,2),0) is null,
+        "Invalid zoom factor should be handled safely.");
+});
+
+Check("Door swing hit testing follows diagonal door-support walls", () =>
+{
+    var wall = new WallSegment(new(1,1),new(5,5),false);
+    var door = new DoorDefinition {Centre=new(3,3),Width=1.0};
+    double dx=1/Math.Sqrt(2.0), dy=dx;
+    var hinge = new Point2(3-dx*0.5,3-dy*0.5);
+    var end = new Point2(hinge.X-dy,hinge.Y+dx);
+    var onLeaf = new Point2((hinge.X+end.X)/2,
+        (hinge.Y+end.Y)/2);
+    Assert(DoorHitTesting.FindDoorAt([door],[wall],onLeaf,90)?.Id==door.Id,
+        "A diagonal door's open leaf should be selectable like a straight one.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
