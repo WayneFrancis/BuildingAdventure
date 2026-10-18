@@ -848,6 +848,83 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// Large, shallow generated stores in front of bedrooms or dining rooms
+    /// are an artefact of rectangular leftover filling. They are not
+    /// plausible household service rooms when the kitchen/work areas are
+    /// elsewhere. Prefer a larger L-shaped primary room with independent
+    /// access over two 14m² storage barriers.
+    ///
+    /// Small entrance stores (e.g. 6m² buttery/pantry beside a screen
+    /// passage) are deliberately retained. Hand-authored rooms and other
+    /// floors are protected.
+    /// </summary>
+    public static int AbsorbMisplacedGeneratedStores(BuildingDocument source,
+        int floorIndex, IReadOnlyCollection<Guid> originalRoomIds,
+        out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        var original = originalRoomIds.ToHashSet();
+        int absorbed = 0;
+        for (int pass = 0; pass < 8; pass++)
+        {
+            var floor = BuildingStoreys.GetFloor(updated, floorIndex);
+            var hall = floor.Rooms.FirstOrDefault(r =>
+                r.Type == "Hallway" && !original.Contains(r.Id));
+            if (hall is null) break;
+            bool merged = false;
+            foreach (var store in floor.Rooms.Where(r =>
+                !original.Contains(r.Id) &&
+                r.Type is ("Storeroom" or "Storage" or "Stockroom") &&
+                PolygonGeometry.Area(r.Outline) >= 10 &&
+                BuildingConnectivity.ShareWall(hall.Outline, r.Outline, 1.0))
+                .ToArray())
+            {
+                // Stores serving actual kitchens/workrooms are meaningful:
+                // don't pull the pantry out from under a cook.
+                if (floor.Rooms.Any(r =>
+                    r.Type is "Kitchen" or "Workshop" or "Scullery" or
+                        "Brewery" or "Bakehouse" &&
+                    BuildingConnectivity.ShareWall(
+                        r.Outline, store.Outline, 1.0)))
+                    continue;
+
+                var host = floor.Rooms.FirstOrDefault(r =>
+                    !original.Contains(r.Id) &&
+                    r.Type is ("Bedroom" or "Dining room" or
+                        "Study" or "Living room" or "Office") &&
+                    BuildingConnectivity.ShareWall(
+                        r.Outline, store.Outline, 1.0));
+                if (host is null) continue;
+
+                // Only generated store doors may be removed. Other doors
+                // stay in place; a door along the dissolved partition is
+                // not a real opening after the room is enlarged.
+                var trial = BuildingStoreys.Copy(updated);
+                var edit = BuildingStoreys.GetFloor(trial, floorIndex);
+                edit.Doors.RemoveAll(d => Enumerable.Range(0, store.Outline.Count)
+                    .Any(i => PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                        store.Outline[i],
+                        store.Outline[(i + 1) % store.Outline.Count])
+                        .DistanceTo(d.Centre) < 1e-5));
+                if (!RoomMerging.TryMergeRooms(edit, host.Id, store.Id,
+                        out var joined, out _)) continue;
+                BuildingStoreys.SetFloor(trial, floorIndex, joined);
+                if (!BuildingStoreys.Validate(trial, out _)) continue;
+                BuildingConnectivity.AddDoors(trial, floorIndex,
+                    out var accessible);
+                if (!BuildingStoreys.Validate(accessible, out _))
+                    continue;
+                updated = accessible;
+                absorbed++;
+                merged = true;
+                break;
+            }
+            if (!merged) break;
+        }
+        return absorbed;
+    }
+
+    /// <summary>
     /// Finalize an already furnished GENERATED floor. Earlier generation
     /// stages may have installed a door from a dining room or bedroom into
     /// its adjacent storeroom, before the final hallway/stair-bay merge.
