@@ -697,6 +697,39 @@ public static class BuildingStoreys
                 reason = "A chimney has invalid dimensions or identifier.";
                 return false;
             }
+            if (chimney.HearthRoomIds is null ||
+                chimney.HearthRoomIds.Count > 2 ||
+                chimney.HearthRoomIds.Distinct().Count() != chimney.HearthRoomIds.Count ||
+                (chimney.OtherHearthCentre.HasValue &&
+                    (chimney.HearthRoomIds.Count != 2 ||
+                     !double.IsFinite(chimney.OtherHearthCentre.Value.X) ||
+                     !double.IsFinite(chimney.OtherHearthCentre.Value.Y))) ||
+                (chimney.HearthRoomIds.Count > 0 &&
+                    (!HasFloor(building, chimney.HearthFloorIndex) ||
+                     (chimney.HearthRoomIds.Count == 2) !=
+                         chimney.OtherHearthCentre.HasValue)))
+            {
+                reason = "A chimney has invalid hearth room links.";
+                return false;
+            }
+            if (chimney.HearthRoomIds.Count > 0)
+            {
+                var hearthFloor = GetFloor(building, chimney.HearthFloorIndex);
+                for (int face = 0; face < chimney.HearthRoomIds.Count; face++)
+                {
+                    var room = hearthFloor.Rooms.FirstOrDefault(r =>
+                        r.Id == chimney.HearthRoomIds[face]);
+                    var faceChimney = chimney.Copy();
+                    if (face == 1) faceChimney.Centre =
+                        chimney.OtherHearthCentre!.Value;
+                    if (room is null || !FloorGeometry.IsWithinPolygon(
+                            ChimneyFootprint(faceChimney), room.Outline))
+                    {
+                        reason = "The fireplace face must remain inside its assigned room.";
+                        return false;
+                    }
+                }
+            }
             var footprint = ChimneyFootprint(chimney);
             var served = ChimneyFloors(building, chimney);
             if (served.Count == 0)
