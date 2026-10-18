@@ -5591,5 +5591,113 @@ Check("Storeroom adjoining kitchen and hallway uses one kitchen door", () =>
     Assert(BuildingStoreys.Validate(withDoors,out reason),reason);
 });
 
+Check("Final-generation repair fixes example2(2) even after doors were already added", () =>
+{
+    // This is the EXACT blocked-room structure saved by v0.32, with
+    // both storeroom/bedroom and storeroom/dining doorways already in.
+    // Earlier tests only checked blank rooms BEFORE their doors existed.
+    List<Point2> R(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var source = new BuildingDocument
+    {
+        SchemaVersion = 2, GridFeet = 5,
+        Perimeter = [
+            new(7.62,0),new(12.192,0),new(12.192,3.048),
+            new(16.764,3.048),new(16.764,0),new(21.336,0),
+            new(21.336,3.048),new(21.336,10.668),new(7.62,10.668)
+        ],
+        Rooms = [
+            new RoomDefinition {Type="Hallway",Name="Hallway 1",
+                Outline=R(7.62,5.096,21.336,7.096)},
+            new RoomDefinition {Type="Living room",Name="Living room",
+                Outline=R(7.62,7.096,16.12,10.668)},
+            new RoomDefinition {Type="Kitchen",Name="Kitchen",
+                Outline=R(16.12,7.096,21.336,10.668)},
+            new RoomDefinition {Type="Dining room",Name="Dining room",
+                Outline=R(7.62,0,12.192,3.048)},
+            new RoomDefinition {Type="Bedroom",Name="Bedroom",
+                Outline=R(16.764,0,21.336,3.048)},
+            new RoomDefinition {Type="Storeroom",Name="Storeroom",
+                Outline=R(7.62,3.048,14.478,5.096)},
+            new RoomDefinition {Type="Storeroom",Name="Storeroom 2",
+                Outline=R(14.478,3.048,21.336,5.096)}
+        ],
+        Doors = [
+            new DoorDefinition {Centre=new(21.336,6.096),Width=0.9},
+            new DoorDefinition {Centre=new(10.34,7.096),Width=0.9},
+            new DoorDefinition {Centre=new(18.728,7.096),Width=0.9},
+            new DoorDefinition {Centre=new(9.906,3.048),Width=0.9},
+            new DoorDefinition {Centre=new(19.05,3.048),Width=0.9},
+            new DoorDefinition {Centre=new(16.12,8.882),Width=0.8}
+        ],
+        UpperFloors = [
+            new StoreyDefinition
+            {
+                Name="First Floor",
+                Perimeter=[
+                    new(7.62,1.524),new(12.192,1.524),new(12.192,3.048),
+                    new(16.764,3.048),new(16.764,1.524),new(21.336,1.524),
+                    new(21.336,3.048),new(21.336,10.668),new(7.62,10.668)
+                ],
+                Rooms = [
+                    new RoomDefinition {Type="Hallway",Name="Hallway 1",
+                        Outline=R(7.62,5.096,21.336,7.096)},
+                    new RoomDefinition {Type="Bedroom",Name="Bedroom",
+                        Outline=[new(7.62,1.524),new(12.192,1.524),
+                            new(12.192,3.048),new(16.764,3.048),
+                            new(16.764,5.096),new(7.62,5.096)]},
+                    new RoomDefinition {Type="Study",Name="Study",
+                        Outline=R(16.764,1.524,21.336,5.096)},
+                    new RoomDefinition {Type="Bedroom",Name="Bedroom 2",
+                        Outline=R(7.62,7.096,16.12,10.668)},
+                    new RoomDefinition {Type="Bedroom",Name="Bedroom 3",
+                        Outline=R(16.12,7.096,21.336,10.668)}
+                ]
+            }
+        ],
+        Staircases = [
+            new StaircaseDefinition {LowerFloorIndex=0,
+                Centre=new(14.478,6.646),Length=2.8,Width=0.9,
+                RotationDegrees=90,LandingLength=1}
+        ]
+    };
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    var idHall=source.Rooms[0].Id;
+    var idDining=source.Rooms[3].Id;
+    var idBedroom=source.Rooms[4].Id;
+    var firstStore=source.Rooms[5].Id;
+    var secondStore=source.Rooms[6].Id;
+    int routes=RoomLayoutPlanner.RepairGeneratedStorageAccess(
+        source,0,Array.Empty<Guid>(),out var corrected);
+    Assert(routes==2,$"Expected two usable hall branches after removing generated store doors; got {routes}.");
+    Assert(BuildingStoreys.Validate(corrected,out reason),reason);
+    bool Touches(RoomDefinition room,Point2 centre) =>
+        Enumerable.Range(0,room.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(centre,room.Outline[i],
+                room.Outline[(i+1)%room.Outline.Count]).DistanceTo(centre)<1e-5);
+    bool DoorConnects(RoomDefinition a,RoomDefinition b) =>
+        corrected.Doors.Any(d=>Touches(a,d.Centre) && Touches(b,d.Centre));
+    var hall=corrected.Rooms.Single(r=>r.Id==idHall);
+    Assert(DoorConnects(hall,corrected.Rooms.Single(r=>r.Id==idDining)),
+        "The dining room still has no own corridor entrance.");
+    Assert(DoorConnects(hall,corrected.Rooms.Single(r=>r.Id==idBedroom)),
+        "The bedroom still has no own corridor entrance.");
+    foreach(var id in new[]{firstStore,secondStore})
+    {
+        var store=corrected.Rooms.Single(r=>r.Id==id);
+        Assert(DoorConnects(hall,store),"Storeroom should open onto a shared hall.");
+        Assert(corrected.Doors.Count(d=>Touches(store,d.Centre))==1,
+            "Storeroom should have one door, not become a through passage.");
+    }
+    Assert(corrected.Staircases.Single().Centre.Equals(source.Staircases.Single().Centre));
+    Assert(corrected.UpperFloors[0].Rooms.Count==source.UpperFloors[0].Rooms.Count);
+    Assert(source.Doors.Count==6 && source.Rooms[0].Outline.Count==4,
+        "The suggestion must not silently edit the already saved source.");
+    Assert(RoomLayoutPlanner.RepairGeneratedStorageAccess(
+        source,0,[idHall],out var protectedPlan)==0 &&
+        protectedPlan.Doors.Count==source.Doors.Count,
+        "Do not rewrite hand-authored existing hallways.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
