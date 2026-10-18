@@ -3948,8 +3948,10 @@ Check("Three-floor house reserves aligned open staircase alcoves beside the hall
             var hall = floor.Rooms.Single(r => r.Type == "Hallway");
             Assert(!floor.Rooms.Any(r => r.Type == "Stairwell"),
                 "A small home shouldn't give stairs a separate closed room.");
-            Assert(!PolygonGeometry.ContainsPoint(hall.Outline, first.Centre),
-                "The stairs cannot block the hall's walking route.");
+            Assert(PolygonGeometry.ContainsPoint(hall.Outline, first.Centre),
+                "The open side alcove must contain the stairs in the hallway footprint.");
+            Assert(hall.Outline.Count > 4,
+                "A stair alcove should expand the hallway, not leave an unassigned pocket.");
             Assert(floor.Doors.Any(d => Enumerable.Range(0, hall.Outline.Count).Any(i =>
                 PolygonGeometry.ClosestPointOnSegment(d.Centre, hall.Outline[i],
                     hall.Outline[(i + 1) % hall.Outline.Count])
@@ -3994,7 +3996,7 @@ Check("Compact domestic stairs stay against a wall with landing clearance", () =
             Assert(stair.Length <= 2.8 + 1e-6);
             Assert(stair.LandingLength >= 1.0);
             var floor = BuildingStoreys.GetFloor(draft.Building, stair.LowerFloorIndex);
-            Assert(!PolygonGeometry.ContainsPoint(
+            Assert(PolygonGeometry.ContainsPoint(
                 floor.Rooms.Single(r => r.Type == "Hallway").Outline, stair.Centre));
             Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
         }
