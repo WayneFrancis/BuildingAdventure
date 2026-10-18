@@ -313,77 +313,132 @@ public static class BuildingConnectivity
         var baseFloor = BuildingStoreys.GetFloor(building, ground);
         if (baseFloor.Perimeter.Count < 3) return false;
 
-        // Choose a ROOM before a wall. Heating a hallway or a stair alcove
-        // is not a useful medieval domestic plan. A chimney in a partly
-        // inhabited basement-only shell may be placed in open floor area.
-        string[] roomPriority = [
-            "Common room", "Living room", "Kitchen", "Dining room",
-            "Parlour", "Great hall", "Shop floor", "Workshop",
-            "Bedroom", "Study", "Guest room", "Chamber"
-        ];
-        var rooms = baseFloor.Rooms.Where(r => roomPriority.Contains(r.Type,
-                StringComparer.OrdinalIgnoreCase))
-            .OrderBy(r => {
-                int index = Array.FindIndex(roomPriority, t =>
-                    t.Equals(r.Type, StringComparison.OrdinalIgnoreCase));
-                return index < 0 ? int.MaxValue : index;
-            }).ToList();
-        if (rooms.Count == 0 && baseFloor.Rooms.Count == 0)
-            rooms.Add(new RoomDefinition {
-                Name = "Unpartitioned floor", Type = "Unpartitioned",
-                Outline = baseFloor.Perimeter.ToList()
-            });
-        // Measured medieval great-house kitchen hearths can exceed 3m.
-        // Larger buildings get wider schematic hearths; a cottage retains
-        // a compact wall fireplace. These are configuration heuristics.
         double hearthWidth = use == BuildingUse.Inn ? 2.4 :
             use == BuildingUse.Mixed ? 1.8 : 1.4;
         double hearthDepth = use == BuildingUse.Inn ? 0.9 : 0.7;
         var allWalls = FloorGeometry.BuildWalls(baseFloor.Perimeter, baseFloor.Rooms)
-            .Where(w => w.Length >= hearthWidth + 0.5).ToList();
+            .Where(w => w.Length >= hearthWidth + 0.4).ToList();
 
+        var kitchen = baseFloor.Rooms.FirstOrDefault(r =>
+            r.Type.Equals("Kitchen", StringComparison.OrdinalIgnoreCase));
+        var living = baseFloor.Rooms.FirstOrDefault(r =>
+            r.Type.Equals("Living room", StringComparison.OrdinalIgnoreCase) ||
+            r.Type.Equals("Common room", StringComparison.OrdinalIgnoreCase));
+
+        // First seek an honest two-sided fireplace across a shared kitchen/
+        // living wall. Both hearths are on the inhabited floor and use
+        // one continuous chimney; no bedroom upstairs gets a fireplace.
+        if (kitchen is not null && living is not null)
+        {
+            foreach (var wall in allWalls.Where(w => !w.IsExterior &&
+                OnOutline(Midpoint(w), kitchen.Outline) &&
+                OnOutline(Midpoint(w), living.Outline))
+                .OrderByDescending(w => w.Length))
+            foreach (double t in new[] { 0.25, 0.75, 0.5 })
+            foreach (int sign in new[] { 1, -1 })
+            {
+                var pair = TryHearth(wall, t, sign, kitchen);
+                if (pair is null) continue;
+                double len = wall.Length;
+                var secondary = new Point2(
+                    pair.Centre.X + sign * 2 * (wall.B.Y - wall.A.Y) / len *
+                        (hearthDepth / 2 + 0.02),
+                    pair.Centre.Y - sign * 2 * (wall.B.X - wall.A.X) / len *
+                        (hearthDepth / 2 + 0.02));
+                // The secondary hearth faces into the other room, leaving
+                // its masonry stack and vertical flue on the kitchen side.
+                var other = pair.Copy();
+                other.Centre = secondary;
+                if (!FloorGeometry.IsWithinPolygon(
+                    BuildingStoreys.ChimneyFootprint(other), living.Outline))
+                    continue;
+                pair.OtherHearthCentre = secondary;
+                pair.HearthRoomIds.Add(living.Id);
+                if (TryCommit(pair)) return true;
+            }
+        }
+
+        string[] priority = [
+            "Kitchen", "Common room", "Living room", "Dining room",
+            "Parlour", "Great hall", "Shop floor", "Workshop",
+            "Bedroom", "Study", "Guest room", "Chamber"
+        ];
+        var rooms = baseFloor.Rooms.Where(r => priority.Contains(r.Type,
+            StringComparer.OrdinalIgnoreCase))
+            .OrderBy(r => Array.FindIndex(priority, p =>
+                p.Equals(r.Type, StringComparison.OrdinalIgnoreCase))).ToList();
+        if (rooms.Count == 0 && baseFloor.Rooms.Count == 0)
+            rooms.Add(new RoomDefinition
+            {
+                Name = "Unpartitioned", Type = "Unpartitioned",
+                Outline = baseFloor.Perimeter.ToList()
+            });
+
+        // If no suitable aligned shared wall exists, place a single hearth
+        // against an outer wall. Such a flue can rise against upper-storey
+        // exterior walls instead of passing through a bedroom's centre.
         foreach (var room in rooms)
         foreach (var wall in allWalls
             .Where(w => OnOutline(Midpoint(w), room.Outline))
             .OrderByDescending(w => w.IsExterior)
             .ThenByDescending(w => w.Length))
+        foreach (double t in new[] { 0.5, 0.25, 0.75 })
+        foreach (int sign in new[] { 1, -1 })
         {
-            var midpoint = Midpoint(wall);
-            double dx = wall.B.X - wall.A.X, dy = wall.B.Y - wall.A.Y;
-            double len = Math.Sqrt(dx * dx + dy * dy);
-            if (len < hearthWidth + 0.5) continue;
-            // Conservative schematic masonry hearth: about 1.4 m along
-            // the wall and 0.7 m projecting into the room. Medieval hearth
-            // openings ranged from modest to monumental; this is a
-            // domestic default, not a universal historic measurement.
-            bool horizontal = Math.Abs(dx) >= Math.Abs(dy);
-            double w = horizontal ? hearthWidth : hearthDepth;
-            double d = horizontal ? hearthDepth : hearthWidth;
-            double normalDepth = hearthDepth;
-            foreach (int sign in new[] { 1, -1 })
-            {
-                var centre = new Point2(
-                    midpoint.X - sign * dy / len * (normalDepth / 2 + 0.02),
-                    midpoint.Y + sign * dx / len * (normalDepth / 2 + 0.02));
-                var hearth = new ChimneyDefinition {
-                    Centre = centre, Width = w, Depth = d,
-                    Exterior = wall.IsExterior
-                };
-                if (!FloorGeometry.IsWithinPolygon(
-                    BuildingStoreys.ChimneyFootprint(hearth), room.Outline))
-                    continue;
-                if (baseFloor.Rooms.Any(r =>
-                    r.Type.Equals("Hallway", StringComparison.OrdinalIgnoreCase) &&
-                    PolygonGeometry.ContainsPoint(r.Outline, centre)))
-                    continue;
-                var candidate = BuildingStoreys.Copy(updated);
-                candidate.Chimneys.Add(hearth);
-                if (!BuildingStoreys.Validate(candidate, out _)) continue;
-                updated = candidate;
+            var candidate = TryHearth(wall, t, sign, room);
+            if (candidate is not null && TryCommit(candidate))
                 return true;
-            }
         }
         return false;
+
+        ChimneyDefinition? TryHearth(WallSegment wall, double t, int sign,
+            RoomDefinition room)
+        {
+            double dx = wall.B.X - wall.A.X, dy = wall.B.Y - wall.A.Y;
+            double len = wall.Length;
+            if (len < hearthWidth + 0.4) return null;
+            double x = wall.A.X + dx * t;
+            double y = wall.A.Y + dy * t;
+            double away = hearthDepth / 2 + 0.02;
+            var candidate = new ChimneyDefinition
+            {
+                Centre = new Point2(x - sign * dy / len * away,
+                    y + sign * dx / len * away),
+                Width = Math.Abs(dx) >= Math.Abs(dy) ? hearthWidth : hearthDepth,
+                Depth = Math.Abs(dx) >= Math.Abs(dy) ? hearthDepth : hearthWidth,
+                Exterior = wall.IsExterior,
+                HearthFloorIndex = ground,
+                HearthRoomIds = room.Type == "Unpartitioned" ? [] : [room.Id]
+            };
+            return FloorGeometry.IsWithinPolygon(
+                BuildingStoreys.ChimneyFootprint(candidate), room.Outline)
+                ? candidate : null;
+        }
+
+        bool TryCommit(ChimneyDefinition chimney)
+        {
+            // All inhabited upper levels must retain the stack adjacent to
+            // an actual wall. Reject a new flue cutting through the middle
+            // of an unrelated upstairs bedroom.
+            foreach (int index in BuildingStoreys.FloorIndexes(building))
+            {
+                if (index == ground) continue;
+                var floor = BuildingStoreys.GetFloor(building, index);
+                if (!FloorGeometry.IsWithinPolygon(
+                    BuildingStoreys.ChimneyFootprint(chimney), floor.Perimeter))
+                    continue;
+                bool nearWall = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
+                    .Any(w => PolygonGeometry.ClosestPointOnSegment(
+                        chimney.Centre, w.A, w.B).DistanceTo(chimney.Centre) <=
+                        Math.Max(chimney.Width, chimney.Depth) / 2 + 0.1);
+                if (!nearWall) return false;
+            }
+            var trial = BuildingStoreys.Copy(building);
+            trial.Chimneys.Add(chimney);
+            if (!BuildingStoreys.Validate(trial, out _)) return false;
+            updated = trial;
+            return true;
+        }
     }
 
     /// <summary>
