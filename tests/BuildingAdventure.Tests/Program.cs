@@ -3925,7 +3925,7 @@ Check("Three-floor whole-building preview remains three floors through acceptanc
     Assert(BuildingStoreys.Validate(reloaded, out reason), reason);
     Assert(BuildingStoreys.FloorCount(existing) == 1);
 });
-Check("Three-floor layout reserves aligned stairwells beside, not inside, the hallway", () =>
+Check("Three-floor house reserves aligned open staircase alcoves beside the hall", () =>
 {
     var settings = new GenerationOptions
     {
@@ -3938,33 +3938,23 @@ Check("Three-floor layout reserves aligned stairwells beside, not inside, the ha
             out var draft, out var reason), reason);
         var building = draft.Building;
         Assert(BuildingStoreys.FloorCount(building) == 3);
-        Assert(building.Staircases.Count == 2,
-            "Each pair of adjoining floors should have a staircase.");
+        Assert(building.Staircases.Count == 2);
         var first = building.Staircases.Single(s => s.LowerFloorIndex == 0);
         var second = building.Staircases.Single(s => s.LowerFloorIndex == 1);
-        Assert(first.Centre.DistanceTo(second.Centre) < 1e-6,
-            "Up/down flights should align in their dedicated stairwell.");
+        Assert(first.Centre.DistanceTo(second.Centre) < 1e-6);
         foreach (int index in BuildingStoreys.FloorIndexes(building))
         {
             var floor = BuildingStoreys.GetFloor(building, index);
             var hall = floor.Rooms.Single(r => r.Type == "Hallway");
-            var stairwell = floor.Rooms.Single(r => r.Type == "Stairwell");
-            Assert(BuildingConnectivity.ShareWall(hall.Outline,
-                stairwell.Outline, 2.0),
-                "Stairwell must open off the main hall.");
+            Assert(!floor.Rooms.Any(r => r.Type == "Stairwell"),
+                "A small home shouldn't give stairs a separate closed room.");
             Assert(!PolygonGeometry.ContainsPoint(hall.Outline, first.Centre),
-                "Stairs cannot obstruct the walking space of the hall.");
-            Assert(PolygonGeometry.ContainsPoint(stairwell.Outline, first.Centre));
-            Assert(floor.Doors.Any(d =>
-                PolygonGeometry.ClosestPointOnSegment(
-                    d.Centre, stairwell.Outline[0], stairwell.Outline[1])
-                    .DistanceTo(d.Centre) < 0.01 ||
-                Enumerable.Range(0, stairwell.Outline.Count).Any(i =>
-                    PolygonGeometry.ClosestPointOnSegment(d.Centre,
-                        stairwell.Outline[i],
-                        stairwell.Outline[(i + 1) % stairwell.Outline.Count])
-                        .DistanceTo(d.Centre) < 0.01)),
-                "Each stairwell needs a real doorway.");
+                "The stairs cannot block the hall's walking route.");
+            Assert(floor.Doors.Any(d => Enumerable.Range(0, hall.Outline.Count).Any(i =>
+                PolygonGeometry.ClosestPointOnSegment(d.Centre, hall.Outline[i],
+                    hall.Outline[(i + 1) % hall.Outline.Count])
+                    .DistanceTo(d.Centre) < 0.01)),
+                "The hall needs at least one doorway.");
         }
         Assert(BuildingStoreys.Validate(building, out reason), reason);
     }
@@ -3987,33 +3977,26 @@ Check("Hall-only multi-floor stair suggestions never block a pre-existing corrid
     Assert(source.Staircases.Count == 0);
 });
 
-Check("Stairs in a new three-level residence hug an exterior stairwell wall", () =>
+Check("Compact domestic stairs stay against a wall with landing clearance", () =>
 {
-    var options = new GenerationOptions
+    var settings = new GenerationOptions
     {
         Rooms = true, Corridors = true, Doors = true, Stairs = true,
         Purpose = BuildingUse.Residence
     };
     foreach (int seed in new[] { 812, 1783, 42024 })
     {
-        Assert(BuildingGenerator.TrySuggestWholeBuilding(3, seed, options,
-            out var proposal, out var reason), reason);
-        Assert(BuildingStoreys.FloorCount(proposal.Building) == 3);
-        foreach (var stair in proposal.Building.Staircases)
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(3, seed, settings,
+            out var draft, out var reason), reason);
+        foreach (var stair in draft.Building.Staircases)
         {
-            var lower = BuildingStoreys.GetFloor(proposal.Building, stair.LowerFloorIndex);
-            var bay = lower.Rooms.Single(r => r.Type == "Stairwell");
-            var flight = BuildingStoreys.StairFootprint(stair);
-            double left = bay.Outline.Min(p => p.X), right = bay.Outline.Max(p => p.X);
-            double top = bay.Outline.Min(p => p.Y), bottom = bay.Outline.Max(p => p.Y);
-            double nearest = new[]
-            {
-                flight.Min(p => p.X) - left, right - flight.Max(p => p.X),
-                flight.Min(p => p.Y) - top, bottom - flight.Max(p => p.Y)
-            }.Min();
-            Assert(nearest >= 0.19 && nearest <= 0.21,
-                "The flight must be set 0.2m inside its stairwell wall.");
-            Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+            Assert(stair.Width <= 1.0 + 1e-6);
+            Assert(stair.Length <= 2.8 + 1e-6);
+            Assert(stair.LandingLength >= 1.0);
+            var floor = BuildingStoreys.GetFloor(draft.Building, stair.LowerFloorIndex);
+            Assert(!PolygonGeometry.ContainsPoint(
+                floor.Rooms.Single(r => r.Type == "Hallway").Outline, stair.Centre));
+            Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
         }
     }
 });
@@ -4173,7 +4156,7 @@ Check("Generated 5-foot and 10-foot maps have exact tabletop-aligned outer footp
     }
 });
 
-Check("A three-floor layout keeps generated windows away from stairwell facades", () =>
+Check("Three-floor plans keep windows away from staircase flights", () =>
 {
     var settings = new GenerationOptions
     {
@@ -4184,17 +4167,11 @@ Check("A three-floor layout keeps generated windows away from stairwell facades"
     foreach (int index in BuildingStoreys.FloorIndexes(draft.Building))
     {
         var floor = BuildingStoreys.GetFloor(draft.Building, index);
-        var stairwell = floor.Rooms.Single(r => r.Type == "Stairwell");
         foreach (var window in floor.Windows)
-        foreach (int i in Enumerable.Range(0, stairwell.Outline.Count))
-        {
-            double distance = PolygonGeometry.ClosestPointOnSegment(
-                window.Centre, stairwell.Outline[i],
-                stairwell.Outline[(i + 1) % stairwell.Outline.Count])
-                .DistanceTo(window.Centre);
-            Assert(distance >= 1.5 - 1e-6,
-                "A window must not be immediately beside the stairwell.");
-        }
+        foreach (var stair in draft.Building.Staircases.Where(s =>
+            s.LowerFloorIndex == index || s.LowerFloorIndex + 1 == index))
+            Assert(window.Centre.DistanceTo(stair.Centre) >= 2.3 - 1e-6,
+                "A window should not be immediately beside the staircase.");
     }
     Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
 });
