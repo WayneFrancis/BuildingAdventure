@@ -4,6 +4,45 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.45 — Independent upstairs rooms and stair access for deeper L houses (development)
+
+The exported `example12.json` is an approximately **113m² per storey** L-shaped
+house with a **37.03m² stair hallway duplicated upstairs**. Its downstairs
+living room is just 14.07m², and a 29.4m² upper bedroom is adjacent to
+14m² bedrooms. Existing `BalancedSteppedRpgHousePlanner` deliberately
+rejected this deeper footprint because its front step is only 10.5m across,
+which sent generation back to the unsuitable mirrored corridor planner.
+
+The new `SideLandingRpgHousePlanner` handles this deeper stepped archetype:
+
+- **Ground floor:** the accepted horizontal stair is enclosed in a useful
+  ~29.5m² L-shaped living room, with a street entrance away from the flight.
+  The old 37.03m² stair hallway becomes a roughly **9.66m²** passage,
+  leaving enough space for kitchen, pantry, dining room and study.
+- **Upper floor:** a separate 15.7m² sitting/landing room leads to an
+  irregular **cross-hall**, with a bathroom and three independently accessed
+  bedrooms. Unlike the previous planner, no upstairs room outline is a
+  copy of a ground-floor room. Bedroom areas vary by seed but must remain
+  at least 11m², at least 3.05m in both usable directions and within a
+  1.75 max/min area ratio.
+- **Stair safety:** preserve the stored staircase ID, orientation,
+  footprint and position when regenerating. Check both landings and the
+  slab opening inside the new rooms, with a 1.1m clear rear route on the
+  first floor. A new whole-building draft can supply a new aligned stair.
+  This is a circulation/layout change, **not** automatic relocation of
+  a staircase already present in a user's accepted design.
+- **Document retention:** retain existing chimney masonry and relink its
+  hearth to the regenerated kitchen. Never edit an existing accepted
+  document without the normal explicit acceptance of a suggestion.
+- **Regression tests:** preserve and regenerate the exact step/stair/chimney
+  dimensions from `example12`, verify independent door connections and
+  complete space allocation on both floors, plus seed variation and eight
+  rotated/mirrored new-house orientations.
+
+The style is purposely limited to suitable larger, deeper six-vertex L
+footprints. Other building footprints will continue through the existing
+specialized archetypes and safe fallback planners.
+
 ## v0.44 — Proportionate RPG rooms in wide L-shaped two-storey houses (development)
 
 The accepted `example10(1).json` reveals limits of repairing a
