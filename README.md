@@ -4,6 +4,32 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.20 — Visible floor count, editable acceptance and wall-hugging stairs (development branch)
+
+- **Always-visible working-floor navigator:** the drawing area now shows how
+  many levels the committed building actually contains, with a selector and
+  Previous/Next buttons independent of the sidebar. This avoids mistaking a
+  single displayed ground floor for a single generated floor.
+- **Clear draft-to-editor transition:** the in-plan whole-building preview
+  shows every proposed level and has Accept All / Discard buttons. Accepting
+  validates the full draft floor count, hides the read-only canvas, restores
+  Editor mode, and activates the editable Select tool.
+- **No silent downgrade to one floor:** the whole-building command rejects
+  an unset or invalid floor-count selection rather than treating it as one.
+  The proposed building must contain every expected floor before acceptance.
+- **Wall-adjacent stair flights:** newly generated stairwells reserve a 0.2m
+  gap beside the outside wall and leave access space toward the hallway.
+  On layouts without a dedicated stairwell, optional stair suggestions
+  consider wall-adjacent positions instead of the centre of a room.
+  Whole-building stairs stay aligned between floors.
+- **Keyboard navigation:** Page Up/Page Down now browse proposed floors
+  during an unaccepted whole-building preview, too.
+- **Validation:** two new geometry regression tests confirm stair-footprint
+  proximity to a wall and cross-floor geometry; the existing three-floor
+  creation and JSON round-trip tests remain in place.
+- **Limitations:** these are geometry / access improvements, not guarantees
+  of code-compliant stairs, doorway landings or structural clearance.
+
 ## v0.19 — Browsable draft floors and side stairwells (development branch)
 
 - **Browse before accepting:** generating a whole building displays a
