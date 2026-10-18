@@ -4,6 +4,37 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.24 — Complete two-storey access, hallway seams and fireplace glazing clearances (development)
+
+- **Multi-floor drafts always include staircase access:** the user-facing
+  *Suggest entire building* action now enables Stairs automatically for a
+  2–4-floor draft, regardless of an earlier saved unchecked preference.
+  Stairs default to on in new generator settings. If stairs are requested
+  but not every adjacent floor can be connected, the generator reports a
+  failure rather than quietly returning a disconnected building.
+  Existing-floor generation still respects the manually selected feature
+  toggles.
+- **No hall end-cap strips:** central hallways preserve their exact
+  exterior endpoints (including non-metric and 5/10-foot-grid dimensions)
+  rather than rounding each end inward to half-metre cells.
+- **Open, assigned stair alcove:** temporary staircase reservation bays are
+  merged into a single hallway outline. This creates a real open L/T-shaped
+  circulation area around the stairs without a fake partition or floating
+  doorway, and does not count the staircase bay as unassigned floor space.
+  Geometry validation is repeated after the merge.
+- **Full fireplace-to-window clearance:** glazing checks now use the actual
+  *opening width* projected along the exterior wall and *both* fireplace
+  faces' polygon footprints, with 0.2m clearance. Windows are generated
+  **after** fireplaces/chimneys, not before. The same whole-span rule
+  applies in building validation and when creating new windows.
+- **No long label covering a window:** the floor drawing uses compact
+  symbols *FP* (fireplace) and *FL* (flue), centred within the masonry
+  footprint. Shared kitchen/living hearth faces each show an FP.
+- **Regression tests:** two-storey stair connectivity for metric/5ft/10ft,
+  hall and stair alcove allocation, exact hall endpoints on imperial
+  perimeter coordinates, and fireplace overlap at the outer end of a
+  window opening, not only window-centre proximity.
+
 ## v0.23 — Safe circulation, kitchen service access, shared hearths and gap completion (development)
 
 - **Safe upper-floor doors:** the automatic doorway pass can add an
