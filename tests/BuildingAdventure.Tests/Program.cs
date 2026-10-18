@@ -4120,16 +4120,20 @@ Check("One fireplace chimney stacks through all covering floors including baseme
     var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
     Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
     Assert(BuildingStoreys.TryAddBasement(two, out var three, out reason), reason);
-    Assert(BuildingConnectivity.TryAddChimney(three, out var withChimney));
-    Assert(withChimney.Chimneys.Count == 1);
+    Assert(BuildingConnectivity.TryAddChimney(three, out var withChimney),
+        "A chimney should fit against a wall on three empty rectangular levels.");
+    Assert(withChimney.Chimneys.Count == 1,
+        "Expected exactly one shared chimney definition.");
     var chimney = withChimney.Chimneys.Single();
     Assert(BuildingStoreys.ChimneyFloors(withChimney, chimney)
-        .SequenceEqual([-1, 0, 1]));
+        .SequenceEqual([-1, 0, 1]), "Chimney must serve basement, ground and upper.");
     Assert(BuildingStoreys.Validate(withChimney, out reason), reason);
     var loaded = BuildingDocumentJson.Deserialize(
         BuildingDocumentJson.Serialize(withChimney));
-    Assert(loaded.Chimneys.Single().Id == chimney.Id);
-    Assert(BuildingStoreys.ChimneyFloors(loaded, loaded.Chimneys.Single()).Count == 3);
+    Assert(loaded.Chimneys.Single().Id == chimney.Id,
+        "Chimney must survive JSON with the same ID.");
+    Assert(BuildingStoreys.ChimneyFloors(loaded, loaded.Chimneys.Single()).Count == 3,
+        "JSON must preserve all chimney storeys.");
 
     // Basement doesn't share the stack's footprint, so it doesn't get a
     // phantom fireplace even though the other levels retain theirs.
@@ -4138,7 +4142,7 @@ Check("One fireplace chimney stacks through all covering floors including baseme
         [new(0,0), new(1,0), new(1,1), new(0,1)];
     BuildingStoreys.SetFloor(loaded, -1, basement);
     Assert(BuildingStoreys.ChimneyFloors(loaded, loaded.Chimneys.Single())
-        .SequenceEqual([0, 1]));
+        .SequenceEqual([0, 1]), "A small partial basement must not show the distant fireplace.");
     Assert(BuildingStoreys.Validate(loaded, out reason), reason);
 });
 
