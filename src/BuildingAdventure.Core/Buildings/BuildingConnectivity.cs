@@ -204,6 +204,7 @@ public static class BuildingConnectivity
         updated = BuildingStoreys.Copy(building);
         int count = 0;
         var floor = BuildingStoreys.GetFloor(updated, floorIndex);
+        var chimneyStacks = updated.Chimneys.ToList();
         var exteriorWalls = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
             .Where(w => w.IsExterior && w.Length >= 1.7).ToList();
         foreach (var room in floor.Rooms.Where(RoomUsuallyNeedsWindow))
@@ -230,8 +231,9 @@ public static class BuildingConnectivity
                      s.LowerFloorIndex + 1 == floorIndex) &&
                     s.Centre.DistanceTo(location) < 2.3))
                     continue;
-                if (updated.Chimneys.Any(ch =>
-                    BuildingStoreys.ChimneyFloors(updated, ch).Contains(floorIndex) &&
+                if (chimneyStacks.Any(ch =>
+                    FloorGeometry.IsWithinPolygon(
+                        BuildingStoreys.ChimneyFootprint(ch), floor.Perimeter) &&
                     ch.Centre.DistanceTo(location) < 1.5))
                     continue;
 
