@@ -6819,5 +6819,58 @@ Check("New L-house staircase ascends inward and leaves a walkable landing bypass
     }
 });
 
+Check("Accepted example6(3) old staircase retains its position with widened upper landing access", () =>
+{
+    var perimeter=new List<Point2>
+    {
+        new(0,0),new(9,0),new(9,6),new(11,6),new(11,10),new(0,10)
+    };
+    var oldStair=new StaircaseDefinition
+    {
+        LowerFloorIndex=0,Centre=new(2.5,0.7),Length=2.8,
+        Width=1,RotationDegrees=90,LandingLength=1
+    };
+    var cleared=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=perimeter.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=perimeter.ToList()}],
+        Staircases=[oldStair.Copy()]
+    };
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Stairs=true,CompactRpgHouseLayout=true
+    };
+    Assert(BuildingGenerator.TryRegenerate(cleared,[0,1],38,options,
+        out var suggestion,out var reason),reason);
+    var plan=suggestion.Building;
+    Assert(BuildingStoreys.Validate(plan,out reason),reason);
+    var same=plan.Staircases.Single();
+    Assert(same.Id==oldStair.Id &&
+        same.Centre.DistanceTo(oldStair.Centre)<1e-8 &&
+        Math.Abs(same.RotationDegrees-oldStair.RotationDegrees)<1e-8,
+        "Regeneration should respect a stair the user has left in place.");
+    foreach(int level in new[]{0,1})
+    {
+        var floor=BuildingStoreys.GetFloor(plan,level);
+        var hall=floor.Rooms.Single(r=>r.Type=="Hallway");
+        var highestReserved=new[] {BuildingStoreys.StairFootprint(same),
+            BuildingStoreys.StairOpeningFootprint(same)}
+            .Concat(BuildingStoreys.StairLandings(same))
+            .SelectMany(r=>r).Max(p=>p.Y);
+        var capEnd=hall.Outline
+            .Select(p=>p.Y).Where(y=>y>highestReserved+0.01 &&
+                y<6.0-0.01).DefaultIfEmpty(0).Min();
+        Assert(capEnd-highestReserved>=1.1-1e-4,
+            "Previously accepted staircase must get at least " +
+            "1.1m of approach clearance around both landings.");
+        Assert(floor.Rooms.Count(r=>r.Type=="Hallway")==1);
+    }
+    var up=BuildingStoreys.StairTravelArrow(same,0);
+    var down=BuildingStoreys.StairTravelArrow(same,1);
+    Assert(up.Start.DistanceTo(down.Tip)<1e-8,
+        "The two arrows should be opposite even on saved old stairs.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
