@@ -379,43 +379,62 @@ public static class BuildingConnectivity
             // Do not obstruct an existing hall. For fully empty plans retain
             // the original central location as a sensible starting point.
             if (hallway is not null && stairwell is null) continue;
-            var preferred = stairwell is null ? new Point2(
-                low.Perimeter.Average(p => p.X),
-                low.Perimeter.Average(p => p.Y)) : new Point2(
-                stairwell.Outline.Average(p => p.X),
-                stairwell.Outline.Average(p => p.Y));
-            bool placed = false;
-            foreach (double offset in stairwell is null
-                ? new double[] { 0, -2, 2, -3, 3 }
-                : new double[] { 0 })
+            // Candidate locations follow perimeter / stairwell walls rather
+            // than sampling the geometric centre of the building or a room.
+            foreach (var (centre, angle) in WallAnchoredStairCandidates(low, stairwell))
             {
-                if (placed) break;
-                foreach (double angle in stairwell is null
-                    ? new double[] { 0, 90 }
-                    : stairwell.Outline.Max(p => p.Y) - stairwell.Outline.Min(p => p.Y) >=
-                      stairwell.Outline.Max(p => p.X) - stairwell.Outline.Min(p => p.X)
-                        ? new double[] { 0 }
-                        : new double[] { 90 })
+                var stair = new StaircaseDefinition
                 {
-                    var stair = new StaircaseDefinition
-                    {
-                        LowerFloorIndex = lower,
-                        Centre = new Point2(preferred.X,
-                            preferred.Y + offset),
-                        Length = 3.6, Width = 1.4,
-                        RotationDegrees = angle
-                    };
-                    if (!BuildingStoreys.TryAddStaircase(updated, stair,
+                    LowerFloorIndex = lower,
+                    Centre = centre,
+                    Length = 3.6, Width = 1.4,
+                    RotationDegrees = angle
+                };
+                if (!BuildingStoreys.TryAddStaircase(updated, stair,
                         out var candidate, out _))
-                        continue;
-                    updated = candidate;
-                    count++;
-                    placed = true;
-                    break;
-                }
+                    continue;
+                updated = candidate;
+                count++;
+                break;
             }
         }
         return count;
+    }
+
+    private static IEnumerable<(Point2 Centre, double Angle)>
+        WallAnchoredStairCandidates(BuildingDocument floor, RoomDefinition? stairwell)
+    {
+        var footprint = stairwell?.Outline ?? floor.Perimeter;
+        if (footprint.Count < 3) yield break;
+        double minX = footprint.Min(p => p.X), maxX = footprint.Max(p => p.X);
+        double minY = footprint.Min(p => p.Y), maxY = footprint.Max(p => p.Y);
+        // All candidates position the edge of a 1.4m-wide flight 0.2m
+        // inside a wall. There must still be enough length for a 3.6m run.
+        const double offset = 0.9; // 1.4/2 + 0.2m clearance
+        const double endOffset = 2.0; // 3.6/2 + 0.2m clearance
+        var hallway = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+        double hallX = hallway?.Outline.Average(p => p.X) ?? (minX + maxX) / 2;
+        double hallY = hallway?.Outline.Average(p => p.Y) ?? (minY + maxY) / 2;
+        if (maxY - minY >= 2 * endOffset && maxX - minX >= 2 * offset)
+        {
+            // When a dedicated stairwell exists, use the side furthest
+            // from its hallway, keeping the hall-side floor as a landing.
+            var sides = new[] { minX + offset, maxX - offset }
+                .OrderByDescending(x => Math.Abs(x - hallX));
+            foreach (double x in sides)
+            foreach (double y in new[]
+                { minY + endOffset, maxY - endOffset, (minY + maxY) / 2 })
+                yield return (new Point2(x, y), 0);
+        }
+        if (maxX - minX >= 2 * endOffset && maxY - minY >= 2 * offset)
+        {
+            var sides = new[] { minY + offset, maxY - offset }
+                .OrderByDescending(y => Math.Abs(y - hallY));
+            foreach (double y in sides)
+            foreach (double x in new[]
+                { minX + endOffset, maxX - endOffset, (minX + maxX) / 2 })
+                yield return (new Point2(x, y), 90);
+        }
     }
 
     public static int CountRoomsWithoutDoors(BuildingDocument building,
