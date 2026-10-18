@@ -4522,5 +4522,29 @@ Check("Narrow exterior slivers extend new rooms but never alter hand-drawn rooms
     Assert(BuildingStoreys.Validate(kept, out reason), reason);
 });
 
+Check("Living room with a street entrance still gets an internal hallway door", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = [new(0,0), new(10,0), new(10,8), new(0,8)],
+        Rooms =
+        [
+            new RoomDefinition { Type = "Hallway", Name = "Hallway",
+                Outline = [new(0,3),new(10,3),new(10,5),new(0,5)] },
+            new RoomDefinition { Type = "Living room", Name = "Living room",
+                Outline = [new(0,0),new(10,0),new(10,3),new(0,3)] }
+        ],
+        Doors = [new DoorDefinition { Centre = new Point2(5,0), Width = 0.9 }]
+    };
+    Assert(BuildingStoreys.Validate(building, out var reason), reason);
+    Assert(BuildingConnectivity.AddDoors(building, 0, out var updated) > 0);
+    Assert(updated.Doors.Any(d => Math.Abs(d.Centre.Y - 3) < 1e-6 &&
+        d.Centre.X > 0.5 && d.Centre.X < 9.5),
+        "An exterior-only doorway must not count as a hall connection.");
+    Assert(updated.Doors.Any(d => d.Centre.DistanceTo(new Point2(5,0)) < 1e-6),
+        "The original street entrance must remain.");
+    Assert(BuildingStoreys.Validate(updated, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
