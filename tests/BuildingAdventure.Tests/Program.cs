@@ -6687,5 +6687,47 @@ Check("Regenerate stepped example6 house without another 77-percent hallway", ()
         string.Join(" | ",attempts));
 });
 
+Check("Stepped RPG house supports rotations and mirrored L-wing orientation", () =>
+{
+    List<Point2> canonical =
+        [new(0,0),new(8.5,0),new(8.5,5.5),
+         new(10.5,5.5),new(10.5,9.5),new(0,9.5)];
+    foreach(int angle in new[]{0,1,2,3})
+    foreach(bool reflected in new[]{false,true})
+    {
+        Point2 Transform(Point2 point)
+        {
+            double x=reflected?-point.X:point.X;
+            double y=point.Y;
+            return angle switch
+            {
+                1=>new Point2(-y,x),
+                2=>new Point2(-x,-y),
+                3=>new Point2(y,-x),
+                _=>new Point2(x,y)
+            };
+        }
+        var ring=canonical.Select(Transform).ToList();
+        var blank=new BuildingDocument
+        {
+            SchemaVersion=2,Perimeter=ring.ToList(),
+            UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+        };
+        Assert(SteppedRpgHousePlanner.TryGenerate(blank,42,
+            out var planned,out var reason),
+            $"Rotation {angle}, reflected={reflected}: {reason}");
+        Assert(BuildingStoreys.Validate(planned,out reason),reason);
+        Assert(planned.Staircases.Count==1);
+        Assert(planned.Rooms.Count==5 &&
+            planned.UpperFloors[0].Rooms.Count==5);
+        Assert(planned.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(Math.Abs(planned.Rooms.Sum(r=>
+            PolygonGeometry.Area(r.Outline))-88.75)<0.01);
+        Assert(Math.Abs(planned.UpperFloors[0].Rooms.Sum(r=>
+            PolygonGeometry.Area(r.Outline))-88.75)<0.01);
+        Assert(blank.Rooms.Count==0 && blank.Staircases.Count==0);
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
