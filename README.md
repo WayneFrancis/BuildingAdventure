@@ -4,6 +4,40 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.25 — LShape2 uploaded example, 2.5-foot hall strip and checked-floor stair access (development)
+
+The supplied `LShape2.json` (5-foot grid, two floors) exposed a
+specific gap: an L-wing's external boundary at y=4.572m comes within
+0.762m of the hall at y=5.334m between x=13.716m and x=21.336m.
+That leaves 5.80644m² unassigned **on each floor** even though the
+hallway is otherwise connected to all the rooms.
+
+- **Allocate thin corridor-side strips:** when an external horizontal or
+  vertical wall lies within 1.25m of a rectangular hall, the generator
+  can add the valid intervening strip to the hall outline as an L-shaped
+  open circulation alcove. Existing room outlines and doors are
+  preserved and the complete building is validated on a draft copy.
+  This pass also works on already accepted rooms when using *Suggest on
+  checked floors*; it does not depend on removing rooms first.
+- **Fit stairs into furnished hallways:** the previous stair pass skipped
+  any corridor lacking a separately reserved stairwell. The new pass
+  attempts a 0.9m-wide, 2.8m-long flight and 1m landings at both ends
+  alongside an existing hall, and validates the flight, both landings,
+  upstairs opening and nearby doors on **both** connected floors. It
+  maintains at least 0.8m of corridor bypass space. When no safe
+  flight fits, a requested multi-floor suggestion reports why it
+  cannot connect the floors instead of succeeding silently.
+- **Newly created floor checkboxes are selected by default**, not only
+  the ground floor. Clicking *Suggest on checked floors* or *Regenerate
+  checked floors* with two adjacent levels selected automatically
+  enables stair generation, as *Suggest entire building* already did.
+  Users can still manually uncheck individual floors for incremental
+  editing; to connect floors, both adjoining levels must be selected.
+- Added regression coverage reconstructing the exact LShape2 dimensions,
+  existing room/door/window distribution, downstairs kitchen fireplace,
+  both hallway gaps and the proposed connecting stair and landing
+  geometry on the preserved plan.
+
 ## v0.24 — Complete two-storey access, hallway seams and fireplace glazing clearances (development)
 
 - **Multi-floor drafts always include staircase access:** the user-facing
