@@ -71,6 +71,9 @@ public static class BuildingGenerator
         var stageOptions = options.Copy();
         stageOptions.Stairs = false;
         stageOptions.Fireplaces = false;
+        // Add windows only AFTER chimney placement, using actual full
+        // window spans rather than testing only fireplace-centre distances.
+        stageOptions.Windows = false;
         if (reserveStairwells)
         {
             stageOptions.Rooms = false;
@@ -104,6 +107,7 @@ public static class BuildingGenerator
             var fill = options.Copy();
             fill.Stairs = false;
             fill.Fireplaces = false;
+            fill.Windows = false;
             if (fill.Rooms || fill.Doors || fill.Windows)
             {
                 if (!TrySuggest(result, Enumerable.Range(0, floorCount).ToArray(),
@@ -118,12 +122,27 @@ public static class BuildingGenerator
                 Enumerable.Range(0, floorCount).ToArray(), out var withStairs);
             result = withStairs;
         }
+        if (options.Stairs && floorCount > 1 &&
+            result.Staircases.Count < floorCount - 1)
+        {
+            reason = "The generator could not connect every requested floor with a staircase. " +
+                "No disconnected building was proposed.";
+            return false;
+        }
         int chimneys = 0;
         if (options.Fireplaces &&
             BuildingConnectivity.TryAddChimney(result, out var withChimney, options.Purpose))
         {
             result = withChimney;
             chimneys = 1;
+        }
+        if (options.Windows)
+        {
+            foreach (int level in BuildingStoreys.FloorIndexes(result))
+            {
+                BuildingConnectivity.AddWindows(result, level, out var glazed);
+                result = glazed;
+            }
         }
         if (reserveStairwells)
         {
@@ -520,8 +539,15 @@ public static class BuildingGenerator
                 proposed, indices, out var withStairs);
             proposed = withStairs;
         }
-        // Windows follow stairs: a simultaneous stairs/windows pass must
-        // never put glazing beside a newly reserved flight.
+        // Chimneys before glazing. Otherwise a 1.2m window can overlap
+        // the edge of a fireplace even when its centre is far away.
+        if (options.Fireplaces &&
+            BuildingConnectivity.TryAddChimney(proposed, out var withFireplace, options.Purpose))
+        {
+            proposed = withFireplace;
+            addedChimneys++;
+        }
+
         if (options.Windows)
         {
             foreach (int index in indices)
@@ -530,13 +556,6 @@ public static class BuildingGenerator
                     proposed, index, out var withWindows);
                 proposed = withWindows;
             }
-        }
-
-        if (options.Fireplaces &&
-            BuildingConnectivity.TryAddChimney(proposed, out var withFireplace, options.Purpose))
-        {
-            proposed = withFireplace;
-            addedChimneys++;
         }
 
         if (addedRooms == 0 && addedCorridors == 0 &&
