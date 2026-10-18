@@ -226,11 +226,15 @@ public static class SideStairApproachPlanner
                     PolygonGeometry.ClosestPointOnSegment(p,
                         outline[i],outline[(i+1)%outline.Count])
                         .DistanceTo(p)<Epsilon);
-            if (final.Rooms.Where(r=>r.Id!=hall.Id).Any(r=>
-                !final.Doors.Any(d=>
+            var disconnected=final.Rooms.Where(r=>r.Id!=hall.Id)
+                .FirstOrDefault(r=>!final.Doors.Any(d=>
                     OnWall(d.Centre,r.Outline) &&
-                    OnWall(d.Centre,corridor.Outline))))
+                    OnWall(d.Centre,corridor.Outline)));
+            if (disconnected is not null)
+            {
+                stage="No direct hallway door into "+disconnected.Name;
                 continue;
+            }
 
             updated=connected;
             stage="";
