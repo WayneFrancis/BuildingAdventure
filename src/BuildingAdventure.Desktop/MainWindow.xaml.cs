@@ -776,8 +776,17 @@ public partial class MainWindow : Window
         }
         int seed = Random.Shared.Next(1, int.MaxValue);
         int gridFeet = GridScaleBox.SelectedIndex switch { 1 => 5, 2 => 10, _ => 0 };
+        var options = SelectedGeneratorOptions();
+        // A proposed building with multiple storeys must provide vertical
+        // access. The unchecked stairs preference is only meaningful when
+        // completing existing floors or designing a single-storey plan.
+        if (count > 1)
+        {
+            options.Stairs = true;
+            GenerateStairsCheckBox.IsChecked = true;
+        }
         if (!BuildingGenerator.TrySuggestWholeBuilding(count, seed,
-            SelectedGeneratorOptions(), out var proposal, out var reason, gridFeet))
+            options, out var proposal, out var reason, gridFeet))
         {
             _hint = reason;
             Refresh();
