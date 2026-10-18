@@ -267,7 +267,7 @@ public static class BuildingConnectivity
     /// whose perimeter covers the entire hearth footprint.
     /// </summary>
     public static bool TryAddChimney(BuildingDocument building,
-        out BuildingDocument updated)
+        out BuildingDocument updated, BuildingUse use = BuildingUse.Residence)
     {
         updated = BuildingStoreys.Copy(building);
         if (updated.Chimneys.Count > 0) return false;
@@ -296,8 +296,14 @@ public static class BuildingConnectivity
                 Name = "Unpartitioned floor", Type = "Unpartitioned",
                 Outline = baseFloor.Perimeter.ToList()
             });
+        // Measured medieval great-house kitchen hearths can exceed 3m.
+        // Larger buildings get wider schematic hearths; a cottage retains
+        // a compact wall fireplace. These are configuration heuristics.
+        double hearthWidth = use == BuildingUse.Inn ? 2.4 :
+            use == BuildingUse.Mixed ? 1.8 : 1.4;
+        double hearthDepth = use == BuildingUse.Inn ? 0.9 : 0.7;
         var allWalls = FloorGeometry.BuildWalls(baseFloor.Perimeter, baseFloor.Rooms)
-            .Where(w => w.Length >= 2.1).ToList();
+            .Where(w => w.Length >= hearthWidth + 0.5).ToList();
 
         foreach (var room in rooms)
         foreach (var wall in allWalls
@@ -308,15 +314,15 @@ public static class BuildingConnectivity
             var midpoint = Midpoint(wall);
             double dx = wall.B.X - wall.A.X, dy = wall.B.Y - wall.A.Y;
             double len = Math.Sqrt(dx * dx + dy * dy);
-            if (len < 2.1) continue;
+            if (len < hearthWidth + 0.5) continue;
             // Conservative schematic masonry hearth: about 1.4 m along
             // the wall and 0.7 m projecting into the room. Medieval hearth
             // openings ranged from modest to monumental; this is a
             // domestic default, not a universal historic measurement.
             bool horizontal = Math.Abs(dx) >= Math.Abs(dy);
-            double w = horizontal ? 1.4 : 0.7;
-            double d = horizontal ? 0.7 : 1.4;
-            double normalDepth = 0.7;
+            double w = horizontal ? hearthWidth : hearthDepth;
+            double d = horizontal ? hearthDepth : hearthWidth;
+            double normalDepth = hearthDepth;
             foreach (int sign in new[] { 1, -1 })
             {
                 var centre = new Point2(
