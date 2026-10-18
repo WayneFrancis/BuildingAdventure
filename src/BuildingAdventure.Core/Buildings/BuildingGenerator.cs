@@ -220,8 +220,22 @@ public static class BuildingGenerator
             {
                 // First-draft building generation: start with a usable
                 // rectangular outline, then subdivide it into rooms.
-                double width = random.Next(22, 37) * 0.5;
-                double depth = random.Next(16, 29) * 0.5;
+                double width, depth;
+                if (proposed.GridFeet is 5 or 10)
+                {
+                    double cell = proposed.GridFeet * 0.3048;
+                    // The exterior footprint lands on exact tabletop
+                    // squares; interior subdivisions may still be metric.
+                    width = random.Next(proposed.GridFeet == 5 ? 7 : 5,
+                        proposed.GridFeet == 5 ? 12 : 9) * cell;
+                    depth = random.Next(proposed.GridFeet == 5 ? 6 : 4,
+                        proposed.GridFeet == 5 ? 10 : 7) * cell;
+                }
+                else
+                {
+                    width = random.Next(22, 37) * 0.5;
+                    depth = random.Next(16, 29) * 0.5;
+                }
                 floor.Perimeter =
                 [
                     new Point2(0, 0), new Point2(width, 0),
@@ -384,18 +398,23 @@ public static class BuildingGenerator
                     proposed, index, out var withDoors);
                 proposed = withDoors;
             }
-            if (options.Windows)
-            {
-                addedWindows += BuildingConnectivity.AddWindows(
-                    proposed, index, out var withWindows);
-                proposed = withWindows;
-            }
         }
         if (options.Stairs)
         {
             addedStairs = BuildingConnectivity.AddStairs(
                 proposed, indices, out var withStairs);
             proposed = withStairs;
+        }
+        // Windows follow stairs: a simultaneous stairs/windows pass must
+        // never put glazing beside a newly reserved flight.
+        if (options.Windows)
+        {
+            foreach (int index in indices)
+            {
+                addedWindows += BuildingConnectivity.AddWindows(
+                    proposed, index, out var withWindows);
+                proposed = withWindows;
+            }
         }
 
         if (options.Fireplaces &&
