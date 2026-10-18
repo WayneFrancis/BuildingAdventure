@@ -5157,7 +5157,7 @@ Check("Reclaim oversized hallway from uploaded stepped two-storey footprint", ()
     // grew to 50.15m² (56.8%) after the narrow passage merging pass.
     var oversized = new BuildingDocument
     {
-        GridFeet = 5,
+        SchemaVersion = 2, GridFeet = 5,
         Perimeter =
         [
             new(6.096, 1.524), new(10.668, 1.524),
@@ -5240,6 +5240,7 @@ Check("Blank stepped floors put the staircase against a common corridor wall", (
 {
     var blank = new BuildingDocument
     {
+        SchemaVersion = 2,
         Perimeter =
         [
             new(6.096, 1.524), new(10.668, 1.524),
