@@ -331,9 +331,17 @@ public static class RoomLayoutPlanner
                     candidate.Outline.Min(p => p.Y);
                 double area = PolygonGeometry.Area(candidate.Outline);
                 bool passage = candidate.Type == "Passage";
-                bool awkward = Math.Min(w, h) < 2.5 ||
-                    (area < 9 && candidate.Type is "Storage" or "Closet" or
-                        "Storeroom" or "Pantry" or "Other");
+                // A 2m-deep, 5m-wide storeroom is intentional: it can
+                // hold shelves on both sides and needs only a single door.
+                // Do not absorb useful service space into bedrooms or
+                // dining rooms just because it is slimmer than a bedroom.
+                bool usefulStore = candidate.Type is "Storeroom" or
+                    "Storage" or "Pantry" or "Buttery" or "Stockroom" &&
+                    area >= 6 && Math.Min(w, h) >= 1.6;
+                bool awkward = !usefulStore &&
+                    (Math.Min(w, h) < 2.5 ||
+                     (area < 9 && candidate.Type is "Storage" or "Closet" or
+                         "Storeroom" or "Pantry" or "Other"));
                 if (!passage && !awkward) continue;
 
                 var neighbours = floor.Rooms.Where(r => r.Id != candidate.Id &&
