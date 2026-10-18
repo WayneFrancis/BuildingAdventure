@@ -4,6 +4,55 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.23 — Safe circulation, kitchen service access, shared hearths and gap completion (development)
+
+- **Safe upper-floor doors:** the automatic doorway pass can add an
+  exterior entry only at ground level. Upper floors receive internal
+  doors, avoiding bedrooms that open directly over a drop.
+- **Every reachable room needs a route in:** a room's existing exterior
+  door no longer suppresses its internal doorway to the hall. Internal
+  room-to-room connections are preferred when an actual shared wall
+  exists. Kitchen-to-dining, kitchen-to-pantry/storeroom, and
+  kitchen-to-living connections receive a second pass, which may insert
+  another door even when those rooms already have hall access.
+- **Smarter culinary placement:** when a room has a genuine partition
+  shared with the kitchen, the planner prioritises a dining room or
+  pantry if the building still needs one and the room dimensions fit.
+- **Vertical partition awareness:** where possible, upstairs bedroom
+  dividing lines inherit actual partition positions from the preceding
+  floor, instead of being independently randomised. This improves
+  chimney adjacency and more believable bearing-wall alignment.
+  The generator does not yet include structural load calculations.
+- **Shared kitchen/living fireplaces:** a shared partition can support
+  two facing fireplaces attached to one chimney definition. Both
+  hearth faces are saved in JSON, with their two ground-floor room IDs
+  and positions; the upstairs footprint is labelled **FLUE**, never a
+  fireplace in the bedroom above. When a shared fireplace is
+  impossible, the generator chooses a suitable individual hearth or
+  leaves the feature out. Newly placed chimney stacks must remain
+  adjacent to a wall on each covered upper level.
+- **Filling actual L-wings and drawn outlines:** a secondary orthogonal
+  floor-space pass decomposes still-empty accessible pockets and tries
+  larger rooms first, without redrawing the user's perimeter. Long
+  pockets are divided into plausible room-sized spans. Another pass
+  closes thin (under 1.25m) external gaps by stretching only newly
+  generated rectangular rooms; it never moves accepted manual rooms.
+  Tiny inaccessible slivers and nonorthogonal pockets can still remain.
+- **Two distinct suggestion workflows:**
+  * **Suggest on checked floors** adds candidates to available room space
+    without deleting anything already accepted.
+  * **Regenerate checked floors** starts a fresh *replacement preview*,
+    clearing rooms/doors/windows only on the selected levels in the
+    proposed copy. Existing walls' perimeter, other floors, stairs and
+    chimney flues are retained. Stale room-specific hearth links become
+    flue-only when those hearth rooms are regenerated. Nothing changes
+    until **Accept All**, which shows an explicit replacement warning.
+    Undo restores the earlier design.
+- Regression tests cover orphaned exterior upstairs doors, the living
+  room's hall access, adjoining kitchen service doors, multi-floor
+  partitions, two-sided hearth serialization, repeated regeneration,
+  orthogonal L-wing filling and no alteration of hand-drawn rooms.
+
 ## v0.22 — Historically scaled plans and usable hearth/stair layouts (development branch)
 
 - **Imperial perimeter seam fixed:** planned rooms now preserve the exact
