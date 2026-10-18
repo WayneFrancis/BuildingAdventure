@@ -164,9 +164,13 @@
                             <WrapPanel Margin="0,0,0,8">
                                 <Button Content="Suggest on checked floors" Click="Suggest_Click"
                                         Padding="7,5" Margin="0,0,5,0"/>
+                                <Button Content="Regenerate checked floors" Click="Regenerate_Click"
+                                        Padding="7,5" Margin="0,0,5,0"/>
                                 <Button x:Name="AcceptSuggestionButton" Content="Accept All"
                                         Click="AcceptSuggestion_Click" IsEnabled="False" Padding="7,5"/>
                             </WrapPanel>
+                            <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,9"
+                                       Text="Suggest fills available space and can be clicked repeatedly to see new drafts. Regenerate replaces existing rooms, doors and windows ONLY on checked floors when you Accept All; your drawn perimeter and other floors are preserved. Undo restores the prior design."/>
                             <Button x:Name="AcceptSuggestedRoomButton" Content="Accept selected suggested room"
                                     Click="AcceptSuggestedRoom_Click" IsEnabled="False"
                                     Padding="7,5" Margin="0,0,0,8"/>
