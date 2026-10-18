@@ -854,15 +854,14 @@ public sealed class FloorPlanSurface : FrameworkElement
                 stacked ? 11 : 12,
                 goingUp ? Brushes.DarkBlue : Brushes.DarkMagenta);
 
-            // Direction arrow along the staircase's local long axis.
-            double angle = stair.RotationDegrees * Math.PI / 180;
-            double vx = -Math.Sin(angle), vy = Math.Cos(angle);
-            Point start = ToScreen(new Point2(
-                stair.Centre.X - vx * stair.Length * 0.23,
-                stair.Centre.Y - vy * stair.Length * 0.23));
-            Point tip = ToScreen(new Point2(
-                stair.Centre.X + vx * stair.Length * 0.23,
-                stair.Centre.Y + vy * stair.Length * 0.23));
+            // On the ground floor the arrow follows the ascent;
+            // upstairs it reverses to indicate descent along the
+            // SAME flight. Rotation does not itself determine which
+            // end is "up" on the currently displayed floor.
+            var (worldStart, worldTip) =
+                BuildingStoreys.StairTravelArrow(stair, _stairFloorIndex);
+            Point start = ToScreen(worldStart);
+            Point tip = ToScreen(worldTip);
             var pen = new Pen(Brushes.DarkSlateBlue, 1.6);
             dc.DrawLine(pen, start, tip);
             Vector vector = tip - start;
