@@ -5907,7 +5907,8 @@ Check("Two-storey residence offers historical hall-house layout with safe stair 
         historic=true;
         Assert(generated.Rooms.Single(r=>r.Type=="Hallway").Name==
             "Screens passage","Do not retain a full-length central corridor on the ground floor.");
-        Assert(generated.Rooms.Any(r=>r.Type=="Pantry"));
+        Assert(generated.Rooms.Any(r=>r.Type is "Pantry" or "Buttery"),
+            "The service end should contain an enclosed pantry or buttery.");
         Assert(generated.Staircases.Count==1);
         Assert(BuildingStoreys.Validate(generated,out reason),reason);
         Assert(BuildingConnectivity.RoomsIsolatedByServiceSpaces(generated,0).Count==0);
@@ -5927,6 +5928,79 @@ Check("Hall-house option carries through generation option cloning", () =>
         clone.Purpose==BuildingUse.Residence);
     clone.HallHouseLayout=false;
     Assert(setting.HallHouseLayout);
+});
+
+Check("Regeneration seeds produce different historical room geometries and room sets", () =>
+{
+    var blank = new BuildingDocument
+    {
+        Perimeter=[new(0,0),new(12,0),new(12,9),new(0,9)]
+    };
+    var results = new List<BuildingDocument>();
+    var errors = new List<string>();
+    for(int seed=101;seed<=114;seed++)
+    {
+        if (!MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+            blank,seed,out var design,out var why))
+        {
+            errors.Add($"{seed}: {why}");
+            continue;
+        }
+        Assert(BuildingStoreys.Validate(design,out why),why);
+        if (!results.Any(previous=>
+            BuildingGenerator.SameRoomLayout(previous,design,[0])))
+            results.Add(design);
+    }
+    Assert(results.Count>=5,
+        $"Expected at least five different room configurations, found {results.Count}. "+
+        string.Join(" | ",errors));
+    Assert(results.Select(plan=>string.Join(",",plan.Rooms
+        .Select(r=>r.Type).OrderBy(t=>t))).Distinct().Count()>=2,
+        "Different seeds should alter room roles or whether private rooms exist, "+
+        "not just shift the exact same bedroom walls.");
+    Assert(blank.Rooms.Count==0);
+    var changed=BuildingStoreys.Copy(results[0]);
+    changed.Rooms[0].Id=Guid.NewGuid();
+    changed.Doors.Clear();
+    Assert(BuildingGenerator.SameRoomLayout(results[0],changed,[0]),
+        "New GUIDs and doors are not a meaningful regeneration.");
+    changed.Rooms[0].Type="Workshop";
+    Assert(!BuildingGenerator.SameRoomLayout(results[0],changed,[0]),
+        "Different room roles must count as a real change.");
+});
+
+Check("Regenerate accepted medieval house rerolls room geometry across seeds", () =>
+{
+    var options = new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,HallHouseLayout=true,Rooms=true,
+        Corridors=true,Doors=true,Windows=true
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(1,101,options,
+        out var first,out var reason),reason);
+    var accepted = first.Building;
+    var distinct = new List<BuildingDocument>();
+    var failures = new List<string>();
+    foreach(int seed in Enumerable.Range(120,14))
+    {
+        if(!BuildingGenerator.TryRegenerate(accepted,[0],seed,options,
+            out var replacement,out var failed))
+        {
+            failures.Add($"{seed}: {failed}");
+            continue;
+        }
+        Assert(BuildingStoreys.Validate(replacement.Building,out failed),failed);
+        Assert(replacement.Building.Perimeter.SequenceEqual(accepted.Perimeter));
+        if(!BuildingGenerator.SameRoomLayout(accepted,replacement.Building,[0]) &&
+            !distinct.Any(r=>BuildingGenerator.SameRoomLayout(
+                r,replacement.Building,[0])))
+            distinct.Add(replacement.Building);
+    }
+    Assert(distinct.Count>=3,
+        $"A user should see at least three different rerolls; found {distinct.Count}. "+
+        string.Join(" | ",failures));
+    Assert(accepted.Rooms.Any(r=>r.Type=="Great hall"),
+        "No accepted building may be mutated during regeneration.");
 });
 
 Console.WriteLine($"{passed} passed; {failed} failed.");
