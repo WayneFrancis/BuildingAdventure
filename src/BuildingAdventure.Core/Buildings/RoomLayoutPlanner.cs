@@ -51,9 +51,9 @@ public static class RoomLayoutPlanner
         double maxX = floor.Perimeter.Max(p => p.X);
         double minY = floor.Perimeter.Min(p => p.Y);
         double maxY = floor.Perimeter.Max(p => p.Y);
-        int lengthLow = GridCeil(horizontal ? hallLeft : hallTop);
-        int lengthHigh = GridFloor(horizontal ? hallRight : hallBottom);
-        if (lengthHigh - lengthLow < 4) return 0;
+        double lengthLow = horizontal ? hallLeft : hallTop;
+        double lengthHigh = horizontal ? hallRight : hallBottom;
+        if (lengthHigh - lengthLow < 2) return 0;
 
         int added = 0;
         // Keep the exact external wall coordinates. In 5/10-foot mode
@@ -80,7 +80,7 @@ public static class RoomLayoutPlanner
             // Split the free portions at those boundaries rather than
             // proposing one room that overlaps the stairwell and abandoning
             // the entire remainder of the hallway side.
-            var free = new List<(int Start, int End)> { (lengthLow, lengthHigh) };
+            var free = new List<(double Start, double End)> { (lengthLow, lengthHigh) };
             double sideLow = Math.Min(near, far), sideHigh = Math.Max(near, far);
             foreach (var existing in BuildingStoreys.GetFloor(updated, floorIndex).Rooms)
             {
@@ -92,13 +92,13 @@ public static class RoomLayoutPlanner
                 if (crossMin >= sideHigh - 1e-6 ||
                     crossMax <= sideLow + 1e-6) continue;
 
-                int occupiedStart = GridFloor(horizontal
+                double occupiedStart = horizontal
                     ? existing.Outline.Min(p => p.X)
-                    : existing.Outline.Min(p => p.Y));
-                int occupiedEnd = GridCeil(horizontal
+                    : existing.Outline.Min(p => p.Y);
+                double occupiedEnd = horizontal
                     ? existing.Outline.Max(p => p.X)
-                    : existing.Outline.Max(p => p.Y));
-                var remaining = new List<(int Start, int End)>();
+                    : existing.Outline.Max(p => p.Y);
+                var remaining = new List<(double Start, double End)>();
                 foreach (var (start, finish) in free)
                 {
                     if (occupiedEnd <= start || occupiedStart >= finish)
@@ -115,21 +115,25 @@ public static class RoomLayoutPlanner
             }
             foreach (var (start, end) in free)
             {
-                int length = end - start;
-                if (length < 4) continue;
-                int target = Math.Clamp((int)Math.Round(length / 9.0) +
-                    random.Next(-1, 2), length >= 16 ? 2 : 1, Math.Max(1, length / 5));
-                var widths = ChooseFrontageWidths(length, depth, target,
+                double length = end - start;
+                if (length < 2) continue;
+                int cells = Math.Max(1, (int)Math.Round(length * 2));
+                int target = Math.Clamp((int)Math.Round(cells / 9.0) +
+                    random.Next(-1, 2), cells >= 16 ? 2 : 1, Math.Max(1, cells / 5));
+                var widths = ChooseFrontageWidths(cells, depth, target,
                     use, floorIndex,
                     BuildingStoreys.GetFloor(updated, floorIndex).Rooms, random);
-                int position = start;
-                foreach (int width in widths)
+                double position = start;
+                for (int part = 0; part < widths.Count; part++)
                 {
+                    double boundary = part == widths.Count - 1
+                        ? end : Math.Min(end, position + widths[part] / 2.0);
+                    if (boundary - position < 1) { position = boundary; continue; }
                     double from = Math.Min(near, far);
                     double to = Math.Max(near, far);
                     List<Point2> outline = horizontal
-                        ? Rectangle(position / 2.0, from, (position + width) / 2.0, to)
-                        : Rectangle(from, position / 2.0, to, (position + width) / 2.0);
+                        ? Rectangle(position, from, boundary, to)
+                        : Rectangle(from, position, to, boundary);
                     double area = PolygonGeometry.Area(outline);
                     var current = BuildingStoreys.GetFloor(updated, floorIndex);
                     string type = ChooseRoomType(use, floorIndex, area,
@@ -148,7 +152,7 @@ public static class RoomLayoutPlanner
                         updated = candidate;
                         added++;
                     }
-                    position += width;
+                    position = boundary;
                 }
             }
         }
