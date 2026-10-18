@@ -55,6 +55,7 @@ public sealed class FloorPlanSurface : FrameworkElement
     private Guid? _selectedStairId;
     private List<StaircaseDefinition> _staircases = new();
     private List<ChimneyDefinition> _chimneys = new();
+    private Guid? _selectedChimneyId;
     private int _stairFloorIndex;
     private List<AdjacentFloorPlan> _referenceFloors = new();
     private double _referenceOpacity = 0.40;
@@ -119,6 +120,8 @@ public sealed class FloorPlanSurface : FrameworkElement
     public void SetChimneyOverlay(IReadOnlyList<ChimneyDefinition> chimneys)
     {
         _chimneys = chimneys.Select(c => c.Copy()).ToList();
+        if (!_chimneys.Any(c => c.Id == _selectedChimneyId))
+            _selectedChimneyId = null;
         InvalidateVisual();
     }
 
@@ -188,6 +191,10 @@ public sealed class FloorPlanSurface : FrameworkElement
     public bool HasSelectedWindow => _selectedWindowId.HasValue;
     public WindowDefinition? SelectedWindow =>
         _windows.FirstOrDefault(w => w.Id == _selectedWindowId)?.Copy();
+    public Guid? SelectedChimneyId => _selectedChimneyId;
+    public bool HasSelectedChimney => _selectedChimneyId.HasValue;
+    public bool HasSelectedVertex => _selectedVertex >= 0;
+    public Guid? SelectedRoomId => _selectedRoomId;
     public Guid? SelectedStaircaseId => _selectedStairId;
     public StaircaseDefinition? SelectedStaircase =>
         _staircases.FirstOrDefault(s => s.Id == _selectedStairId)?.Copy();
@@ -287,6 +294,7 @@ public sealed class FloorPlanSurface : FrameworkElement
         _originalWindow = null;
         _windowPreview = null;
         _selectedStairId = null;
+        _selectedChimneyId = null;
         _stairPlacementHover = null;
         _draggingStair = false;
         _rotatingStair = false;
@@ -660,8 +668,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             if (room.Outline.Count < 3) continue;
             bool selected = room.Id == _selectedRoomId;
             dc.DrawGeometry(fills[index % fills.Length],
-                selected ? new Pen(Brushes.DodgerBlue, 1.4) : null,
-                WithStairwellHoles(room.Outline, openings));
+                null, WithStairwellHoles(room.Outline, openings));
             Point2 labelPoint = FindRoomLabelPoint(room.Outline);
             Point centre = ToScreen(labelPoint);
             DrawText(dc, room.Name, new Point(centre.X + 5, centre.Y - 12),
@@ -878,8 +885,13 @@ public sealed class FloorPlanSurface : FrameworkElement
             var footprint = BuildingStoreys.ChimneyFootprint(chimney);
             if (_outline.Count < 3 ||
                 !FloorGeometry.IsWithinPolygon(footprint, _outline)) continue;
-            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(180, 171, 89, 65)),
-                new Pen(Brushes.SaddleBrown, 2), BuildGeometry(footprint, true));
+            bool selectedChimney = chimney.Id == _selectedChimneyId &&
+                Tool == EditorTool.Select;
+            dc.DrawGeometry(new SolidColorBrush(selectedChimney
+                    ? Color.FromArgb(215, 255, 174, 65)
+                    : Color.FromArgb(180, 171, 89, 65)),
+                new Pen(selectedChimney ? Brushes.DarkOrange : Brushes.SaddleBrown,
+                    selectedChimney ? 5 : 2), BuildGeometry(footprint, true));
             Point centre = ToScreen(chimney.Centre);
             bool linkedHearth = chimney.HearthFloorIndex == _stairFloorIndex &&
                 chimney.HearthRoomIds.Any(id => _rooms.Any(r => r.Id == id));
@@ -905,11 +917,31 @@ public sealed class FloorPlanSurface : FrameworkElement
                 var other = chimney.Copy();
                 other.Centre = chimney.OtherHearthCentre.Value;
                 dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(115, 185, 83, 48)),
-                    new Pen(Brushes.Firebrick, 2),
+                    new Pen(selectedChimney ? Brushes.DarkOrange : Brushes.Firebrick,
+                        selectedChimney ? 5 : 2),
                     BuildGeometry(BuildingStoreys.ChimneyFootprint(other), true));
                 Point otherAt = ToScreen(other.Centre);
                 DrawText(dc, "FP",
                     new Point(otherAt.X - 6, otherAt.Y - 6), 9, Brushes.White);
+            }
+        }
+
+        // Strong selection overlay is drawn AFTER the wall strokes and
+        // chimney symbols, so the room remains unmistakably selected
+        // even when its walls coincide with the exterior perimeter.
+        if (Tool == EditorTool.Select && _selectedRoomId.HasValue)
+        {
+            var selectedRoom = _rooms.FirstOrDefault(r => r.Id == _selectedRoomId);
+            if (selectedRoom is not null)
+            {
+                var selectedShape = WithStairwellHoles(selectedRoom.Outline, openings);
+                dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(75, 38, 136, 245)),
+                    new Pen(Brushes.White, 7), selectedShape);
+                dc.DrawGeometry(null, new Pen(Brushes.DodgerBlue, 4.5),
+                    selectedShape);
+                Point label = ToScreen(FindRoomLabelPoint(selectedRoom.Outline));
+                DrawText(dc, "SELECTED: " + selectedRoom.Name,
+                    new Point(label.X + 5, label.Y + 20), 11, Brushes.DarkBlue);
             }
         }
 
@@ -1423,6 +1455,7 @@ public sealed class FloorPlanSurface : FrameworkElement
 
             if (TrySelectVertex(position))
             {
+                _selectedChimneyId = null;
                 _beforeDrag = Snapshot();
                 _draggingVertex = true;
                 _dragOriginalPoint = SelectedVertices()![_selectedVertex];
@@ -1430,14 +1463,25 @@ public sealed class FloorPlanSurface : FrameworkElement
             }
             else if (TrySelectDoor(position))
             {
+                _selectedChimneyId = null;
                 _selectedWindowId = null;
                 _selectedStairId = null;
                 _selectedVertex = -1;
                 _selectedRoomId = null;
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
             }
+            else if (TrySelectChimney(position))
+            {
+                _selectedStairId = null;
+                _selectedWindowId = null;
+                _selectedDoorId = null;
+                _selectedRoomId = null;
+                _selectedVertex = -1;
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
+            }
             else if (TrySelectStair(position))
             {
+                _selectedChimneyId = null;
                 _selectedWindowId = null;
                 _selectedVertex = -1;
                 _selectedDoorId = null;
@@ -1461,6 +1505,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             else
             {
                 _selectedStairId = null;
+                _selectedChimneyId = null;
                 _selectedWindowId = null;
                 Point2 point = ToWorld(position);
                 var room = _rooms.LastOrDefault(r => PolygonGeometry.ContainsPoint(r.Outline, point));
@@ -2577,6 +2622,32 @@ public sealed class FloorPlanSurface : FrameworkElement
         _selectedVertex = -1;
         RaiseChanged();
         Say("Door added. Select it and use Delete Door to remove it.");
+    }
+
+    private bool TrySelectChimney(Point position)
+    {
+        var world = ToWorld(position);
+        foreach (var chimney in _chimneys)
+        {
+            if (_outline.Count < 3 ||
+                !FloorGeometry.IsWithinPolygon(
+                    BuildingStoreys.ChimneyFootprint(chimney), _outline))
+                continue;
+            bool hit = PolygonGeometry.ContainsPoint(
+                BuildingStoreys.ChimneyFootprint(chimney), world);
+            if (!hit && chimney.HearthFloorIndex == _stairFloorIndex &&
+                chimney.OtherHearthCentre.HasValue)
+            {
+                var other = chimney.Copy();
+                other.Centre = chimney.OtherHearthCentre.Value;
+                hit = PolygonGeometry.ContainsPoint(
+                    BuildingStoreys.ChimneyFootprint(other), world);
+            }
+            if (!hit) continue;
+            _selectedChimneyId = chimney.Id;
+            return true;
+        }
+        return false;
     }
 
     private bool TrySelectStair(Point position)
