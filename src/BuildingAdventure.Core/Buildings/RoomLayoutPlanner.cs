@@ -56,29 +56,32 @@ public static class RoomLayoutPlanner
         if (lengthHigh - lengthLow < 4) return 0;
 
         int added = 0;
+        // Keep the exact external wall coordinates. In 5/10-foot mode
+        // those edges seldom coincide with the half-metre subdivision
+        // lattice. Rounding them inwards left visible strips along the
+        // right and bottom exterior walls.
         var bands = horizontal
-            ? new (int Near, int Far)[]
+            ? new (double Near, double Far)[]
             {
-                (GridFloor(hallTop), GridCeil(minY)),
-                (GridCeil(hallBottom), GridFloor(maxY))
+                (hallTop, minY), (hallBottom, maxY)
             }
-            : new (int Near, int Far)[]
+            : new (double Near, double Far)[]
             {
-                (GridFloor(hallLeft), GridCeil(minX)),
-                (GridCeil(hallRight), GridFloor(maxX))
+                (hallLeft, minX), (hallRight, maxX)
             };
 
         foreach (var (near, far) in bands)
         {
-            int depth = Math.Abs(near - far);
-            if (depth < 4) continue; // avoid rooms under 2m deep
+            double depthMetres = Math.Abs(near - far);
+            int depth = (int)Math.Round(depthMetres * 2);
+            if (depthMetres < 2) continue; // avoid rooms under 2m deep
 
             // Existing rooms (including reserved stairwells) occupy frontage.
             // Split the free portions at those boundaries rather than
             // proposing one room that overlaps the stairwell and abandoning
             // the entire remainder of the hallway side.
             var free = new List<(int Start, int End)> { (lengthLow, lengthHigh) };
-            int sideLow = Math.Min(near, far), sideHigh = Math.Max(near, far);
+            double sideLow = Math.Min(near, far), sideHigh = Math.Max(near, far);
             foreach (var existing in BuildingStoreys.GetFloor(updated, floorIndex).Rooms)
             {
                 if (existing.Id == hallId) continue;
@@ -86,8 +89,8 @@ public static class RoomLayoutPlanner
                     ? existing.Outline.Min(p => p.Y) : existing.Outline.Min(p => p.X);
                 double crossMax = horizontal
                     ? existing.Outline.Max(p => p.Y) : existing.Outline.Max(p => p.X);
-                if (crossMin * 2 >= sideHigh - 1e-6 ||
-                    crossMax * 2 <= sideLow + 1e-6) continue;
+                if (crossMin >= sideHigh - 1e-6 ||
+                    crossMax <= sideLow + 1e-6) continue;
 
                 int occupiedStart = GridFloor(horizontal
                     ? existing.Outline.Min(p => p.X)
@@ -122,11 +125,11 @@ public static class RoomLayoutPlanner
                 int position = start;
                 foreach (int width in widths)
                 {
-                    int from = Math.Min(near, far);
-                    int to = Math.Max(near, far);
+                    double from = Math.Min(near, far);
+                    double to = Math.Max(near, far);
                     List<Point2> outline = horizontal
-                        ? Rectangle(position, from, position + width, to)
-                        : Rectangle(from, position, to, position + width);
+                        ? Rectangle(position / 2.0, from, (position + width) / 2.0, to)
+                        : Rectangle(from, position / 2.0, to, (position + width) / 2.0);
                     double area = PolygonGeometry.Area(outline);
                     var current = BuildingStoreys.GetFloor(updated, floorIndex);
                     string type = ChooseRoomType(use, floorIndex, area,
@@ -312,11 +315,11 @@ public static class RoomLayoutPlanner
 
     private static int GridFloor(double value) => (int)Math.Floor(value * 2 + 1e-7);
     private static int GridCeil(double value) => (int)Math.Ceiling(value * 2 - 1e-7);
-    private static List<Point2> Rectangle(int x0, int y0, int x1, int y1) =>
+    private static List<Point2> Rectangle(double x0, double y0, double x1, double y1) =>
     [
-        new Point2(x0 / 2.0, y0 / 2.0),
-        new Point2(x1 / 2.0, y0 / 2.0),
-        new Point2(x1 / 2.0, y1 / 2.0),
-        new Point2(x0 / 2.0, y1 / 2.0)
+        new Point2(x0, y0),
+        new Point2(x1, y0),
+        new Point2(x1, y1),
+        new Point2(x0, y1)
     ];
 }
