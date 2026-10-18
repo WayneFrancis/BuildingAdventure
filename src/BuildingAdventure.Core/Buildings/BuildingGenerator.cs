@@ -605,6 +605,24 @@ public static class BuildingGenerator
             }
         }
 
+        if (options.Rooms)
+        {
+            var floorsWithoutRooms = indices.Where(i =>
+            {
+                var level = BuildingStoreys.GetFloor(proposed, i);
+                return level.Perimeter.Count >= 3 &&
+                    level.Rooms.All(r => r.Type is "Hallway" or "Stairwell") &&
+                    RoomLayoutPlanner.UnassignedArea(level) >= 4.0;
+            }).ToArray();
+            if (floorsWithoutRooms.Length > 0)
+            {
+                reason = "No usable room partitions could be generated on " +
+                    string.Join(", ", floorsWithoutRooms.Select(BuildingStoreys.FloorLabel)) +
+                    ". The exterior shape or existing walls prevent a valid layout. " +
+                    "Try a different seed or adjust the perimeter; no rooms were changed.";
+                return false;
+            }
+        }
         if (addedRooms == 0 && addedCorridors == 0 &&
             addedDoors == 0 && addedWindows == 0 && addedStairs == 0 &&
             addedChimneys == 0 && absorbedHallStrips == 0)
