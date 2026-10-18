@@ -772,9 +772,11 @@ public static class BuildingStoreys
                     return false;
                 }
                 if (level.Doors.Any(d => d.Centre.DistanceTo(chimney.Centre) < 1.1) ||
-                    level.Windows.Any(w => w.Centre.DistanceTo(chimney.Centre) < 1.2))
+                    level.Windows.Any(w =>
+                        WindowConflictsWithChimney(building, index, w, chimney)))
                 {
-                    reason = $"A door or window is too close to the fireplace on {FloorLabel(index)}.";
+                    reason = $"A door or the full span of a window is too close to the " +
+                        $"fireplace/flue on {FloorLabel(index)}.";
                     return false;
                 }
             }
@@ -813,6 +815,54 @@ public static class BuildingStoreys
             new Point2(a + chimney.Width, b + chimney.Depth),
             new Point2(a, b + chimney.Depth)
         ];
+    }
+
+    /// <summary>
+    /// Clearance between the actual span of an exterior window and the
+    /// footprint(s) of a chimney/fireplace. A centre-to-centre distance
+    /// check misses a window whose edge runs into the masonry.
+    /// Checks the secondary kitchen/living hearth face on its actual floor.
+    /// </summary>
+    public static bool WindowConflictsWithChimney(
+        BuildingDocument building, int floorIndex, WindowDefinition window,
+        ChimneyDefinition chimney, double clearance = 0.20)
+    {
+        var floor = GetFloor(building, floorIndex);
+        var faces = new List<List<Point2>> { ChimneyFootprint(chimney) };
+        if (chimney.OtherHearthCentre.HasValue &&
+            chimney.HearthFloorIndex == floorIndex)
+        {
+            var other = chimney.Copy();
+            other.Centre = chimney.OtherHearthCentre.Value;
+            faces.Add(ChimneyFootprint(other));
+        }
+
+        foreach (var wall in FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
+            .Where(w => w.IsExterior))
+        {
+            if (PolygonGeometry.ClosestPointOnSegment(
+                window.Centre, wall.A, wall.B).DistanceTo(window.Centre) > 0.01)
+                continue;
+            double length = wall.Length;
+            if (length < 1e-5) continue;
+            double tangentX = (wall.B.X - wall.A.X) / length;
+            double tangentY = (wall.B.Y - wall.A.Y) / length;
+            double normalX = -tangentY, normalY = tangentX;
+            foreach (var footprint in faces)
+            {
+                var along = footprint.Select(p =>
+                    (p.X - window.Centre.X) * tangentX +
+                    (p.Y - window.Centre.Y) * tangentY).ToArray();
+                var across = footprint.Select(p =>
+                    (p.X - window.Centre.X) * normalX +
+                    (p.Y - window.Centre.Y) * normalY).ToArray();
+                if (along.Max() >= -window.Width / 2 - clearance &&
+                    along.Min() <= window.Width / 2 + clearance &&
+                    across.Min() <= clearance && across.Max() >= -clearance)
+                    return true;
+            }
+        }
+        return false;
     }
 
     public static IReadOnlyList<int> ChimneyFloors(
