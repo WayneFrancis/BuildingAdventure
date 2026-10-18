@@ -613,9 +613,43 @@ public static class BuildingConnectivity
                 r.Type == "Stairwell" &&
                 upper.Rooms.Any(u => u.Type == "Stairwell" &&
                     u.Outline.SequenceEqual(r.Outline)));
-            // Do not obstruct an existing hall. For fully empty plans retain
-            // the original central location as a sensible starting point.
-            if (hallway is not null && stairwell is null) continue;
+            // A two-level plan already furnished with a hallway still
+            // needs a way upstairs. Try a slim flight along one side of
+            // the existing hall, leaving a walking lane past the run.
+            // Previously this case was unconditionally skipped.
+            if (hallway is not null && stairwell is null)
+            {
+                var upstairsHall = upper.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+                if (upstairsHall is null) continue;
+                foreach (var stair in HallwayStairCandidates(hallway, lower))
+                {
+                    var reservations = new List<List<Point2>>
+                    {
+                        BuildingStoreys.StairFootprint(stair)
+                    };
+                    reservations.AddRange(BuildingStoreys.StairLandings(stair));
+                    if (reservations.Any(shape =>
+                        !FloorGeometry.IsWithinPolygon(shape, hallway.Outline) ||
+                        !FloorGeometry.IsWithinPolygon(shape, upstairsHall.Outline)))
+                        continue;
+                    if (reservations.Any(shape =>
+                        low.Doors.Concat(upper.Doors).Any(door =>
+                            PolygonGeometry.ContainsPoint(shape, door.Centre) ||
+                            Enumerable.Range(0, shape.Count).Any(i =>
+                                PolygonGeometry.ClosestPointOnSegment(
+                                    door.Centre, shape[i],
+                                    shape[(i + 1) % shape.Count])
+                                .DistanceTo(door.Centre) < 0.35))))
+                        continue;
+                    if (!BuildingStoreys.TryAddStaircase(updated, stair,
+                            out var fitted, out _))
+                        continue;
+                    updated = fitted;
+                    count++;
+                    break;
+                }
+                continue;
+            }
             // Candidate locations follow perimeter / stairwell walls rather
             // than sampling the geometric centre of the building or a room.
             foreach (var (centre, angle) in WallAnchoredStairCandidates(low, stairwell))
@@ -636,6 +670,56 @@ public static class BuildingConnectivity
             }
         }
         return count;
+    }
+
+    private static IEnumerable<StaircaseDefinition> HallwayStairCandidates(
+        RoomDefinition hall, int lower)
+    {
+        var outline = hall.Outline;
+        double x0 = outline.Min(p => p.X), x1 = outline.Max(p => p.X);
+        double y0 = outline.Min(p => p.Y), y1 = outline.Max(p => p.Y);
+        bool horizontal = x1 - x0 >= y1 - y0;
+        double length = horizontal ? x1 - x0 : y1 - y0;
+        double width = horizontal ? y1 - y0 : x1 - x0;
+        if (length < 5.0 || width < 1.85) yield break;
+        const double run = 2.8;
+        const double landing = 1.0;
+        const double stairWidth = 0.9;
+        const double margin = 0.15;
+        // This leaves at least 0.8 metres clear along the opposite side
+        // of an ordinary 2-metre corridor. Do not block its full width.
+        if (width - stairWidth - margin < 0.8) yield break;
+        double axisStart = horizontal ? x0 : y0;
+        double axisEnd = horizontal ? x1 : y1;
+        double crossStart = horizontal ? y0 : x0;
+        double crossEnd = horizontal ? y1 : x1;
+        double halfTotal = (run + 2 * landing) / 2;
+        foreach (double axis in new[]
+        {
+            (axisStart + axisEnd) / 2,
+            axisStart + halfTotal + 0.35,
+            axisEnd - halfTotal - 0.35,
+            axisStart + length * 0.33,
+            axisStart + length * 0.67
+        }.Distinct())
+        {
+            if (axis - halfTotal < axisStart + 0.10 ||
+                axis + halfTotal > axisEnd - 0.10) continue;
+            foreach (double cross in new[]
+            {
+                crossStart + stairWidth / 2 + margin,
+                crossEnd - stairWidth / 2 - margin
+            })
+                yield return new StaircaseDefinition
+                {
+                    LowerFloorIndex = lower,
+                    Centre = horizontal
+                        ? new Point2(axis, cross) : new Point2(cross, axis),
+                    RotationDegrees = horizontal ? 90 : 0,
+                    Width = stairWidth, Length = run,
+                    LandingLength = landing
+                };
+        }
     }
 
     private static IEnumerable<(Point2 Centre, double Angle)>
