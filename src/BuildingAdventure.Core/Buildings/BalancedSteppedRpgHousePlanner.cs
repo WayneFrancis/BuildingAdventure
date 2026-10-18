@@ -226,6 +226,26 @@ public static class BalancedSteppedRpgHousePlanner
             BuildingConnectivity.AddDoors(result,index,out var withDoors);
             result=withDoors;
         }
+
+        // Regenerate clears the old room IDs associated with preserved
+        // chimneys. The chimney itself is still fixed in place; reconnect
+        // its hearth face to the NEW room enclosing the same masonry.
+        // This prevents a formerly living-room hearth from looking
+        // unassigned after the new layout makes that area the Kitchen.
+        foreach(var chimney in result.Chimneys.Where(ch=>
+            ch.HearthRoomIds.Count==0 &&
+            BuildingStoreys.HasFloor(result,ch.HearthFloorIndex)))
+        {
+            var level=BuildingStoreys.GetFloor(result,chimney.HearthFloorIndex);
+            var footprint=BuildingStoreys.ChimneyFootprint(chimney);
+            var room=level.Rooms.FirstOrDefault(r=>
+                r.Type!="Hallway" &&
+                FloorGeometry.IsWithinPolygon(footprint,r.Outline));
+            if(room is null) continue;
+            chimney.HearthRoomIds.Add(room.Id);
+            if(!BuildingStoreys.Validate(result,out _))
+                chimney.HearthRoomIds.Clear();
+        }
         if(!BuildingStoreys.Validate(result,out reason)) return false;
 
         // A ground-floor living space can safely contain the stairs,
