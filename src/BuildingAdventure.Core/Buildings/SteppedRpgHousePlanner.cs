@@ -45,7 +45,9 @@ public static class SteppedRpgHousePlanner
         foreach(bool swap in new[]{false,true})
         foreach(bool flipU in new[]{false,true})
         foreach(bool flipV in new[]{false,true})
-        foreach(double stairWidth in new[]{4.95,5.2,5.5})
+        // Allow at least 0.4m past both end landings and a
+        // continuous transverse route behind the stair flight.
+        foreach(double stairWidth in new[]{5.6,5.75,5.8})
         foreach(double crossWidth in new[]{1.4,1.6})
         foreach(double splitShift in new[]{-0.35,0.0,0.35})
             variants.Add((swap,flipU,flipV,stairWidth,
@@ -140,9 +142,15 @@ public static class SteppedRpgHousePlanner
             stair=new StaircaseDefinition
             {
                 LowerFloorIndex=0,
-                Centre=P(coreWidth/2,0.7),
+                // Keep the tread away from the outer wall, making
+                // enough space for a full-width route behind BOTH
+                // landings. The ascent points inward to the house's
+                // cross-passage, independent of rotation/reflection.
+                Centre=P(coreWidth/2,1.1),
                 Length=2.8,Width=0.9,LandingLength=1,
-                RotationDegrees=v.Swap ? 0 : 90
+                RotationDegrees=v.Swap
+                    ? (v.FlipU ? 180 : 0)
+                    : (v.FlipU ? 90 : 270)
             };
         if(stair.LowerFloorIndex!=0) return false;
         var stairEnvelope = new[]
@@ -150,8 +158,18 @@ public static class SteppedRpgHousePlanner
             BuildingStoreys.StairFootprint(stair),
             BuildingStoreys.StairOpeningFootprint(stair)
         }.Concat(BuildingStoreys.StairLandings(stair)).ToArray();
-        double capDepth=Math.Max(1.5,
-            stairEnvelope.SelectMany(r=>r).Max(V)+0.2);
+        // Being inside the stair bay is not enough. In the old
+        // example6 layout there was only 0.4m between the flight
+        // and the side room: the far landing was effectively stranded.
+        // A connected 1.1m-wide bypass behind the entire reservation
+        // lets both landings reach the approach on BOTH floors without
+        // stepping through the flight or falling into the upper void.
+        const double minimumBypassWidth=1.1;
+        double capDepth=Math.Max(2.3,
+            stairEnvelope.SelectMany(r=>r).Max(V)+minimumBypassWidth);
+        if (capDepth - stairEnvelope.SelectMany(r=>r).Max(V)
+                < minimumBypassWidth-Epsilon)
+            return false;
         if(capDepth>cutY-2.3) return false;
         var cap=Rect(0,0,coreWidth,capDepth);
         var approach=Rect(coreWidth-approachWidth,capDepth,
