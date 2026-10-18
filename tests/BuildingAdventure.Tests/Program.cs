@@ -6037,6 +6037,7 @@ Check("Small one-storey houses always include a usable private bedchamber", () =
                 new(width,depth),new(0,depth)]
         };
         int successes=0;
+        int layoutsWithTwoBedrooms=0;
         for(int seed=1;seed<=15;seed++)
         {
             if(!MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
@@ -6050,6 +6051,7 @@ Check("Small one-storey houses always include a usable private bedchamber", () =
             var sleeping=generated.Rooms.Where(r=>r.Type=="Bedroom").ToArray();
             Assert(sleeping.Length>=1 && sleeping.Length<=2,
                 $"No bedroom in {width}x{depth} residence seed {seed}.");
+            if (sleeping.Length == 2) layoutsWithTwoBedrooms++;
             Assert(generated.Rooms.Any(r=>r.Type=="Common room") &&
                 !generated.Rooms.Any(r=>r.Type=="Great hall"),
                 "A modest house should contain a common living space, not a great hall.");
@@ -6073,6 +6075,10 @@ Check("Small one-storey houses always include a usable private bedchamber", () =
         Assert(successes>=3,
             $"Too few valid bedroom-containing plans for {width}x{depth}: "+
             string.Join(" | ",failures));
+        if (width >= 12)
+            Assert(layoutsWithTwoBedrooms > 0,
+                "A sufficiently large one-storey residence should sometimes "+
+                "contain two separately accessible bedrooms.");
     }
 });
 
