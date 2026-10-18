@@ -175,6 +175,16 @@ public static class BuildingGenerator
                     BuildingConnectivity.AddDoors(result, level, out var accessed);
                     result = accessed;
                 }
+                // Critical final pass: access spurs cannot be validated
+                // until staircase enclosures have been removed and ALL
+                // generated storage partitions are in their final place.
+                // Old generated store doors are removed and rebuilt.
+                if (options.Doors)
+                {
+                    RoomLayoutPlanner.RepairGeneratedStorageAccess(
+                        result, level, Array.Empty<Guid>(), out var walkable);
+                    result = walkable;
+                }
             }
         }
 
@@ -727,6 +737,15 @@ public static class BuildingGenerator
                     addedDoors += BuildingConnectivity.AddDoors(
                         proposed, index, out var withAccess);
                     proposed = withAccess;
+                }
+                // Storage created by the final consolidation or recovery
+                // pass needs a fresh accessibility check, after doors
+                // were first generated earlier in this function.
+                if (options.Doors)
+                {
+                    RoomLayoutPlanner.RepairGeneratedStorageAccess(
+                        proposed, index, protectedRooms, out var walkable);
+                    proposed = walkable;
                 }
             }
         }
