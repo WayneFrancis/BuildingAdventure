@@ -120,6 +120,24 @@ public static class BuildingGenerator
             result = withChimney;
             chimneys = 1;
         }
+        if (reserveStairwells)
+        {
+            // Temporary stair-bay partitions helped the subdivision pass
+            // avoid splitting through the flight. In the finished design
+            // they are OPEN circulation alcoves beside the hall, not
+            // enclosed standalone rooms. Their stairs, landings and
+            // doorway in the adjacent hallway remain.
+            var withOpenStairs = BuildingStoreys.Copy(result);
+            foreach (int index in BuildingStoreys.FloorIndexes(withOpenStairs))
+            {
+                var edited = BuildingStoreys.GetFloor(withOpenStairs, index);
+                edited.Rooms.RemoveAll(r => r.Type == "Stairwell");
+                BuildingStoreys.SetFloor(withOpenStairs, index, edited);
+            }
+            if (!BuildingStoreys.Validate(withOpenStairs, out reason))
+                return false;
+            result = withOpenStairs;
+        }
         string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
             $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms, " +
             $"{result.UpperFloors.Sum(f => f.Doors.Count) + result.Doors.Count} doors, " +
