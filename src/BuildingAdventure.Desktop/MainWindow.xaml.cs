@@ -195,6 +195,7 @@ public partial class MainWindow : Window
             GenerateWindowsCheckBox.IsChecked = saved.GenerateWindows;
             GenerateStairsCheckBox.IsChecked = saved.GenerateStairs;
             GenerateFireplacesCheckBox.IsChecked = saved.GenerateFireplaces;
+            HallHouseLayoutCheckBox.IsChecked = saved.HallHouseLayout;
             GeneratorPurposeBox.SelectedIndex =
                 Math.Clamp(saved.GeneratorPurposeIndex, 0, 4);
             MapModeBox.SelectedIndex = Math.Clamp(saved.MapModeIndex, 0, 2);
@@ -243,6 +244,7 @@ public partial class MainWindow : Window
             GenerateWindows = GenerateWindowsCheckBox.IsChecked == true,
             GenerateStairs = GenerateStairsCheckBox.IsChecked == true,
             GenerateFireplaces = GenerateFireplacesCheckBox.IsChecked == true,
+            HallHouseLayout = HallHouseLayoutCheckBox.IsChecked == true,
             GeneratorPurposeIndex = Math.Max(0, GeneratorPurposeBox.SelectedIndex),
             MapModeIndex = Math.Max(0, MapModeBox.SelectedIndex),
             ReferenceOpacity = AlignmentOpacitySlider.Value
@@ -664,6 +666,7 @@ public partial class MainWindow : Window
         Windows = GenerateWindowsCheckBox.IsChecked == true,
         Stairs = GenerateStairsCheckBox.IsChecked == true,
         Fireplaces = GenerateFireplacesCheckBox.IsChecked == true,
+        HallHouseLayout = HallHouseLayoutCheckBox.IsChecked == true,
         Purpose = Math.Clamp(GeneratorPurposeBox.SelectedIndex, 0, 4) switch
         {
             1 => BuildingUse.Inn,
