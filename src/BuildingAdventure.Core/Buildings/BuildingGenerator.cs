@@ -499,6 +499,11 @@ public static class BuildingGenerator
                 addedRooms += filled;
                 thisFloorRooms += filled;
             }
+            // A separate narrow-strip pass stretches only NEW rooms to
+            // nearby external walls, without modifying hand-drawn rooms.
+            RoomLayoutPlanner.ExtendSuggestedRoomsToExterior(
+                original, proposed, index, out var seamFree);
+            proposed = seamFree;
             if (thisFloorRooms == 0) skippedFloors.Add(index);
             roomsPerFloor.Add($"{BuildingStoreys.FloorLabel(index)}: {thisFloorRooms} room(s)");
             }
