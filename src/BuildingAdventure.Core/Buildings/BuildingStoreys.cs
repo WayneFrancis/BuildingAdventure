@@ -691,8 +691,8 @@ public static class BuildingStoreys
                 !double.IsFinite(chimney.Centre.Y) ||
                 !double.IsFinite(chimney.Width) ||
                 !double.IsFinite(chimney.Depth) ||
-                chimney.Width < 0.4 || chimney.Width > 2 ||
-                chimney.Depth < 0.4 || chimney.Depth > 2)
+                chimney.Width < 0.4 || chimney.Width > 4 ||
+                chimney.Depth < 0.4 || chimney.Depth > 4)
             {
                 reason = "A chimney has invalid dimensions or identifier.";
                 return false;
