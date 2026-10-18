@@ -357,6 +357,14 @@ public static class BuildingGenerator
                     RoomLayoutPlanner.AbsorbMisplacedGeneratedStores(
                         result, level, Array.Empty<Guid>(), out var functional);
                     result = functional;
+                    // An L-house may leave a narrow side aisle beside
+                    // the full stair run. Put the service room behind a
+                    // short cross passage instead, with direct access
+                    // to the lower landing.
+                    if (SideStairApproachPlanner.TryRebalance(
+                        result, level, Array.Empty<Guid>(),
+                        out var withUsableApproach))
+                        result = withUsableApproach;
                 }
             }
         }
@@ -1084,6 +1092,10 @@ public static class BuildingGenerator
                     RoomLayoutPlanner.AbsorbMisplacedGeneratedStores(
                         proposed, index, protectedRooms, out var functional);
                     proposed = functional;
+                    if (SideStairApproachPlanner.TryRebalance(
+                        proposed, index, protectedRooms,
+                        out var withUsableApproach))
+                        proposed = withUsableApproach;
                 }
             }
         }
