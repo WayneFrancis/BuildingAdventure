@@ -1357,6 +1357,218 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// Repair a common oversized L-shaped hall in generated multi-storey
+    /// houses: a normal transverse corridor joined to a deep rectangular
+    /// stair wing. The straight-corridor reclaim pass cannot handle this
+    /// because the stairs and both landings lie outside its spine.
+    ///
+    /// Retain a compact stair bay and a 1.3m clear approach connecting it
+    /// to the transverse corridor. Convert the unused part of the wing to
+    /// a utility room downstairs or bathroom upstairs. Never move stairs,
+    /// existing openings or manually authored rooms. Do not invent a
+    /// windowless bedroom. Works along either footprint orientation.
+    /// </summary>
+    public static int ReclaimOversizedGeneratedStairWing(
+        BuildingDocument source, int floorIndex,
+        IReadOnlyCollection<Guid> originalRoomIds,
+        out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        var floor = BuildingStoreys.GetFloor(source, floorIndex);
+        var hall = floor.Rooms.FirstOrDefault(r =>
+            r.Type == "Hallway" && !originalRoomIds.Contains(r.Id));
+        if (hall is null || hall.Outline.Count < 6) return 0;
+        double hallArea = PolygonGeometry.Area(hall.Outline);
+        double floorArea = PolygonGeometry.Area(floor.Perimeter);
+        if (hallArea < 28 || hallArea < floorArea * 0.36) return 0;
+        const double eps = 1e-5;
+
+        var stairs = source.Staircases.Where(s =>
+            s.LowerFloorIndex == floorIndex ||
+            s.LowerFloorIndex + 1 == floorIndex).ToArray();
+        if (stairs.Length == 0) return 0;
+        // We can only preserve a single contiguous stair reservation.
+        if (stairs.Length != 1) return 0;
+        var reserved = stairs.SelectMany(s =>
+            new[] { BuildingStoreys.StairFootprint(s),
+                BuildingStoreys.StairOpeningFootprint(s) }
+            .Concat(BuildingStoreys.StairLandings(s))).ToArray();
+
+        for (int i = 0; i < hall.Outline.Count; i++)
+        {
+            var a = hall.Outline[i];
+            var b = hall.Outline[(i + 1) % hall.Outline.Count];
+            if (Math.Abs(a.X - b.X) > eps && Math.Abs(a.Y - b.Y) > eps)
+                return 0;
+        }
+
+        double x0 = hall.Outline.Min(p => p.X);
+        double x1 = hall.Outline.Max(p => p.X);
+        double y0 = hall.Outline.Min(p => p.Y);
+        double y1 = hall.Outline.Max(p => p.Y);
+
+        // Locate the 2m-wide uninterrupted transverse corridor. The
+        // perpendicular remainder must be exactly one rectangular wing.
+        foreach (bool horizontal in new[] { true, false })
+        foreach (bool far in new[] { true, false })
+        {
+            double band = horizontal ? (far ? y1 - 2 : y0) :
+                (far ? x1 - 2 : x0);
+            List<Point2> spine = horizontal
+                ? Rectangle(x0, band, x1, band + 2)
+                : Rectangle(band, y0, band + 2, y1);
+            if (!FloorGeometry.IsWithinPolygon(spine, hall.Outline))
+                continue;
+
+            var xs = hall.Outline.Select(p => p.X)
+                .Append(horizontal ? x0 : band)
+                .Append(horizontal ? x1 : band + 2)
+                .Distinct().OrderBy(x => x).ToArray();
+            var ys = hall.Outline.Select(p => p.Y)
+                .Append(horizontal ? band : y0)
+                .Append(horizontal ? band + 2 : y1)
+                .Distinct().OrderBy(y => y).ToArray();
+            var wingCells = new List<(double X0,double Y0,double X1,double Y1)>();
+            for (int i = 0; i < xs.Length - 1; i++)
+            for (int j = 0; j < ys.Length - 1; j++)
+            {
+                var middle = new Point2((xs[i] + xs[i + 1])/2,
+                    (ys[j] + ys[j + 1])/2);
+                if (PolygonGeometry.ContainsPoint(hall.Outline, middle) &&
+                    !PolygonGeometry.ContainsPoint(spine, middle))
+                    wingCells.Add((xs[i],ys[j],xs[i + 1],ys[j + 1]));
+            }
+            if (wingCells.Count == 0) continue;
+            double wx0 = wingCells.Min(c => c.X0);
+            double wx1 = wingCells.Max(c => c.X1);
+            double wy0 = wingCells.Min(c => c.Y0);
+            double wy1 = wingCells.Max(c => c.Y1);
+            var wing = Rectangle(wx0,wy0,wx1,wy1);
+            if (wx1 - wx0 < 3.2 || wy1 - wy0 < 3.2 ||
+                !FloorGeometry.IsWithinPolygon(wing,hall.Outline) ||
+                Math.Abs(PolygonGeometry.Area(spine) +
+                    PolygonGeometry.Area(wing) - hallArea) > 0.01)
+                continue;
+            if (!reserved.All(part =>
+                    FloorGeometry.IsWithinPolygon(part, wing)))
+                continue;
+
+            // Keep an end cap surrounding the entire flight and its
+            // landings; a perpendicular side strip remains to connect
+            // the stair cap to the transverse hallway.
+            bool wingVertical = horizontal;
+            bool wingAtNearEnd = wingVertical
+                ? Math.Abs(wy1 - band) < eps
+                : Math.Abs(wx1 - band) < eps;
+            bool wingAtFarEnd = wingVertical
+                ? Math.Abs(wy0 - (band + 2)) < eps
+                : Math.Abs(wx0 - (band + 2)) < eps;
+            if (!wingAtNearEnd && !wingAtFarEnd) continue;
+
+            double capBoundary;
+            if (wingVertical)
+            {
+                double outer = wingAtNearEnd ? wy0 : wy1;
+                double envelope = wingAtNearEnd
+                    ? reserved.SelectMany(p => p).Max(p => p.Y)
+                    : reserved.SelectMany(p => p).Min(p => p.Y);
+                capBoundary = wingAtNearEnd
+                    ? Math.Max(outer + 1.6, envelope + 0.15)
+                    : Math.Min(outer - 1.6, envelope - 0.15);
+            }
+            else
+            {
+                double outer = wingAtNearEnd ? wx0 : wx1;
+                double envelope = wingAtNearEnd
+                    ? reserved.SelectMany(p => p).Max(p => p.X)
+                    : reserved.SelectMany(p => p).Min(p => p.X);
+                capBoundary = wingAtNearEnd
+                    ? Math.Max(outer + 1.6, envelope + 0.15)
+                    : Math.Min(outer - 1.6, envelope - 0.15);
+            }
+
+            var cap = wingVertical
+                ? Rectangle(wx0, wingAtNearEnd ? wy0 : capBoundary,
+                    wx1, wingAtNearEnd ? capBoundary : wy1)
+                : Rectangle(wingAtNearEnd ? wx0 : capBoundary, wy0,
+                    wingAtNearEnd ? capBoundary : wx1, wy1);
+            if (!reserved.All(part =>
+                FloorGeometry.IsWithinPolygon(part, cap))) continue;
+
+            // Prefer the side with a shared wall to the outside, but
+            // validate both alternatives. A 1.3m approach is enough for
+            // a person to reach the stairs without consuming the entire
+            // 5m-wide wing.
+            const double approachWidth = 1.3;
+            foreach (bool outerSide in new[] { true, false })
+            {
+                var strip = wingVertical
+                    ? Rectangle(outerSide ? wx1 - approachWidth : wx0,
+                        wingAtNearEnd ? capBoundary : wy0,
+                        outerSide ? wx1 : wx0 + approachWidth,
+                        wingAtNearEnd ? wy1 : capBoundary)
+                    : Rectangle(wingAtNearEnd ? capBoundary : wx0,
+                        outerSide ? wy1 - approachWidth : wy0,
+                        wingAtNearEnd ? wx1 : capBoundary,
+                        outerSide ? wy1 : wy0 + approachWidth);
+                var pocket = wingVertical
+                    ? Rectangle(outerSide ? wx0 : wx0 + approachWidth,
+                        wingAtNearEnd ? capBoundary : wy0,
+                        outerSide ? wx1 - approachWidth : wx1,
+                        wingAtNearEnd ? wy1 : capBoundary)
+                    : Rectangle(wingAtNearEnd ? capBoundary : wx0,
+                        outerSide ? wy0 : wy0 + approachWidth,
+                        wingAtNearEnd ? wx1 : capBoundary,
+                        outerSide ? wy1 - approachWidth : wy1);
+                if (PolygonGeometry.Area(pocket) < 7.5 ||
+                    !FloorGeometry.IsWithinPolygon(strip, wing) ||
+                    !FloorGeometry.IsWithinPolygon(pocket, wing))
+                    continue;
+
+                // Merge the three circulation rectangles using the same
+                // polygon union as manual room merging, avoiding fragile
+                // hand-written corner ordering for the L/T shape.
+                var first = new RoomDefinition
+                { Type="Hallway", Name="Corridor", Outline=spine };
+                var second = new RoomDefinition
+                { Type="Hallway", Name="Stair approach", Outline=strip };
+                var third = new RoomDefinition
+                { Type="Hallway", Name="Stair landing", Outline=cap };
+                var scratch = new BuildingDocument
+                {
+                    Perimeter=floor.Perimeter.ToList(),
+                    Rooms=[first,second,third]
+                };
+                if (!RoomMerging.TryMergeRooms(scratch,first.Id,second.Id,
+                    out var merged1,out _)) continue;
+                if (!RoomMerging.TryMergeRooms(merged1,first.Id,third.Id,
+                    out var merged2,out _)) continue;
+                var newHall = merged2.Rooms.Single().Outline;
+                if (!reserved.All(part =>
+                    FloorGeometry.IsWithinPolygon(part,newHall))) continue;
+
+                // Any old doorway must remain on its original wall. The
+                // full building validator catches doors/windows/chimneys
+                // and upstairs cross-floor stair conflicts.
+                var trial=BuildingStoreys.Copy(source);
+                var edited=BuildingStoreys.GetFloor(trial,floorIndex);
+                edited.Rooms.First(r=>r.Id==hall.Id).Outline=newHall.ToList();
+                string type = floorIndex == 0 ? "Utility" : "Bathroom";
+                edited.Rooms.Add(new RoomDefinition
+                {
+                    Name=NextRoomName(type,edited.Rooms),Type=type,
+                    Outline=pocket
+                });
+                BuildingStoreys.SetFloor(trial,floorIndex,edited);
+                if (!BuildingStoreys.Validate(trial,out _)) continue;
+                updated=trial;
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
     /// A generated passage may have been merged into a hallway even though it
     /// contains usable accommodation space. Reclaim that space as rooms while
     /// retaining a continuous two-metre circulation spine and every staircase
