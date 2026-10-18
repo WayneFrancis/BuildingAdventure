@@ -1,0 +1,279 @@
+using BuildingAdventure.Core.Geometry;
+
+namespace BuildingAdventure.Core.Buildings;
+
+/// <summary>
+/// A small English medieval hall-house archetype, deliberately distinct
+/// from a modern full-length central corridor. A short cross/screens
+/// passage serves kitchen and pantry at the low end, an expansive hall
+/// occupies the middle, and (where possible) a parlour occupies the
+/// private high end. Later upper floors can remain separate chambers.
+///
+/// This is a conservative, detached alternative to the legacy layout:
+/// it accepts only orthogonal footprints, uses exact existing perimeter
+/// vertices including 5/10ft coordinates, and checks existing stairs
+/// and their landings before replacing any generated geometry.
+/// </summary>
+public static class MedievalHallHousePlanner
+{
+    private const double Epsilon = 1e-6;
+
+    public static bool TryReplaceGeneratedGroundFloor(BuildingDocument building,
+        out BuildingDocument updated, out string reason)
+    {
+        updated = BuildingStoreys.Copy(building);
+        reason = "No hall-house arrangement fitted the perimeter and stair reservations.";
+        if (!BuildingStoreys.HasFloor(building, 0)) return false;
+        var ground = BuildingStoreys.GetFloor(building, 0);
+        if (ground.Perimeter.Count < 4 || ground.Perimeter.Any((p) =>
+            !double.IsFinite(p.X) || !double.IsFinite(p.Y))) return false;
+
+        // Only rectilinear vernacular footprints can be partitioned
+        // exactly by the coordinate-cell approach. Leave angled and
+        // hand-sculpted polygons to the normal generator.
+        for (int i = 0; i < ground.Perimeter.Count; i++)
+        {
+            var a = ground.Perimeter[i];
+            var b = ground.Perimeter[(i + 1) % ground.Perimeter.Count];
+            if (Math.Abs(a.X - b.X) > Epsilon &&
+                Math.Abs(a.Y - b.Y) > Epsilon) return false;
+        }
+
+        double minX = ground.Perimeter.Min(p => p.X);
+        double maxX = ground.Perimeter.Max(p => p.X);
+        double minY = ground.Perimeter.Min(p => p.Y);
+        double maxY = ground.Perimeter.Max(p => p.Y);
+        bool longX = maxX - minX >= maxY - minY;
+        foreach (bool alongX in new[] { longX, !longX })
+        foreach (bool reverse in new[] { false, true })
+        foreach (bool privateEnd in new[] { true, false })
+        {
+            if (TryPlan(building, alongX, reverse, privateEnd,
+                    out var candidate, out var detail))
+            {
+                updated = candidate;
+                reason = "";
+                return true;
+            }
+            reason = detail;
+        }
+        return false;
+    }
+
+    private static bool TryPlan(BuildingDocument building, bool alongX,
+        bool reverse, bool privateEnd, out BuildingDocument result,
+        out string reason)
+    {
+        result = BuildingStoreys.Copy(building);
+        reason = "";
+        var floor = BuildingStoreys.GetFloor(building, 0);
+        double uLow = floor.Perimeter.Min(p => alongX ? p.X : p.Y);
+        double uHigh = floor.Perimeter.Max(p => alongX ? p.X : p.Y);
+        double vLow = floor.Perimeter.Min(p => alongX ? p.Y : p.X);
+        double vHigh = floor.Perimeter.Max(p => alongX ? p.Y : p.X);
+        double length = uHigh - uLow;
+        double depth = vHigh - vLow;
+        if (length < 8 || depth < 6)
+        {
+            reason = "A hall house needs an 8m long by 6m broad main footprint.";
+            return false;
+        }
+
+        // Cuts along the social axis: service end / screens passage /
+        // communal hall / optionally a parlour at the high end.
+        double service = Math.Max(2.2, Math.Min(length * 0.26, length - 5.6));
+        double screens = 1.45;
+        double parlour = privateEnd ? Math.Max(2.3, length * 0.23) : 0;
+        if (length - service - screens - parlour < 3.3)
+        {
+            reason = "Insufficient depth for a useful great hall.";
+            return false;
+        }
+
+        double uService = reverse ? uHigh - service : uLow + service;
+        double uScreen = reverse ? uService - screens : uService + screens;
+        double uPrivate = reverse
+            ? uLow + parlour
+            : uHigh - parlour;
+        double vSplit = (vLow + vHigh) / 2;
+        var us = floor.Perimeter.Select(p => alongX ? p.X : p.Y)
+            .Append(uLow).Append(uHigh).Append(uService)
+            .Append(uScreen).Append(uPrivate)
+            .Distinct().OrderBy(v => v).ToArray();
+        var vs = floor.Perimeter.Select(p => alongX ? p.Y : p.X)
+            .Append(vLow).Append(vHigh).Append(vSplit)
+            .Distinct().OrderBy(v => v).ToArray();
+
+        var cells = new Dictionary<string, List<List<Point2>>>();
+        double assignedArea = 0;
+        for (int i = 1; i < us.Length; i++)
+        for (int j = 1; j < vs.Length; j++)
+        {
+            double a = us[i - 1], b = us[i];
+            double c = vs[j - 1], d = vs[j];
+            if (b - a < Epsilon || d - c < Epsilon) continue;
+            var outline = Rect(alongX, a, b, c, d);
+            Point2 centre = World(alongX, (a + b) / 2, (c + d) / 2);
+            if (!PolygonGeometry.ContainsPoint(floor.Perimeter, centre))
+                continue;
+
+            // Every cell is wholly inside or outside an orthogonal polygon
+            // because all exterior corner coordinates are in the cuts.
+            double naturalU = reverse ? uHigh - (a + b) / 2 :
+                (a + b) / 2 - uLow;
+            string type = naturalU < service - Epsilon
+                ? (c + d) / 2 < vSplit ? "Kitchen" : "Pantry"
+                : naturalU < service + screens - Epsilon
+                    ? "Hallway"
+                    : privateEnd && naturalU > length - parlour + Epsilon
+                        ? "Parlour"
+                        : "Great hall";
+            if (!cells.TryGetValue(type, out var group))
+                cells[type] = group = new List<List<Point2>>();
+            group.Add(outline);
+            assignedArea += PolygonGeometry.Area(outline);
+        }
+
+        double buildingArea = PolygonGeometry.Area(floor.Perimeter);
+        if (Math.Abs(assignedArea - buildingArea) > 0.001)
+        {
+            reason = "The historical zoning did not cover the entire footprint.";
+            return false;
+        }
+
+        var rooms = new List<RoomDefinition>();
+        foreach (string type in new[] { "Hallway", "Kitchen", "Pantry",
+                     "Great hall", "Parlour" })
+        {
+            if (!cells.TryGetValue(type, out var region) ||
+                !TryUnionCells(region, out var outline))
+            {
+                if (type == "Parlour" && !privateEnd) continue;
+                reason = "The footprint divides a required hall-house room.";
+                return false;
+            }
+            double area = PolygonGeometry.Area(outline);
+            double minimum = type switch
+            {
+                "Great hall" => 20,
+                "Hallway" => 5,
+                "Kitchen" => 5,
+                "Pantry" => 4,
+                _ => 7
+            };
+            if (area < minimum)
+            {
+                reason = "One of the historical room bays is too small.";
+                return false;
+            }
+            rooms.Add(new RoomDefinition
+            {
+                Type = type,
+                Name = type == "Hallway" ? "Screens passage" : type,
+                Outline = outline
+            });
+        }
+
+        var ground = BuildingStoreys.GetFloor(result, 0);
+        ground.Rooms = rooms;
+        ground.Doors.Clear();
+        ground.Windows.Clear();
+        BuildingStoreys.SetFloor(result, 0, ground);
+        if (!BuildingStoreys.Validate(result, out reason)) return false;
+
+        // Install doors from the screens passage to both service rooms
+        // and the great hall, then from the hall into the private end.
+        BuildingConnectivity.AddDoors(result, 0, out var withDoors);
+        if (!BuildingStoreys.Validate(withDoors, out reason)) return false;
+        var accessible = BuildingStoreys.GetFloor(withDoors, 0);
+        var screen = accessible.Rooms.Single(r => r.Type == "Hallway");
+        var hall = accessible.Rooms.Single(r => r.Type == "Great hall");
+        var kitchen = accessible.Rooms.Single(r => r.Type == "Kitchen");
+        var pantry = accessible.Rooms.Single(r => r.Type == "Pantry");
+        if (!HasDoor(accessible, screen, hall) ||
+            !HasDoor(accessible, screen, kitchen) ||
+            !(HasDoor(accessible, screen, pantry) ||
+              HasDoor(accessible, kitchen, pantry)))
+        {
+            reason = "The service rooms must be accessible from the screen.";
+            return false;
+        }
+        if (privateEnd && !HasDoor(accessible, hall,
+            accessible.Rooms.Single(r => r.Type == "Parlour")))
+        {
+            reason = "The private parlour has no entrance from the great hall.";
+            return false;
+        }
+        if (!accessible.Doors.Any(d => Enumerable.Range(0, accessible.Perimeter.Count)
+            .Any(i => OnSegment(d.Centre, accessible.Perimeter[i],
+                accessible.Perimeter[(i + 1) % accessible.Perimeter.Count]) &&
+                OnWall(d.Centre, screen.Outline))))
+        {
+            reason = "The screens passage is missing its exterior entrance.";
+            return false;
+        }
+        // Conservatively keep historical storage to one internal door.
+        if (accessible.Doors.Count(d => OnWall(d.Centre, pantry.Outline)) != 1)
+        {
+            reason = "The pantry has more than one doorway.";
+            return false;
+        }
+        if (BuildingConnectivity.RoomsIsolatedByServiceSpaces(withDoors, 0)
+            .Count > 0) return false;
+        result = withDoors;
+        reason = "";
+        return true;
+    }
+
+    private static bool TryUnionCells(List<List<Point2>> cells,
+        out List<Point2> merged)
+    {
+        merged = new List<Point2>();
+        if (cells.Count == 0) return false;
+        merged = cells[0].ToList();
+        var pending = cells.Skip(1).ToList();
+        for (int pass = 0; pass < cells.Count && pending.Count > 0; pass++)
+        {
+            bool advanced = false;
+            for (int j = 0; j < pending.Count; j++)
+            {
+                var a = new RoomDefinition { Outline = merged };
+                var b = new RoomDefinition { Outline = pending[j] };
+                // Only adjacent cells are eligible, and a valid orthogonal
+                // union is a simple, single-ring polygon.
+                var scratch = new BuildingDocument
+                {
+                    Perimeter = [
+                        new(-10000,-10000),new(10000,-10000),
+                        new(10000,10000),new(-10000,10000)
+                    ],
+                    Rooms = [a,b]
+                };
+                if (!RoomMerging.TryMergeRooms(scratch,a.Id,b.Id,
+                    out var joined,out _)) continue;
+                merged = joined.Rooms[0].Outline.ToList();
+                pending.RemoveAt(j);
+                advanced = true;
+                break;
+            }
+            if (!advanced) return false;
+        }
+        return pending.Count == 0;
+    }
+
+    private static Point2 World(bool alongX, double u, double v) =>
+        alongX ? new Point2(u,v) : new Point2(v,u);
+    private static List<Point2> Rect(bool alongX, double u0, double u1,
+        double v0, double v1) =>
+        [World(alongX,u0,v0),World(alongX,u1,v0),
+         World(alongX,u1,v1),World(alongX,u0,v1)];
+    private static bool OnSegment(Point2 p, Point2 a, Point2 b) =>
+        PolygonGeometry.ClosestPointOnSegment(p,a,b).DistanceTo(p)<1e-5;
+    private static bool OnWall(Point2 p,IReadOnlyList<Point2> outline) =>
+        Enumerable.Range(0,outline.Count).Any(i =>
+            OnSegment(p,outline[i],outline[(i+1)%outline.Count]));
+    private static bool HasDoor(BuildingDocument floor, RoomDefinition a,
+        RoomDefinition b) =>
+        floor.Doors.Any(d => OnWall(d.Centre,a.Outline) &&
+            OnWall(d.Centre,b.Outline));
+}
