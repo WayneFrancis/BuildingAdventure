@@ -4,6 +4,42 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.33 — Final-stage circulation and misplaced storage corrections (development)
+
+The uploaded `example2(2).json` showed that v0.32's corridor fix was
+not reliably applied to a **finished generated building**. Both ~14 m²
+storerooms remained between the main hallway and the dining room/bedroom.
+A pair of doors existed only *between each storeroom and the room behind
+it*, so living spaces had no separate route from the hallway.
+
+- **Apply accessibility repair at the end of generation.** Preliminary
+  hallway and stairwell stages may add doors before the final storage
+  partitions are in place. The finalizer now removes only those doors
+  attached to *newly generated* obstructing stores, reshapes a narrow
+  access spur into the hallway, and replans doors when the complete
+  staircase geometry is available.
+- **Prefer usable principal rooms over storage barricades.** On
+  generated plans, oversized stores that separate a dining room or
+  bedroom from the hall without serving any kitchen/workshop can be
+  absorbed into those rooms after restoring independent access. Choose
+  the room behind the store's **long wall**, not a sideways neighbour
+  that grew during an earlier merge. Compact, purpose-built entrance
+  stores and kitchen/workshop storage are retained.
+- **Door-network validation.** Before returning a generated ground
+  floor, verify that a bedroom or other ordinary room isn't reachable
+  *only through storage*. This is stronger than ensuring that every
+  room has at least one doorway. A proposal with an unresolved service
+  barrier is rejected rather than presented as usable.
+- **Regression on the finished JSON arrangement.** Tests reproduce
+  the two-story stepped layout, the six existing ground-floor doors,
+  bedroom/dining storage obstruction, and stair geometry. They verify
+  both door replacement and the optional redistribution of badly
+  positioned storage into directly accessible L-shaped rooms.
+- **Limit:** the traditional long 2 m-wide central corridor is still
+  the underlying building-generation template. Replacing that template
+  with historically inspired hall houses, townhouses, inns and other
+  archetypes requires a separate architectural layout strategy.
+
 ## v0.32 — Historically informed service rooms and independent access (development)
 
 The uploaded `example2(1).json` exposed a circulation problem: two shallow
