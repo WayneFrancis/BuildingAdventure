@@ -133,6 +133,7 @@ public partial class MainWindow : Window
         ("Floors", FloorsSection),
         ("Generator", GeneratorSection),
         ("Staircases", StaircasesSection),
+        ("Chimneys", ChimneysSection),
         ("WallConstruction", WallConstructionSection),
         ("Perimeter", PerimeterSection),
         ("Rooms", RoomsSection),
