@@ -42,10 +42,23 @@ public sealed class ChimneyDefinition
     public double Width { get; set; } = 0.8;
     public double Depth { get; set; } = 0.8;
     public bool Exterior { get; set; } = true;
+
+    // Fireplaces belong to the inhabited level. Other intersecting storeys
+    // show the continuing flue only, even where it crosses a bedroom.
+    public int HearthFloorIndex { get; set; }
+    public List<Guid> HearthRoomIds { get; set; } = new();
+
+    // A kitchen and living room on opposite sides of a shared partition
+    // can use two hearth faces drawing from the SAME continuous flue.
+    public Point2? OtherHearthCentre { get; set; }
+
     public ChimneyDefinition Copy() => new()
     {
         Id = Id, Centre = Centre, Width = Width,
-        Depth = Depth, Exterior = Exterior
+        Depth = Depth, Exterior = Exterior,
+        HearthFloorIndex = HearthFloorIndex,
+        HearthRoomIds = HearthRoomIds.ToList(),
+        OtherHearthCentre = OtherHearthCentre
     };
 }
 
