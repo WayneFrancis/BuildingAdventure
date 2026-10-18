@@ -226,6 +226,9 @@
                     <TextBlock Text="Length (m)" Margin="0,0,0,4"/>
                     <TextBox x:Name="StairLengthBox" Text="3.6" Padding="5" Margin="0,0,0,8"
                              TextChanged="StairSettingsChanged"/>
+                    <TextBlock Text="Clear landing at each end, on both floors (m)" Margin="0,0,0,4"/>
+                    <TextBox x:Name="StairLandingBox" Text="1.0" Padding="5" Margin="0,0,0,8"
+                             TextChanged="StairSettingsChanged"/>
                     <TextBlock Text="Width (m)" Margin="0,0,0,4"/>
                     <TextBox x:Name="StairWidthBox" Text="1.4" Padding="5" Margin="0,0,0,8"
                              TextChanged="StairSettingsChanged"/>
@@ -259,7 +262,7 @@
                             IsEnabled="False" Click="DeleteStairs_Click" Padding="7"
                             Margin="0,0,0,10"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,17"
-                               Text="UP and DOWN stair flights may be stacked at one location. The selector above lets you choose a flight when their footprints overlap; the plan labels both directions separately. Stairwell openings occur in the upper floor of each flight."/>
+                               Text="New flights reserve a landing at BOTH ends on BOTH connected floors. The setting can be changed on a selected staircase. UP and DOWN flights can share a stairwell; the selector chooses overlapping flights. Stairwell openings occur in the upper slab."/>
                     <Separator Margin="0,0,0,12"/>
                         </StackPanel>
                     </Expander>
