@@ -5112,5 +5112,44 @@ Check("Delete chimney removes the entire shared fireplace stack across floors", 
     Assert(reason.Contains("does not exist"));
     Assert(BuildingStoreys.Validate(removed,out reason),reason);
 });
+Check("example.json keeps six-corner Room A and its angled wall adjoining Room B", () =>
+{
+    // Reproduces the perimeter and two user-drawn rooms from example.json.
+    // The internal separation is slightly angled, and should never be
+    // forced back onto a rectangular room grid.
+    var floor=new BuildingDocument
+    {
+        GridFeet=5,
+        Perimeter=[
+            new(6.096,1.524),new(10.668,1.524),
+            new(10.668,3.048),new(12.362624398073836,3.048),
+            new(16.764,3.048),new(16.764,10.668),
+            new(6.096,10.668)]
+    };
+    var a=new RoomDefinition
+    {
+        Name="Room A",Type="Other",Outline=[
+            new(12.385557784911716,5.096),new(6.096,5.096),
+            new(6.096,1.524),new(10.668,1.524),
+            new(10.668,3.048),new(12.362624398073836,3.048)]
+    };
+    var b=new RoomDefinition
+    {
+        Name="Room B",Type="Other",Outline=[
+            new(12.362624398073836,3.048),new(16.764,3.048),
+            new(16.764,5.096),new(12.385557784911716,5.096)]
+    };
+    floor.Rooms.AddRange([a,b]);
+    Assert(BuildingStoreys.Validate(floor,out var reason),reason);
+    Assert(a.Outline.Count==6 && b.Outline.Count==4);
+    Assert(RoomMerging.TryMergeRooms(floor,a.Id,b.Id,out var joined,out reason),
+        reason);
+    Assert(joined.Rooms.Count==1);
+    Assert(joined.Rooms[0].Id==a.Id);
+    Assert(joined.Rooms[0].Outline.Count>=6);
+    Assert(BuildingStoreys.Validate(joined,out reason),reason);
+    Assert(floor.Rooms.Count==2,
+        "Automatic or manual unions must be detached from the source.");
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
