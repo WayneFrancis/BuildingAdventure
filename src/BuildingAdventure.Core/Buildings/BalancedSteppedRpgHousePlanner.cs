@@ -56,7 +56,8 @@ public static class BalancedSteppedRpgHousePlanner
                 reason="";
                 return true;
             }
-            reason=message;
+            if(message!="The step, room dimensions or stair reservation do not fit.")
+                reason=message;
         }
         return false;
     }
@@ -110,6 +111,7 @@ public static class BalancedSteppedRpgHousePlanner
             Math.Abs(U(p)-q.X)<Eps &&
             Math.Abs(V(p)-q.Y)<Eps))) return false;
 
+        reason="Reached dimensions but did not find a usable stair/room configuration.";
         const double stairRoomWidth=5.0;
         double hallRight=stairRoomWidth+v.SpineWidth;
         double kitchenDepth=stepY*v.KitchenDepth;
@@ -139,6 +141,7 @@ public static class BalancedSteppedRpgHousePlanner
                     ? (v.FlipU?180:0) : (v.FlipU?90:270)
             };
         if(stair.LowerFloorIndex!=0) return false;
+        reason="Room dimensions fit; staircase/landing reservation failed.";
         var landingRoom=Rect(0,0,stairRoomWidth,stepY);
         var reservations=new[]
         {
@@ -158,6 +161,7 @@ public static class BalancedSteppedRpgHousePlanner
             Rect(0,back,stairRoomWidth,back+1.1),landingRoom))
             return false;
 
+        reason="Stair clearance passed; room allocation failed.";
         var hallway=Rect(stairRoomWidth,0,hallRight,depth);
         var groundRooms=new[]
         {
@@ -189,6 +193,7 @@ public static class BalancedSteppedRpgHousePlanner
             stairRoomWidth}.Min()<3.05)
             return false;
 
+        reason="Room size and balance passed; building geometry/doors failed.";
         for(int floorIndex=0;floorIndex<=1;floorIndex++)
         {
             var floor=BuildingStoreys.GetFloor(result,floorIndex);
@@ -223,6 +228,7 @@ public static class BalancedSteppedRpgHousePlanner
         // A ground-floor living space can safely contain the stairs,
         // but each upstairs bedroom must have an independent door
         // from the hall (never via another bedroom or bathroom).
+        reason="Building geometry passed; an independent hallway doorway is missing.";
         for(int index=0;index<=1;index++)
         {
             var floor=BuildingStoreys.GetFloor(result,index);
