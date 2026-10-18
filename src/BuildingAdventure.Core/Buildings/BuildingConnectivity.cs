@@ -86,6 +86,55 @@ public static class BuildingConnectivity
             corridorId = hallway.Id;
             return true;
         }
+
+        // A floor with a stepped/notched perimeter may not contain a
+        // corridor spanning its complete bounding box. Search shorter
+        // axis-aligned interior sections between real perimeter vertices
+        // rather than giving up and leaving the new floor unpartitioned.
+        foreach (bool useVertical in new[] { vertical, !vertical })
+        {
+            double axisMin = useVertical ? top : left;
+            double axisMax = useVertical ? bottom : right;
+            double minorMin = useVertical ? left : top;
+            double minorMax = useVertical ? right : bottom;
+            var cuts = floor.Perimeter.Select(p => useVertical ? p.Y : p.X)
+                .Append(axisMin).Append(axisMax).Distinct()
+                .OrderBy(p => p).ToArray();
+            var intervals = new List<(double Start, double End)>();
+            for (int first = 0; first < cuts.Length; first++)
+            for (int last = first + 1; last < cuts.Length; last++)
+                if (cuts[last] - cuts[first] >= 5)
+                    intervals.Add((cuts[first], cuts[last]));
+
+            foreach (var (start, end) in intervals
+                .OrderByDescending(s => s.End - s.Start))
+            foreach (double offset in new double[] { 0, -1, 1, -2, 2, -3, 3 })
+            {
+                double near = (minorMin + minorMax - 2) / 2 + offset;
+                double far = near + 2;
+                if (near < minorMin || far > minorMax) continue;
+                List<Point2> polygon = useVertical
+                    ? [new(near,start),new(far,start),
+                       new(far,end),new(near,end)]
+                    : [new(start,near),new(end,near),
+                       new(end,far),new(start,far)];
+                if (!FloorGeometry.IsWithinPolygon(polygon, floor.Perimeter))
+                    continue;
+                var candidate = BuildingStoreys.Copy(building);
+                var next = BuildingStoreys.GetFloor(candidate, floorIndex);
+                var hallway = new RoomDefinition
+                {
+                    Name = $"Hallway {next.Rooms.Count + 1}",
+                    Type = "Hallway", Outline = polygon
+                };
+                next.Rooms.Add(hallway);
+                BuildingStoreys.SetFloor(candidate, floorIndex, next);
+                if (!BuildingStoreys.Validate(candidate, out _)) continue;
+                updated = candidate;
+                corridorId = hallway.Id;
+                return true;
+            }
+        }
         return false;
     }
 
