@@ -7360,5 +7360,49 @@ Check("Regenerate example10 accepted L-house through balanced room-first archety
         "Regeneration must never mutate the accepted document.");
 });
 
+Check("Balanced L-house generates its own stairs on mirrored and rotated footprints", () =>
+{
+    var ring=new List<Point2>
+    {
+        new(0,0),new(11.5,0),new(11.5,5),
+        new(13.5,5),new(13.5,8.5),new(0,8.5)
+    };
+    foreach(int quarterTurn in new[]{0,1,2,3})
+    foreach(bool mirror in new[]{false,true})
+    {
+        Point2 Transform(Point2 p)
+        {
+            double x=mirror ? -p.X : p.X, y=p.Y;
+            return quarterTurn switch
+            {
+                1=>new Point2(-y,x),
+                2=>new Point2(-x,-y),
+                3=>new Point2(y,-x),
+                _=>new Point2(x,y)
+            };
+        }
+        var transformed=ring.Select(Transform).ToList();
+        var blank=new BuildingDocument
+        {
+            SchemaVersion=2,Perimeter=transformed.ToList(),
+            UpperFloors=[new StoreyDefinition{
+                Perimeter=transformed.ToList()}]
+        };
+        Assert(BalancedSteppedRpgHousePlanner.TryGenerate(blank,42,
+            out var house,out var reason),
+            $"Rotation {quarterTurn}, mirror {mirror}: {reason}");
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        Assert(house.Staircases.Count==1);
+        Assert(house.Rooms.Count(r=>r.Type=="Kitchen")==1);
+        Assert(house.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(
+            BuildingStoreys.GetFloor(house,0)))<0.01);
+        Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(
+            BuildingStoreys.GetFloor(house,1)))<0.01);
+        Assert(blank.Staircases.Count==0,
+            "Layout generation should not alter the input.");
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
