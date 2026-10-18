@@ -37,7 +37,7 @@ public static class BalancedSteppedRpgHousePlanner
         foreach(bool swap in new[]{false,true})
         foreach(bool flipU in new[]{false,true})
         foreach(bool flipV in new[]{false,true})
-        foreach(double spine in new[]{1.4,1.55,1.7})
+        foreach(double spine in new[]{1.4,1.55})
         foreach(double kitchen in new[]{0.59,0.63,0.67})
         foreach(double bedroom in new[]{0.60,0.64,0.68})
             permutations.Add((swap,flipU,flipV,spine,kitchen,bedroom));
