@@ -6125,5 +6125,151 @@ Check("Single-storey regeneration retains bedrooms for accepted cottage", () =>
     Assert(BuildingStoreys.Validate(another.Building,out reason),reason);
 });
 
+Check("Compact RPG house generates both floors, rear stairs and separate bedrooms", () =>
+{
+    var blank=new BuildingDocument
+    {
+        Perimeter=[new(0,0),new(9,0),new(9,10),new(0,10)],
+        UpperFloors=[new StoreyDefinition
+        {
+            Perimeter=[new(0,0),new(9,0),new(9,10),new(0,10)]
+        }]
+    };
+    Assert(CompactRpgHousePlanner.TryGenerate(blank,77,
+        out var built,out var reason),reason);
+    Assert(BuildingStoreys.Validate(built,out reason),reason);
+    Assert(built.Staircases.Count==1,"Two levels must be linked by stairs.");
+    var lower=BuildingStoreys.GetFloor(built,0);
+    var upper=BuildingStoreys.GetFloor(built,1);
+    Assert(lower.Rooms.Count(r=>r.Type=="Hallway")==1);
+    Assert(lower.Rooms.Any(r=>r.Name=="Entrance lobby"));
+    Assert(lower.Rooms.Any(r=>r.Type=="Living room"));
+    Assert(lower.Rooms.Any(r=>r.Type=="Dining room"));
+    Assert(lower.Rooms.Any(r=>r.Type=="Kitchen"));
+    Assert(lower.Rooms.Any(r=>r.Type=="Guest room"));
+    Assert(lower.Rooms.Any(r=>r.Type=="Study"));
+    Assert(!lower.Rooms.Any(r=>r.Type=="Storeroom"),
+        "Do not obstruct living space with badly positioned storerooms.");
+    Assert(upper.Rooms.Count(r=>r.Type=="Bedroom")==3);
+    Assert(upper.Rooms.Any(r=>r.Name=="Master Bedroom"));
+    Assert(upper.Rooms.Any(r=>r.Name=="Upper landing"));
+    Assert(upper.Rooms.Any(r=>r.Type=="Sitting room"));
+    Assert(upper.Rooms.Any(r=>r.Type=="Bathroom"));
+    double groundArea=lower.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline));
+    double upperArea=upper.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline));
+    Assert(Math.Abs(groundArea-90)<0.001);
+    Assert(Math.Abs(upperArea-90)<0.001);
+    Assert(PolygonGeometry.Area(lower.Rooms.Single(r=>r.Type=="Hallway").Outline)<7,
+        "The ground floor should have only a small foyer, not a central corridor.");
+
+    bool OnRoom(RoomDefinition room,Point2 p)=>Enumerable.Range(0,
+        room.Outline.Count).Any(i=>
+        PolygonGeometry.ClosestPointOnSegment(p,room.Outline[i],
+            room.Outline[(i+1)%room.Outline.Count]).DistanceTo(p)<1e-5);
+    bool HasDoor(BuildingDocument floor,RoomDefinition a,RoomDefinition b)=>
+        floor.Doors.Any(d=>OnRoom(a,d.Centre)&&OnRoom(b,d.Centre));
+    var entry=lower.Rooms.Single(r=>r.Name=="Entrance lobby");
+    var living=lower.Rooms.Single(r=>r.Name=="Living room");
+    Assert(HasDoor(lower,entry,living));
+    Assert(lower.Rooms.Where(r=>r.Type is "Guest room" or "Study")
+        .All(r=>HasDoor(lower,entry,r)));
+    var landing=upper.Rooms.Single(r=>r.Name=="Upper landing");
+    Assert(upper.Rooms.Where(r=>r.Type is "Bedroom" or "Bathroom")
+        .All(r=>HasDoor(upper,landing,r)));
+    Assert(HasDoor(upper,landing,
+        upper.Rooms.Single(r=>r.Type=="Sitting room")));
+    var stair=built.Staircases.Single();
+    Assert(FloorGeometry.IsWithinPolygon(
+        BuildingStoreys.StairFootprint(stair),living.Outline));
+    Assert(FloorGeometry.IsWithinPolygon(
+        BuildingStoreys.StairFootprint(stair),
+        upper.Rooms.Single(r=>r.Type=="Sitting room").Outline));
+    Assert(blank.Rooms.Count==0 && blank.Staircases.Count==0);
+});
+
+Check("Compact RPG whole-building option creates two-storey battle-map home", () =>
+{
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Windows=true,Stairs=true,
+        HallHouseLayout=true,CompactRpgHouseLayout=true
+    };
+    int compactCount=0;
+    var details=new List<string>();
+    var layouts=new List<BuildingDocument>();
+    foreach(int seed in new[]{11,17,33,46,61,77,91})
+    {
+        if (!BuildingGenerator.TrySuggestWholeBuilding(2,seed,options,
+            out var proposal,out var reason,5))
+        {
+            details.Add(seed+": "+reason);
+            continue;
+        }
+        if (!proposal.Description.Contains("Compact two-storey RPG house"))
+        {
+            details.Add(seed+": "+proposal.Description);
+            continue;
+        }
+        var b=proposal.Building;
+        compactCount++;
+        Assert(BuildingStoreys.Validate(b,out reason),reason);
+        Assert(b.UpperFloors.Count==1 && b.Staircases.Count==1);
+        Assert(b.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(!b.Rooms.Any(r=>r.Type=="Great hall" || r.Type=="Storeroom"));
+        Assert(b.Rooms.Any(r=>r.Type=="Living room"));
+        Assert(!layouts.Any(p=>BuildingGenerator.SameRoomLayout(p,b,[0,1])) ||
+            layouts.Count<1,"Seeds should not always return identical rooms.");
+        if(!layouts.Any(p=>BuildingGenerator.SameRoomLayout(p,b,[0,1])))
+            layouts.Add(b);
+    }
+    Assert(compactCount>=3,
+        "Expected at least three compact floorplans, got "+compactCount+
+        ": "+string.Join(" | ",details));
+    Assert(layouts.Count>=2,
+        "Compact RPG generation should vary the room geometry across seeds.");
+});
+
+Check("Regeneration preserves compact RPG stairs and changes selected room geometry", () =>
+{
+    var source=new BuildingDocument
+    {
+        Perimeter=[new(0,0),new(9,0),new(9,10),new(0,10)],
+        UpperFloors=[new StoreyDefinition
+        { Perimeter=[new(0,0),new(9,0),new(9,10),new(0,10)] }]
+    };
+    Assert(CompactRpgHousePlanner.TryGenerate(source,77,
+        out var accepted,out var reason),reason);
+    var options=new GenerationOptions
+    {
+        Rooms=true,Corridors=true,Doors=true,Stairs=true,
+        CompactRpgHouseLayout=true,Purpose=BuildingUse.Residence
+    };
+    int candidates=0;
+    var details=new List<string>();
+    foreach(int seed in Enumerable.Range(80,12))
+    {
+        if (!BuildingGenerator.TryRegenerate(accepted,[0,1],seed,options,
+            out var next,out var failure))
+        {
+            details.Add(seed+": "+failure);
+            continue;
+        }
+        if (!next.Description.Contains("Compact two-storey RPG house"))
+        {
+            details.Add(seed+": "+next.Description);
+            continue;
+        }
+        candidates++;
+        Assert(BuildingStoreys.Validate(next.Building,out failure),failure);
+        Assert(next.Building.Staircases.Single().Id==accepted.Staircases.Single().Id,
+            "Regeneration must preserve an accepted flight.");
+        Assert(next.Building.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+    }
+    Assert(candidates>0,"Could not regenerate a compact plan around " +
+        "the existing staircase: "+string.Join(" | ",details));
+    Assert(accepted.Rooms.Count==6);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
