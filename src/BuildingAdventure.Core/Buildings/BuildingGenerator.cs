@@ -184,6 +184,9 @@ public static class BuildingGenerator
                     RoomLayoutPlanner.RepairGeneratedStorageAccess(
                         result, level, Array.Empty<Guid>(), out var walkable);
                     result = walkable;
+                    RoomLayoutPlanner.AbsorbMisplacedGeneratedStores(
+                        result, level, Array.Empty<Guid>(), out var functional);
+                    result = functional;
                 }
             }
         }
@@ -763,6 +766,9 @@ public static class BuildingGenerator
                     RoomLayoutPlanner.RepairGeneratedStorageAccess(
                         proposed, index, protectedRooms, out var walkable);
                     proposed = walkable;
+                    RoomLayoutPlanner.AbsorbMisplacedGeneratedStores(
+                        proposed, index, protectedRooms, out var functional);
+                    proposed = functional;
                 }
             }
         }
