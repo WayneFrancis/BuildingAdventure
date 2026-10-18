@@ -351,6 +351,10 @@
                         <ComboBoxItem Content="Stairwell"/>
                         <ComboBoxItem Content="Office"/>
                         <ComboBoxItem Content="Dining room"/>
+                        <ComboBoxItem Content="Great hall"/>
+                        <ComboBoxItem Content="Parlour"/>
+                        <ComboBoxItem Content="Pantry"/>
+                        <ComboBoxItem Content="Buttery"/>
                         <ComboBoxItem Content="Guest room"/>
                         <ComboBoxItem Content="Common room"/>
                         <ComboBoxItem Content="Cellar"/>
