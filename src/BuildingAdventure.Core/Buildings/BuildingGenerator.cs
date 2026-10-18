@@ -1074,6 +1074,36 @@ public static class BuildingGenerator
                 return false;
             }
         }
+        // A mathematically valid plan may still be an unusable RPG
+        // house. Stepped footprints previously produced two-storey
+        // drafts with a single kitchen/bedroom and a 77%-area hallway.
+        // Reject that result rather than reporting it as a success.
+        // This only applies to freshly generated residential rooms:
+        // hand-authored rooms and corridor-only staging are untouched.
+        if (!options.DeferCirculationValidation &&
+            options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors)
+        {
+            foreach (int index in indices)
+            {
+                var sourceFloor=BuildingStoreys.GetFloor(original,index);
+                var proposedFloor=BuildingStoreys.GetFloor(proposed,index);
+                if (sourceFloor.Rooms.Count!=0 ||
+                    proposedFloor.Perimeter.Count<6 ||
+                    proposedFloor.Rooms.Count>2) continue;
+                double total=PolygonGeometry.Area(proposedFloor.Perimeter);
+                double hallway=proposedFloor.Rooms.Where(r=>r.Type=="Hallway")
+                    .Sum(r=>PolygonGeometry.Area(r.Outline));
+                if (total < 45 || hallway / total < 0.55) continue;
+                reason=$"The generated {BuildingStoreys.FloorLabel(index)} " +
+                    $"has only {proposedFloor.Rooms.Count-1} usable room(s) " +
+                    $"and assigns {hallway/total:P0} of the floor to a " +
+                    "hallway. Try regenerating with a different seed " +
+                    "or adjust the outline; no poor-quality draft was proposed.";
+                return false;
+            }
+        }
+
         if (addedRooms == 0 && addedCorridors == 0 &&
             addedDoors == 0 && addedWindows == 0 && addedStairs == 0 &&
             addedChimneys == 0 && absorbedHallStrips == 0)
