@@ -7422,5 +7422,137 @@ Check("Balanced L-house generates its own stairs on mirrored and rotated footpri
     }
 });
 
+
+Check("example11 regenerates without duplicated living rooms or thin rooms", () =>
+{
+    List<Point2> outer =
+    [
+        new(0,0),new(11,0),new(11,5),
+        new(13,5),new(13,8.5),new(0,8.5)
+    ];
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    List<Point2> hall =
+    [
+        new(0,0),new(5,0),new(5,5.25),new(10,5.25),
+        new(10,5),new(13,5),new(13,5.25),new(13,6.75),
+        new(0,6.75),new(0,5.25),new(3.6,5.25),
+        new(3.6,2.3),new(0,2.3)
+    ];
+    List<Point2> bigFront =
+    [
+        new(5,0),new(11,0),new(11,5),
+        new(10,5),new(10,5.25),new(5,5.25)
+    ];
+    RoomDefinition Room(string name,string type,List<Point2> shape) =>
+        new(){Name=name,Type=type,Outline=shape.ToList()};
+    DoorDefinition Door(double x,double y) =>
+        new(){Centre=new Point2(x,y),Width=0.9};
+    WindowDefinition Window(double x,double y) =>
+        new(){Centre=new Point2(x,y),Width=1.2};
+
+    var original=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=outer.ToList(),
+        Rooms=[
+            Room("Hallway 1","Hallway",hall),
+            Room("Living room","Living room",bigFront),
+            Room("Living room 2","Living room",R(0,2.3,3.6,5.25)),
+            Room("Dining room","Dining room",R(0,6.75,5,8.5)),
+            Room("Study","Study",R(5,6.75,13,8.5))
+        ],
+        Doors=[Door(13,6.25),Door(7.5,5.25),
+            Door(3.6,3.375),Door(2.5,6.75),Door(9,6.75)],
+        Windows=[Window(11,2.5),Window(0,3.775),
+            Window(2.5,8.5),Window(9,8.5)],
+        UpperFloors=[new StoreyDefinition
+        {
+            Perimeter=outer.ToList(),
+            Rooms=[
+                Room("Hallway 1","Hallway",hall),
+                Room("Bedroom","Bedroom",bigFront),
+                Room("Bedroom 2","Bedroom",R(0,2.3,3.6,5.25)),
+                Room("Bedroom 3","Bedroom",R(0,6.75,5,8.5)),
+                Room("Bathroom","Bathroom",R(5,6.75,13,8.5))
+            ],
+            Doors=[Door(7.5,5.25),Door(3.6,3.375),
+                Door(2.5,6.75),Door(9,6.75)],
+            Windows=[Window(11,2.5),Window(0,3.775),
+                Window(2.5,8.5),Window(9,8.5)]
+        }],
+        Staircases=[new StaircaseDefinition
+        {
+            LowerFloorIndex=0,Centre=new Point2(2.5,0.7),
+            Length=2.8,Width=1,RotationDegrees=90,LandingLength=1
+        }]
+    };
+    var oldLiving=original.Rooms.Single(r=>r.Name=="Living room");
+    var hearth=new ChimneyDefinition
+    {
+        Centre=new Point2(8,0.37),Width=1.4,Depth=0.7,
+        Exterior=true,HearthFloorIndex=0,
+        HearthRoomIds=[oldLiving.Id]
+    };
+    original.Chimneys.Add(hearth);
+    Assert(BuildingStoreys.Validate(original,out var reason),
+        "Uploaded example11 layout must be valid: "+reason);
+
+    var settings=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Stairs=true,CompactRpgHouseLayout=true
+    };
+    foreach(int seed in new[]{7,28,101})
+    {
+        Assert(BuildingGenerator.TryRegenerate(original,[0,1],seed,
+            settings,out var suggestion,out reason),
+            "example11 regeneration seed "+seed+": "+reason);
+        Assert(suggestion.Description.Contains("Balanced L-shaped RPG house"),
+            "The 13m x 8.5m L-shaped house should use room-first planning.");
+        var house=suggestion.Building;
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        var ground=BuildingStoreys.GetFloor(house,0);
+        var first=BuildingStoreys.GetFloor(house,1);
+        Assert(ground.Rooms.Count(r=>r.Type=="Kitchen")==1,
+            "Ground floor requires one actual kitchen.");
+        Assert(ground.Rooms.Count(r=>r.Type=="Living room")==1,
+            "Avoid duplicate living rooms.");
+        Assert(ground.Rooms.Count(r=>r.Type=="Hallway")==1);
+        Assert(ground.Rooms.Any(r=>r.Type=="Dining room") &&
+            ground.Rooms.Any(r=>r.Type=="Study"));
+        double ShortSide(RoomDefinition r)=>
+            Math.Min(r.Outline.Max(p=>p.X)-r.Outline.Min(p=>p.X),
+                r.Outline.Max(p=>p.Y)-r.Outline.Min(p=>p.Y));
+        Assert(ground.Rooms.Where(r=>r.Type is "Dining room" or "Study")
+            .All(r=>ShortSide(r)>=3.048),
+            "Dining and Study require at least 10 feet of usable short-side width.");
+        Assert(PolygonGeometry.Area(ground.Rooms.Single(r=>r.Type=="Hallway").Outline)<14,
+            "Do not retain the 35.88m² corridor alongside the lower stairs.");
+        var bedrooms=first.Rooms.Where(r=>r.Type=="Bedroom").ToArray();
+        Assert(bedrooms.Length==3);
+        Assert(bedrooms.All(r=>ShortSide(r)>=3.048));
+        var areas=bedrooms.Select(r=>PolygonGeometry.Area(r.Outline)).ToArray();
+        Assert(areas.Max()/areas.Min()<1.75,
+            "Largest upstairs bedroom must not dwarf the others.");
+        Assert(areas.Max()<27);
+        Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(ground))<0.01);
+        Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(first))<0.01);
+        Assert(house.Staircases.Single().Id==original.Staircases.Single().Id &&
+            house.Staircases.Single().Centre.DistanceTo(new Point2(2.5,0.7))<1e-8,
+            "Keep the accepted staircase in exactly the same position.");
+        Assert(house.Chimneys.Single().Id==hearth.Id &&
+            house.Chimneys.Single().HearthRoomIds.SequenceEqual(
+                new[]{ground.Rooms.Single(r=>r.Type=="Kitchen").Id}),
+            "Existing fireplace must be attached to the new Kitchen.");
+        Assert(!ground.Rooms.Where(r=>r.Type!="Hallway")
+            .All(g=>first.Rooms.Any(u=>g.Outline.SequenceEqual(u.Outline))),
+            "First floor partitions must not mirror ground floor partitions.");
+    }
+    Assert(original.Rooms.Count==5 &&
+        !original.Rooms.Any(r=>r.Type=="Kitchen") &&
+        original.Chimneys.Single().HearthRoomIds.SequenceEqual(new[]{oldLiving.Id}),
+        "Regeneration must not mutate the source example11 document.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
