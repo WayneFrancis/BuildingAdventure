@@ -146,21 +146,16 @@ public static class BuildingGenerator
         }
         if (reserveStairwells)
         {
-            // Temporary stair-bay partitions helped the subdivision pass
-            // avoid splitting through the flight. In the finished design
-            // they are OPEN circulation alcoves beside the hall, not
-            // enclosed standalone rooms. Their stairs, landings and
-            // doorway in the adjacent hallway remain.
-            var withOpenStairs = BuildingStoreys.Copy(result);
-            foreach (int index in BuildingStoreys.FloorIndexes(withOpenStairs))
+            // The temporary stair-bay enclosure is not a separate room.
+            // Merge it into an open alcove of the hallway, so this space
+            // is assigned and no spurious dividing wall / door remains.
+            foreach (int index in BuildingStoreys.FloorIndexes(result))
             {
-                var edited = BuildingStoreys.GetFloor(withOpenStairs, index);
-                edited.Rooms.RemoveAll(r => r.Type == "Stairwell");
-                BuildingStoreys.SetFloor(withOpenStairs, index, edited);
+                if (!RoomLayoutPlanner.TryMergeStairBayIntoHall(result,
+                        index, out var merged, out reason))
+                    return false;
+                result = merged;
             }
-            if (!BuildingStoreys.Validate(withOpenStairs, out reason))
-                return false;
-            result = withOpenStairs;
         }
         string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
             $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms, " +
