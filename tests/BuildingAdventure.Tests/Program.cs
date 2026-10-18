@@ -5835,5 +5835,53 @@ Check("Residence generation exposes historical style with safe legacy opt-out", 
         "Unchecking the historical generator must retain the legacy plan.");
 });
 
+Check("Two-storey residence offers historical hall-house layout with safe stair access", () =>
+{
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Windows=true,Stairs=true,HallHouseLayout=true
+    };
+    bool historic=false;
+    var attempted=new List<string>();
+    foreach(int seed in new[]{12,17,23,37,42})
+    {
+        if (!BuildingGenerator.TrySuggestWholeBuilding(
+            2,seed,options,out var proposed,out var reason,5))
+        {
+            attempted.Add(seed + ": " + reason);
+            continue;
+        }
+        var generated=proposed.Building;
+        if (!generated.Rooms.Any(r=>r.Type=="Great hall"))
+        {
+            attempted.Add(seed+": "+proposed.Description);
+            continue;
+        }
+        historic=true;
+        Assert(generated.Rooms.Single(r=>r.Type=="Hallway").Name==
+            "Screens passage","Do not retain a full-length central corridor on the ground floor.");
+        Assert(generated.Rooms.Any(r=>r.Type=="Pantry"));
+        Assert(generated.Staircases.Count==1);
+        Assert(BuildingStoreys.Validate(generated,out reason),reason);
+        Assert(BuildingConnectivity.RoomsIsolatedByServiceSpaces(generated,0).Count==0);
+        Assert(generated.UpperFloors.Count==1);
+        break;
+    }
+    Assert(historic, "No two-storey historic plan was returned: "+
+        string.Join(" | ",attempted));
+});
+
+Check("Hall-house option carries through generation option cloning", () =>
+{
+    var setting=new GenerationOptions
+    {HallHouseLayout=true,Purpose=BuildingUse.Residence,Stairs=true};
+    var clone=setting.Copy();
+    Assert(clone.HallHouseLayout && clone.Stairs &&
+        clone.Purpose==BuildingUse.Residence);
+    clone.HallHouseLayout=false;
+    Assert(setting.HallHouseLayout);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
