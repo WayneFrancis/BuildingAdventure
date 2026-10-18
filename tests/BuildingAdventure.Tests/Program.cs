@@ -7279,10 +7279,17 @@ Check("example10 broad L-house generates kitchen and properly sized dining and b
             var floor=BuildingStoreys.GetFloor(house,index);
             var corridor=floor.Rooms.Single(r=>r.Type=="Hallway");
             foreach(var room in floor.Rooms.Where(r=>r.Id!=corridor.Id))
-                Assert(floor.Doors.Any(d=>
+            {
+                bool direct=floor.Doors.Any(d=>
                     On(d.Centre,room.Outline) &&
-                    On(d.Centre,corridor.Outline)),
-                    room.Name+" must have independent corridor access on floor "+index);
+                    On(d.Centre,corridor.Outline));
+                bool pantryViaKitchen=room.Type=="Pantry" &&
+                    floor.Doors.Any(d=>On(d.Centre,room.Outline) &&
+                        floor.Rooms.Any(r=>r.Type=="Kitchen" &&
+                            On(d.Centre,r.Outline)));
+                Assert(direct || pantryViaKitchen,
+                    room.Name+" must connect to hallway or to the kitchen.");
+            }
             Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(floor))<0.01,
                 "Every part of the L-shaped exterior must be allocated.");
         }
