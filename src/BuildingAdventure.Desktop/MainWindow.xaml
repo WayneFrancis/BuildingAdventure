@@ -154,7 +154,7 @@
                                 <CheckBox x:Name="GenerateCorridorsCheckBox" Content="Corridors" IsChecked="True" Margin="0,0,12,6"/>
                                 <CheckBox x:Name="GenerateDoorsCheckBox" Content="Doors" IsChecked="True" Margin="0,0,12,6"/>
                                 <CheckBox x:Name="GenerateWindowsCheckBox" Content="Windows" IsChecked="True" Margin="0,0,12,6"/>
-                                <CheckBox x:Name="GenerateStairsCheckBox" Content="Stairs" Margin="0,0,12,6"/>
+                                <CheckBox x:Name="GenerateStairsCheckBox" Content="Stairs" IsChecked="True" Margin="0,0,12,6"/>
                                 <CheckBox x:Name="GenerateFireplacesCheckBox" Content="Fireplace / chimney stack" Margin="0,0,12,6"/>
                             </WrapPanel>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,8"
