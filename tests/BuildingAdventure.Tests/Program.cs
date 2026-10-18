@@ -5151,5 +5151,127 @@ Check("example.json keeps six-corner Room A and its angled wall adjoining Room B
     Assert(floor.Rooms.Count==2,
         "Automatic or manual unions must be detached from the source.");
 });
+Check("Reclaim oversized hallway from uploaded stepped two-storey footprint", () =>
+{
+    // Regression geometry from example(1).json: the ground-floor hallway
+    // grew to 50.15m² (56.8%) after the narrow passage merging pass.
+    var oversized = new BuildingDocument
+    {
+        GridFeet = 5,
+        Perimeter =
+        [
+            new(6.096, 1.524), new(10.668, 1.524),
+            new(10.668, 3.048), new(16.764, 3.048),
+            new(16.764, 10.668), new(6.096, 10.668)
+        ]
+    };
+    var hall = new RoomDefinition
+    {
+        Name = "Hallway 1", Type = "Hallway",
+        Outline =
+        [
+            new(16.764, 7.096), new(6.096, 7.096),
+            new(6.096, 1.524), new(10.668, 1.524),
+            new(10.668, 3.048), new(16.764, 3.048)
+        ]
+    };
+    oversized.Rooms.AddRange(
+    [
+        hall,
+        new RoomDefinition
+        {
+            Name = "Living room", Type = "Living room",
+            Outline = [new(6.096, 7.096), new(13.096, 7.096),
+                new(13.096, 10.668), new(6.096, 10.668)]
+        },
+        new RoomDefinition
+        {
+            Name = "Kitchen", Type = "Kitchen",
+            Outline = [new(13.096, 7.096), new(16.764, 7.096),
+                new(16.764, 10.668), new(13.096, 10.668)]
+        }
+    ]);
+    oversized.UpperFloors.Add(new StoreyDefinition
+    {
+        Name = "First Floor",
+        Perimeter =
+        [
+            new(6.096, 1.524), new(10.668, 1.524),
+            new(10.668, 4.572), new(16.764, 4.572),
+            new(16.764, 10.668), new(6.096, 10.668)
+        ],
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name = "Hallway 1", Type = "Hallway",
+                Outline = [new(6.096, 5.096), new(16.764, 5.096),
+                    new(16.764, 7.096), new(6.096, 7.096)]
+            }
+        ]
+    });
+    oversized.Staircases.Add(new StaircaseDefinition
+    {
+        LowerFloorIndex = 0, Centre = new Point2(11.43, 5.696),
+        Length = 2.8, Width = 0.9, RotationDegrees = 90,
+        LandingLength = 1
+    });
+    Assert(BuildingStoreys.Validate(oversized, out var reason), reason);
+    int changed = RoomLayoutPlanner.ReclaimOversizedGeneratedHallway(
+        oversized, 0, Array.Empty<Guid>(), BuildingUse.Residence,
+        new Random(123), out var repaired);
+    Assert(changed == 3, $"Expected three reclaimed rooms, got {changed}.");
+    Assert(repaired.Rooms.Count == 6);
+    Assert(PolygonGeometry.Area(repaired.Rooms.Single(r => r.Type == "Hallway")
+        .Outline) < 22, "The original 50m² hall was not reduced to circulation.");
+    Assert(oversized.Rooms.Count == 3, "The original proposal was modified.");
+    Assert(BuildingStoreys.Validate(repaired, out reason), reason);
+    Assert(repaired.Staircases.Count == 1);
+    Assert(repaired.UpperFloors[0].Rooms.Count == 1,
+        "The nonselected upper floor must remain untouched.");
+    int blocked = RoomLayoutPlanner.ReclaimOversizedGeneratedHallway(
+        oversized, 0, [hall.Id], BuildingUse.Residence,
+        new Random(123), out var untouched);
+    Assert(blocked == 0 && untouched.Rooms.Count == 3,
+        "Hand-drawn hallways must never be partitioned.");
+});
+
+Check("Blank stepped floors put the staircase against a common corridor wall", () =>
+{
+    var blank = new BuildingDocument
+    {
+        Perimeter =
+        [
+            new(6.096, 1.524), new(10.668, 1.524),
+            new(10.668, 3.048), new(16.764, 3.048),
+            new(16.764, 10.668), new(6.096, 10.668)
+        ],
+        UpperFloors =
+        [
+            new StoreyDefinition
+            {
+                Perimeter =
+                [
+                    new(6.096, 1.524), new(10.668, 1.524),
+                    new(10.668, 4.572), new(16.764, 4.572),
+                    new(16.764, 10.668), new(6.096, 10.668)
+                ]
+            }
+        ]
+    };
+    Assert(BuildingConnectivity.TryAddAlignedHallwaysAndStairs(
+        blank, 0, out var aligned, out var reason), reason);
+    Assert(aligned.Staircases.Count == 1);
+    var stair = aligned.Staircases.Single();
+    var lowerHall = aligned.Rooms.Single(r => r.Type == "Hallway");
+    var upperHall = aligned.UpperFloors[0].Rooms.Single(r => r.Type == "Hallway");
+    // Along the room-facing south wall on both levels, not 15cm adrift.
+    double wallY = lowerHall.Outline.Max(p => p.Y);
+    Assert(Math.Abs(wallY - upperHall.Outline.Max(p => p.Y)) < 1e-6);
+    Assert(Math.Abs(stair.Centre.Y + stair.Width / 2 - wallY) < 1e-6,
+        "Stair flight must actually hug the shared hallway wall.");
+    Assert(BuildingStoreys.Validate(aligned, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
