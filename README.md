@@ -4,6 +4,57 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.44 — Proportionate RPG rooms in wide L-shaped two-storey houses (development)
+
+The accepted `example10(1).json` reveals limits of repairing a
+corridor-first layout after construction. Although the notched perimeter
+is completely allocated, the ground floor has **two Living rooms but
+no Kitchen**, a **1.75m-deep Dining room** and **1.75m-deep Study**.
+Upstairs, a **33.88m² Bedroom** dwarfs another **10.62m² Bedroom**.
+The 36.6m² hallway also unnecessarily parallels a stair flight on
+both floors. Those room sizes are not usable fantasy RPG house maps.
+
+For suitably broad, six-corner L-shaped residences, a new
+`BalancedSteppedRpgHousePlanner` takes priority over the legacy
+stepped/corridor approaches:
+
+- **Ground floor:** a single Living room (with stairs incorporated),
+  a mandatory Kitchen and attached Pantry, a properly sized Dining
+  room and a Study. Each full-scale living/dining/study space has
+  at least **3.05m (10ft)** usable short-side width; Pantry is an
+  intentional shallow service room and can open directly off Kitchen.
+- **Upper floor:** stairs emerge into an open Sitting room with a
+  walkable approach to the main hall, separate Bathroom and **three
+  independently accessible Bedrooms**. The floors are NOT required
+  to duplicate ground-floor internal partitions.
+- **Bedroom proportions:** all three Bedrooms have a short side
+  at least **3.05m**, an area at least **11m²**, and a max/min
+  area ratio under **1.75**. This avoids the earlier 34m² bedroom
+  beside a 9m² one.
+- **Circulation:** the stair flight belongs to the downstairs
+  living space rather than consuming a second parallel stair hallway;
+  upstairs it belongs to a sitting/landing space connected to a
+  **1.4–1.55m central hall**. Every bedroom, study and bathroom
+  opens independently to the hall, while Pantry may open directly
+  from Kitchen. The entire notched perimeter is allocated.
+- **Respect the building:** existing staircase centre, rotation and ID
+  are preserved on regeneration. With no existing flight, the planner
+  creates one within the shared stair space. A **1.1m minimum
+  unobstructed route behind the upper stair** is required.
+- **Variation:** seeds can change hallway width and the upstairs
+  bedroom/bathroom partition independently from the downstairs
+  kitchen/pantry division; all four rotations and their mirrors
+  are supported.
+- **Scope/fallback:** this archetype applies to wider L-shaped
+  houses with enough width and rear depth for functional rooms.
+  Narrower stepped or more complicated exteriors continue to use
+  existing archetypes and cannot yet be promised equivalent results.
+- **Tests:** direct and full two-floor regeneration of the exact
+  `example10(1).json` footprint and original stair, room-role
+  completeness, ten-foot room dimensions, balanced bedroom sizes,
+  complete footprint allocation, diverse seeds, independent door
+  access, new stairs and all mirrored/rotated forms.
+
 ## v0.43 — example9: missing stepped-edge rooms and stranded stairhead (development)
 
 The accepted `example9.json` shows two independent faults on an
