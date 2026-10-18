@@ -5813,6 +5813,13 @@ Check("Residence generation exposes historical style with safe legacy opt-out", 
         Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
         Doors=true,Windows=true,Stairs=false,HallHouseLayout=true
     };
+    var footprint = BuildingGenerator.MedievalFootprint(
+        BuildingUse.Residence,1,0,new Random(12));
+    var blankHistoric = new BuildingDocument { Perimeter=footprint };
+    Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+        blankHistoric,out _,out var layoutReason),
+        "Seed 12 hall-house template: " + layoutReason +
+        "; footprint=" + string.Join(";",footprint.Select(p=>$"({p.X},{p.Y})")));
     Assert(BuildingGenerator.TrySuggestWholeBuilding(
         1,12,options,out var historic,out var reason),reason);
     Assert(historic.Building.Rooms.Any(r=>r.Type=="Great hall"),
