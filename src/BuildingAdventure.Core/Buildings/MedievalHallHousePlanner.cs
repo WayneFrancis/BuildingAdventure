@@ -121,7 +121,11 @@ public static class MedievalHallHousePlanner
         var floor = BuildingStoreys.GetFloor(building, 0);
         bool alongX = variant.AlongX;
         bool reverse = variant.Reverse;
-        bool privateEnd = variant.PrivateEnd;
+        // A one-storey house needs somewhere to sleep. The layout choice
+        // controls whether a sufficiently large house gets a second
+        // bedchamber, never whether it gets its first one.
+        bool singleStorey = BuildingStoreys.FloorCount(building) == 1;
+        bool privateEnd = variant.PrivateEnd || singleStorey;
         double serviceFraction = variant.ServiceFraction;
         double uLow = floor.Perimeter.Min(p => alongX ? p.X : p.Y);
         double uHigh = floor.Perimeter.Max(p => alongX ? p.X : p.Y);
@@ -129,6 +133,12 @@ public static class MedievalHallHousePlanner
         double vHigh = floor.Perimeter.Max(p => alongX ? p.Y : p.X);
         double length = uHigh - uLow;
         double depth = vHigh - vLow;
+        double footprintArea = PolygonGeometry.Area(floor.Perimeter);
+        // A manor great hall is inappropriate in a normal cottage.
+        // Use the familiar communal-room role for modest houses.
+        string gatheringRoom = footprintArea >= 140 ? "Great hall" : "Common room";
+        bool twoBedrooms = singleStorey && variant.PrivateEnd &&
+            footprintArea >= 85 && depth >= 6.3;
         if (length < 8 || depth < 6)
         {
             reason = "A hall house needs an 8m long by 6m broad main footprint.";
@@ -145,8 +155,10 @@ public static class MedievalHallHousePlanner
             Math.Min(length * serviceFraction, length - 5.6));
         double screens = variant.ScreenWidth;
         double parlour = privateEnd
-            ? Math.Max(2.3, length * variant.PrivateFraction) : 0;
-        if (length - service - screens - parlour < 3.3)
+            ? Math.Max(singleStorey ? 2.6 : 2.3,
+                length * variant.PrivateFraction) : 0;
+        if (length - service - screens - parlour <
+            (singleStorey ? 1.7 : 3.3))
         {
             reason = "Insufficient depth for a useful great hall.";
             return false;
@@ -188,8 +200,11 @@ public static class MedievalHallHousePlanner
                 : naturalU < service + screens - Epsilon
                     ? "Hallway"
                     : privateEnd && naturalU > length - parlour + Epsilon
-                        ? "Parlour"
-                        : "Great hall";
+                        ? singleStorey
+                            ? twoBedrooms && (c + d) / 2 >= vSplit
+                                ? "Bedroom 2" : "Bedroom"
+                            : "Parlour"
+                        : gatheringRoom;
             if (!cells.TryGetValue(type, out var group))
                 cells[type] = group = new List<List<Point2>>();
             group.Add(outline);
@@ -205,22 +220,26 @@ public static class MedievalHallHousePlanner
 
         var rooms = new List<RoomDefinition>();
         foreach (string type in new[] { "Hallway", "Kitchen",
-                     variant.ServiceRoom, "Great hall", "Parlour" })
+                     variant.ServiceRoom, gatheringRoom,
+                     singleStorey ? "Bedroom" : "Parlour", "Bedroom 2" })
         {
             if (!cells.TryGetValue(type, out var region) ||
                 !TryUnionCells(region, out var outline))
             {
-                if (type == "Parlour" && !privateEnd) continue;
+                if ((type == "Parlour" && (singleStorey || !privateEnd)) ||
+                    (type == "Bedroom 2" && !twoBedrooms)) continue;
                 reason = "The footprint divides a required hall-house room.";
                 return false;
             }
             double area = PolygonGeometry.Area(outline);
             double minimum = type switch
             {
-                "Great hall" => 20,
+                "Great hall" => 25,
+                "Common room" => 10,
                 "Hallway" => 5,
                 "Kitchen" => 5,
                 "Pantry" or "Buttery" => 4,
+                "Bedroom" or "Bedroom 2" => 8,
                 _ => 7
             };
             if (area < minimum)
@@ -230,7 +249,7 @@ public static class MedievalHallHousePlanner
             }
             rooms.Add(new RoomDefinition
             {
-                Type = type,
+                Type = type == "Bedroom 2" ? "Bedroom" : type,
                 Name = type == "Hallway" ? "Screens passage" : type,
                 Outline = outline
             });
@@ -249,7 +268,7 @@ public static class MedievalHallHousePlanner
         if (!BuildingStoreys.Validate(withDoors, out reason)) return false;
         var accessible = BuildingStoreys.GetFloor(withDoors, 0);
         var screen = accessible.Rooms.Single(r => r.Type == "Hallway");
-        var hall = accessible.Rooms.Single(r => r.Type == "Great hall");
+        var hall = accessible.Rooms.Single(r => r.Type == gatheringRoom);
         var kitchen = accessible.Rooms.Single(r => r.Type == "Kitchen");
         var pantry = accessible.Rooms.Single(r =>
             r.Type == variant.ServiceRoom);
@@ -261,10 +280,23 @@ public static class MedievalHallHousePlanner
             reason = "The service rooms must be accessible from the screen.";
             return false;
         }
-        if (privateEnd && !HasDoor(accessible, hall,
+        if (singleStorey)
+        {
+            var bedrooms = accessible.Rooms.Where(r => r.Type == "Bedroom")
+                .ToArray();
+            if (bedrooms.Length < 1 || bedrooms.Length > 2 ||
+                bedrooms.Any(room => !HasDoor(accessible, hall, room)) ||
+                bedrooms.Any(room => PolygonGeometry.Area(room.Outline) < 8))
+            {
+                reason = "Every single-storey bedroom needs a usable " +
+                    "private room with direct access from the common area.";
+                return false;
+            }
+        }
+        else if (privateEnd && !HasDoor(accessible, hall,
             accessible.Rooms.Single(r => r.Type == "Parlour")))
         {
-            reason = "The private parlour has no entrance from the great hall.";
+            reason = "The private parlour has no entrance from the main hall.";
             return false;
         }
         if (!accessible.Doors.Any(d => Enumerable.Range(0, accessible.Perimeter.Count)
