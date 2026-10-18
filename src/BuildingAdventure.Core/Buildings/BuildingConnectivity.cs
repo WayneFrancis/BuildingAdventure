@@ -1030,9 +1030,12 @@ public static class BuildingConnectivity
         while (queue.Count > 0)
         {
             var from = queue.Dequeue();
-            if (IsStorage(from) ||
-                from.Type is "Bedroom" or "Guest room" or "Suite")
-                continue;
+            // Restrict this particular quality check to compulsory
+            // walk-through STORAGE. Other room-to-room arrangements,
+            // such as historic interconnected private chambers, have
+            // their own architectural rules and must not accidentally
+            // invalidate older generation modes.
+            if (IsStorage(from)) continue;
             foreach (var to in floor.Rooms.Where(r =>
                 !seen.Contains(r.Id) && HasDoor(from, r)))
             {
@@ -1042,7 +1045,12 @@ public static class BuildingConnectivity
         }
         return floor.Rooms.Where(r =>
             r.Id != hallway.Id && r.Type != "Stairwell" &&
-            !IsStorage(r) && !seen.Contains(r.Id)).ToArray();
+            !IsStorage(r) && !seen.Contains(r.Id) &&
+            // This regression catches a room whose only available route
+            // passes through storage; do not turn unrelated pre-existing
+            // door-placement limitations into generation failures.
+            floor.Rooms.Any(store => IsStorage(store) && HasDoor(r, store)))
+            .ToArray();
     }
 
     public static int CountRoomsWithoutDoors(BuildingDocument building,
