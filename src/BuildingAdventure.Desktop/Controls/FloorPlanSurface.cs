@@ -799,6 +799,11 @@ public sealed class FloorPlanSurface : FrameworkElement
             stair.LowerFloorIndex + 1 == _stairFloorIndex))
         {
             var footprint = BuildingStoreys.StairFootprint(stair);
+            // Landing areas are reserved clear floor on both sides of the run.
+            foreach (var landing in BuildingStoreys.StairLandings(stair))
+                dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(50, 84, 165, 120)),
+                    new Pen(Brushes.SeaGreen, 1.5) { DashStyle = DashStyles.Dash },
+                    BuildGeometry(landing, true));
             bool selected = stair.Id == _selectedStairId;
             bool goingUp = stair.LowerFloorIndex == _stairFloorIndex;
             var fill = goingUp
