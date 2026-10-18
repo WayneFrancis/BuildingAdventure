@@ -90,6 +90,43 @@ public static class BuildingGenerator
                 "to establish its initial floor layout.";
             return false;
         }
+        // Broad L-shaped homes can do substantially better than an
+        // L-hall with thin dining/bedroom strips. Here the downstairs
+        // common room houses the stair, upstairs has its own sitting
+        // room and bedrooms, and every functional room has adequate width.
+        if (floorCount==2 && options.CompactRpgHouseLayout &&
+            options.Purpose==BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors && options.Stairs &&
+            BuildingStoreys.TryAddFloor(blank,out var balancedBasis,out _) &&
+            BalancedSteppedRpgHousePlanner.TryGenerate(balancedBasis,seed,
+                out var balanced,out _))
+        {
+            int hearths=0;
+            if(options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(balanced,
+                    out var heated,options.Purpose))
+            {
+                balanced=heated;
+                hearths=1;
+            }
+            if(options.Windows)
+            {
+                foreach(int level in new[]{0,1})
+                {
+                    BuildingConnectivity.AddWindows(balanced,level,out var glazed);
+                    balanced=glazed;
+                }
+            }
+            if(BuildingStoreys.Validate(balanced,out reason))
+            {
+                suggestion=new BuildingSuggestion(balanced,seed,[0,1],
+                    $"Balanced L-shaped RPG house. Seed {seed}: "+
+                    "kitchen and full-width dining downstairs, "+
+                    $"three proportionate upstairs bedrooms, {hearths} hearth(s)");
+                return true;
+            }
+        }
+
         // Simple six-corner stepped homes should be built as complete
         // RPG plans too. A rectangle-only template cannot fill their L
         // wings, and corridor-first planning could waste 77% of the floor.
@@ -629,6 +666,44 @@ public static class BuildingGenerator
         {
             reason = "A selected floor no longer exists.";
             return false;
+        }
+
+        // A broad L-shaped residential footprint has its own room-first
+        // archetype: do not allow the older fallback to duplicate rooms,
+        // shrink the dining room to a 1.75m strip or create a 34m² bedroom.
+        // The two floor layouts are independent except for stair geometry.
+        if (options.CompactRpgHouseLayout &&
+            options.Purpose==BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors && options.Stairs &&
+            indices.Length==2 && indices[0]==0 && indices[1]==1 &&
+            BuildingStoreys.FloorCount(source)==2 &&
+            BalancedSteppedRpgHousePlanner.TryGenerate(source,seed,
+                out var balanced,out _))
+        {
+            int hearths=0;
+            if(options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(balanced,
+                    out var heated,options.Purpose))
+            {
+                balanced=heated;
+                hearths=1;
+            }
+            if(options.Windows)
+            {
+                foreach(int level in indices)
+                {
+                    BuildingConnectivity.AddWindows(balanced,level,out var glazed);
+                    balanced=glazed;
+                }
+            }
+            if(BuildingStoreys.Validate(balanced,out reason))
+            {
+                suggestion=new BuildingSuggestion(balanced,seed,indices,
+                    $"Balanced L-shaped RPG house. Seed {seed}: "+
+                    "kitchen, dining, different upstairs plan, "+
+                    $"three proportionate bedrooms, {hearths} new hearth(s)");
+                return true;
+            }
         }
 
         // Select-floor and Regenerate should plan both halves of an
