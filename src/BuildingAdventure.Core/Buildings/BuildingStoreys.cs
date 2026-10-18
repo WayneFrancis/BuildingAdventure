@@ -440,6 +440,24 @@ public static class BuildingStoreys
         return true;
     }
 
+    /// <summary>
+    /// Remove a selected fireplace and its whole vertical chimney stack
+    /// from all storeys, without modifying the caller-owned document.
+    /// A shared kitchen/living chimney is one stack, so deleting either
+    /// fireplace face removes both and their continuing flue.
+    /// </summary>
+    public static bool TryRemoveChimney(BuildingDocument source, Guid chimneyId,
+        out BuildingDocument updated, out string reason)
+    {
+        updated = Copy(source);
+        if (updated.Chimneys.RemoveAll(ch => ch.Id == chimneyId) == 0)
+        {
+            reason = "The selected chimney does not exist.";
+            return false;
+        }
+        return Validate(updated, out reason);
+    }
+
     /// <summary>Place a new staircase using whole-building validation.</summary>
     public static bool TryAddStaircase(BuildingDocument source,
         StaircaseDefinition proposed, out BuildingDocument result, out string reason)
