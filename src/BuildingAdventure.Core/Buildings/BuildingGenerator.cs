@@ -550,12 +550,17 @@ public static class BuildingGenerator
             if (thisFloorRooms == 0) skippedFloors.Add(index);
             roomsPerFloor.Add($"{BuildingStoreys.FloorLabel(index)}: {thisFloorRooms} room(s)");
             }
-            // In an L wing the perimeter may step in close to one side
-            // of a hallway, leaving a 0.762m strip that cannot be a room.
-            // Make that strip part of the hallway before placing doors.
-            absorbedHallStrips += RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(
-                proposed, index, out var withConnectedHall);
-            proposed = withConnectedHall;
+            // Absorb the 0.762m L-wing gap only during the final room
+            // layout. The earlier corridors-only staging phase of a new
+            // whole building must keep rectangular halls intact: the
+            // reserved-stair-bay planner requires those rectangles before
+            // it can locate and stack flights.
+            if (options.Rooms)
+            {
+                absorbedHallStrips += RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(
+                    proposed, index, out var withConnectedHall);
+                proposed = withConnectedHall;
+            }
             if (options.Doors)
             {
                 addedDoors += BuildingConnectivity.AddDoors(
