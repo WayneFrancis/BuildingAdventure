@@ -154,6 +154,17 @@ public static class BuildingGenerator
                 RoomLayoutPlanner.ConsolidateGeneratedRooms(result, level,
                     Array.Empty<Guid>(), out var shaped);
                 result = shaped;
+                // The whole-building path merges temporary stair bays only
+                // after furnishing, so its hallway cleanup belongs here.
+                int reclaimed = RoomLayoutPlanner.ReclaimOversizedGeneratedHallway(
+                    result, level, Array.Empty<Guid>(), options.Purpose,
+                    new Random(unchecked(seed + level + 11)), out var useful);
+                result = useful;
+                if (reclaimed > 0 && options.Doors)
+                {
+                    BuildingConnectivity.AddDoors(result, level, out var accessed);
+                    result = accessed;
+                }
             }
         }
 
