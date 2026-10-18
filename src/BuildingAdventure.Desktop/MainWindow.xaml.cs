@@ -323,6 +323,19 @@ public partial class MainWindow : Window
             EditorSurface.SelectedStaircaseId.HasValue ||
             EditorSurface.HasSelectedDoor || EditorSurface.HasSelectedWindow ||
             EditorSurface.HasSelectedVertex || EditorSurface.SelectedRoom is not null;
+        CurrentSelectionText.Text = EditorSurface.HasSelectedChimney
+            ? "Selected: Fireplace / chimney"
+            : EditorSurface.SelectedStaircaseId.HasValue
+                ? "Selected: Staircase"
+                : EditorSurface.HasSelectedWindow
+                    ? "Selected: Window"
+                    : EditorSurface.HasSelectedDoor
+                        ? "Selected: Door"
+                        : EditorSurface.HasSelectedVertex
+                            ? "Selected: Corner"
+                            : EditorSurface.SelectedRoom is { } selectedRoom
+                                ? "Selected: " + selectedRoom.Name
+                                : "Selected: None";
         ApplyStairsButton.IsEnabled = EditorSurface.SelectedStaircaseId.HasValue;
         StairsText.Text = $"{_building.Staircases.Count} stair flight(s)";
         OpeningText.Text = $"{BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex).Count} opening(s) in this slab";
