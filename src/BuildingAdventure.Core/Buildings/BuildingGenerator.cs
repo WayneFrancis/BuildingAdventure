@@ -65,6 +65,7 @@ public static class BuildingGenerator
         bool reserveStairwells = options.Stairs && options.Corridors && floorCount > 1;
         var stageOptions = options.Copy();
         stageOptions.Stairs = false;
+        stageOptions.Fireplaces = false;
         if (reserveStairwells)
         {
             stageOptions.Rooms = false;
@@ -97,6 +98,7 @@ public static class BuildingGenerator
             result = staged;
             var fill = options.Copy();
             fill.Stairs = false;
+            fill.Fireplaces = false;
             if (fill.Rooms || fill.Doors || fill.Windows)
             {
                 if (!TrySuggest(result, Enumerable.Range(0, floorCount).ToArray(),
@@ -111,10 +113,13 @@ public static class BuildingGenerator
                 Enumerable.Range(0, floorCount).ToArray(), out var withStairs);
             result = withStairs;
         }
+        int chimneys = options.Fireplaces &&
+            BuildingConnectivity.TryAddChimney(result, out var withChimney) ? 1 : 0;
+        if (chimneys > 0) result = withChimney;
         string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
             $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms, " +
             $"{result.UpperFloors.Sum(f => f.Doors.Count) + result.Doors.Count} doors, " +
-            $"{stairs} new stair flight(s)";
+            $"{stairs} new stair flight(s), {chimneys} chimney stack(s)";
         suggestion = new BuildingSuggestion(BuildingStoreys.Copy(result), seed,
             Enumerable.Range(0, floorCount).ToArray(), label);
         reason = "";
@@ -201,6 +206,7 @@ public static class BuildingGenerator
         int addedWindows = 0;
         int addedFootprints = 0;
         int addedStairs = 0;
+        int addedChimneys = 0;
         var skippedFloors = new List<int>();
         var roomsPerFloor = new List<string>();
         foreach (int index in indices)
@@ -388,11 +394,19 @@ public static class BuildingGenerator
             proposed = withStairs;
         }
 
+        if (options.Fireplaces &&
+            BuildingConnectivity.TryAddChimney(proposed, out var withFireplace))
+        {
+            proposed = withFireplace;
+            addedChimneys++;
+        }
+
         if (addedRooms == 0 && addedCorridors == 0 &&
-            addedDoors == 0 && addedWindows == 0 && addedStairs == 0)
+            addedDoors == 0 && addedWindows == 0 && addedStairs == 0 &&
+            addedChimneys == 0)
         {
             bool roomOnly = options.Rooms && !options.Corridors &&
-                !options.Doors && !options.Windows && !options.Stairs;
+                !options.Doors && !options.Windows && !options.Stairs && !options.Fireplaces;
             reason = (roomOnly
                 ? "No valid room fits the selected floors. "
                 : "No valid new features fit the selected floors and settings. ") +
