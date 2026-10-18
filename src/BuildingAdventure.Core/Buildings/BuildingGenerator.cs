@@ -635,6 +635,22 @@ public static class BuildingGenerator
                 return false;
             }
         }
+        // Last, consolidate newly generated sliver rooms. Multiple
+        // rectangles labelled Passage beside one hall are not useful,
+        // and small offset service wings make better L-shaped rooms than
+        // tiny isolated rectangles. Never merge away pre-existing rooms.
+        if (options.Rooms)
+        {
+            foreach (int index in indices)
+            {
+                var protectedRooms = BuildingStoreys.GetFloor(original, index)
+                    .Rooms.Select(r => r.Id).ToArray();
+                RoomLayoutPlanner.ConsolidateGeneratedRooms(
+                    proposed, index, protectedRooms, out var withMergedRooms);
+                proposed = withMergedRooms;
+            }
+        }
+
         // Chimneys before glazing. Otherwise a 1.2m window can overlap
         // the edge of a fireplace even when its centre is far away.
         if (options.Fireplaces &&
