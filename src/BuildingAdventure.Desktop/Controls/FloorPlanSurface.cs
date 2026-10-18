@@ -54,6 +54,7 @@ public sealed class FloorPlanSurface : FrameworkElement
     private string _windowEditError = "";
     private Guid? _selectedStairId;
     private List<StaircaseDefinition> _staircases = new();
+    private List<ChimneyDefinition> _chimneys = new();
     private int _stairFloorIndex;
     private List<AdjacentFloorPlan> _referenceFloors = new();
     private double _referenceOpacity = 0.40;
@@ -112,6 +113,12 @@ public sealed class FloorPlanSurface : FrameworkElement
     public void SetDisplayMode(MapVisibilityMode mode)
     {
         _displayMode = mode;
+        InvalidateVisual();
+    }
+
+    public void SetChimneyOverlay(IReadOnlyList<ChimneyDefinition> chimneys)
+    {
+        _chimneys = chimneys.Select(c => c.Copy()).ToList();
         InvalidateVisual();
     }
 
@@ -858,6 +865,20 @@ public sealed class FloorPlanSurface : FrameworkElement
 
             if (selected && Tool == EditorTool.Select && !_draggingStair && !_rotatingStair)
                 DrawStairRotationHandle(dc, stair);
+        }
+
+        // One shared stack stays at exactly the same world location on every
+        // level where the perimeter covers it, including any basement.
+        foreach (var chimney in _chimneys)
+        {
+            var footprint = BuildingStoreys.ChimneyFootprint(chimney);
+            if (_outline.Count < 3 ||
+                !FloorGeometry.IsWithinPolygon(footprint, _outline)) continue;
+            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(180, 171, 89, 65)),
+                new Pen(Brushes.SaddleBrown, 2), BuildGeometry(footprint, true));
+            Point centre = ToScreen(chimney.Centre);
+            DrawText(dc, "FIREPLACE / FLUE",
+                new Point(centre.X + 7, centre.Y - 14), 10, Brushes.Maroon);
         }
 
         if ((_draggingStair || _rotatingStair) && _dragPreviewStair is not null)
