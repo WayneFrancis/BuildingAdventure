@@ -406,6 +406,24 @@ public static class RoomLayoutPlanner
         IReadOnlyList<Point2> outline, Random random)
     {
         string basic = ChooseRoomType(use, floorIndex, area, existing, random);
+
+        // Room roles must depend on usable proportions as well as area.
+        // A 1.786 x 7.62m L-wing strip is 13.6 square metres but is not
+        // a plausible bedroom: classify it as circulation instead of
+        // consuming the next available residential room name.
+        double width = outline.Max(p => p.X) - outline.Min(p => p.X);
+        double depth = outline.Max(p => p.Y) - outline.Min(p => p.Y);
+        double shortSide = Math.Min(width, depth);
+        double longSide = Math.Max(width, depth);
+        if (shortSide > 1e-6 && shortSide < 2.35 &&
+            longSide >= 4.0 && longSide / shortSide >= 2.8)
+            return "Passage";
+
+        // Bedrooms and other sleeping accommodation need usable width
+        // for a bed and access around it, not simply enough total area.
+        if (shortSide < 2.5 && basic is "Bedroom" or "Guest room" or "Suite")
+            return floorIndex > 0 ? "Closet" : "Storeroom";
+
         if (floorIndex != 0 || use is not (BuildingUse.Residence or BuildingUse.Inn))
             return basic;
         bool Has(string type) => existing.Any(r =>
@@ -521,10 +539,10 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
-    /// Absorb narrow exterior slivers beside a rectangular hall into its
-    /// circulation area. An L footprint can have an outside wall 0.762m
-    /// away from one part of the hall; that is too thin for a room, yet
-    /// must not be omitted from the plan.
+    /// Absorb long shallow exterior strips beside a rectangular hall into
+    /// its circulation area, rather than inventing bedrooms in floor
+    /// strips only 0.762–2.0m deep. Keep wider / less elongated
+    /// spaces available for normal rooms and service rooms.
     /// </summary>
     public static int AbsorbNarrowPerimeterGapsIntoHall(
         BuildingDocument source, int floorIndex, out BuildingDocument updated)
@@ -554,15 +572,17 @@ public static class RoomLayoutPlanner
                 {
                     double x0 = Math.Max(left, Math.Min(a.X, b.X));
                     double x1 = Math.Min(right, Math.Max(a.X, b.X));
-                    if (x1 - x0 < 1) continue;
-                    if (a.Y < top - 1e-6 && top - a.Y <= 1.25)
+                    if (x1 - x0 < 3.5) continue;
+                    if (a.Y < top - 1e-6 && top - a.Y <= 2.0 &&
+                        (x1 - x0) / (top - a.Y) >= 2.5)
                     {
                         sliver = Rectangle(x0, a.Y, x1, top);
                         merged = [new(left,top),new(x0,top),new(x0,a.Y),
                             new(x1,a.Y),new(x1,top),new(right,top),
                             new(right,bottom),new(left,bottom)];
                     }
-                    else if (a.Y > bottom + 1e-6 && a.Y - bottom <= 1.25)
+                    else if (a.Y > bottom + 1e-6 && a.Y - bottom <= 2.0 &&
+                        (x1 - x0) / (a.Y - bottom) >= 2.5)
                     {
                         sliver = Rectangle(x0, bottom, x1, a.Y);
                         merged = [new(left,top),new(right,top),new(right,bottom),
@@ -574,15 +594,17 @@ public static class RoomLayoutPlanner
                 {
                     double y0 = Math.Max(top, Math.Min(a.Y, b.Y));
                     double y1 = Math.Min(bottom, Math.Max(a.Y, b.Y));
-                    if (y1 - y0 < 1) continue;
-                    if (a.X < left - 1e-6 && left - a.X <= 1.25)
+                    if (y1 - y0 < 3.5) continue;
+                    if (a.X < left - 1e-6 && left - a.X <= 2.0 &&
+                        (y1 - y0) / (left - a.X) >= 2.5)
                     {
                         sliver = Rectangle(a.X, y0, left, y1);
                         merged = [new(left,top),new(right,top),
                             new(right,bottom),new(left,bottom),new(left,y1),
                             new(a.X,y1),new(a.X,y0),new(left,y0)];
                     }
-                    else if (a.X > right + 1e-6 && a.X - right <= 1.25)
+                    else if (a.X > right + 1e-6 && a.X - right <= 2.0 &&
+                        (y1 - y0) / (a.X - right) >= 2.5)
                     {
                         sliver = Rectangle(right, y0, a.X, y1);
                         merged = [new(left,top),new(right,top),new(right,y0),
