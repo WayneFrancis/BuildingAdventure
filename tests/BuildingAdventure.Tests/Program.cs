@@ -7037,5 +7037,136 @@ Check("example7 side-stair utility and upstairs bathroom move down like example8
         "Reapplying this pass must be idempotent.");
 });
 
+Check("example9 restores 1.1m route to upper stairhead and assigns right exterior step", () =>
+{
+    // Reproduces accepted example9.json: two identical stepped storeys,
+    // one horizontal stair near the exterior, shared generated hallway
+    // with a 0.3m squeeze, plus 3.375m² of ignored exterior slivers.
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var outline=new List<Point2> {
+        new(0,0),new(9.5,0),new(9.5,5.5),
+        new(11.5,5.5),new(11.5,9.5),new(0,9.5)};
+    List<Point2> H() => [
+        new(0,0),new(5,0),new(5,5.75),
+        new(11.5,5.75),new(11.5,7.25),
+        new(0,7.25),new(0,5.75),new(3.6,5.75),
+        new(3.6,1.5),new(0,1.5)
+    ];
+    RoomDefinition A(string type,string name,List<Point2> shape)=>
+        new(){Type=type,Name=name,Outline=shape};
+    var hall=A("Hallway","Hallway 1",H());
+    var living=A("Living room","Living room",R(5,0,9,5.75));
+    var smaller=A("Living room","Living room 2",R(0,1.5,3.6,5.75));
+    var dining=A("Dining room","Dining room",R(0,7.25,5,9.5));
+    var study=A("Study","Study",R(5,7.25,11.5,9.5));
+    var stair=new StaircaseDefinition {
+        LowerFloorIndex=0,Centre=new(2.5,0.7),
+        Width=1,Length=2.8,LandingLength=1,RotationDegrees=90
+    };
+    var original=new BuildingDocument {
+        SchemaVersion=2,Perimeter=outline.ToList(),
+        Rooms=[hall,living,smaller,dining,study],
+        Doors=[
+            new DoorDefinition{Centre=new(11.5,6.75),Width=0.9},
+            new DoorDefinition{Centre=new(7,5.75),Width=0.9},
+            new DoorDefinition{Centre=new(3.6,3.625),Width=0.9},
+            new DoorDefinition{Centre=new(2.5,7.25),Width=0.9},
+            new DoorDefinition{Centre=new(8.25,7.25),Width=0.9}
+        ],
+        Windows=[
+            new WindowDefinition{Centre=new(0,3.625),Width=1.2},
+            new WindowDefinition{Centre=new(2.5,9.5),Width=1.2},
+            new WindowDefinition{Centre=new(8.25,9.5),Width=1.2}
+        ],
+        UpperFloors=[new StoreyDefinition {
+            Name="First Floor",Perimeter=outline.ToList(),
+            Rooms=[
+                A("Hallway","Hallway 1",H()),
+                A("Bedroom","Bedroom",R(5,0,9,5.75)),
+                A("Bedroom","Bedroom 2",R(0,1.5,3.6,5.75)),
+                A("Bedroom","Bedroom 3",R(0,7.25,5,9.5)),
+                A("Bathroom","Bathroom",R(5,7.25,11.5,9.5))
+            ],
+            Doors=[
+                new DoorDefinition{Centre=new(7,5.75),Width=0.9},
+                new DoorDefinition{Centre=new(3.6,3.625),Width=0.9},
+                new DoorDefinition{Centre=new(2.5,7.25),Width=0.9},
+                new DoorDefinition{Centre=new(8.25,7.25),Width=0.9}
+            ],
+            Windows=[
+                new WindowDefinition{Centre=new(0,3.625),Width=1.2},
+                new WindowDefinition{Centre=new(2.5,9.5),Width=1.2},
+                new WindowDefinition{Centre=new(8.25,9.5),Width=1.2}
+            ]
+        }],
+        Staircases=[stair],
+        Chimneys=[new ChimneyDefinition {
+            Centre=new Point2(7,0.37),Width=1.4,Depth=0.7,
+            Exterior=true,HearthFloorIndex=0,HearthRoomIds=[living.Id]
+        }]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    Assert(Math.Abs(PolygonGeometry.Area(outline)-98.25)<0.001);
+    Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(original)-3.375)<0.001,
+        "Original saved layout has a 3.375m² missing exterior step.");
+    var beforeHead=BuildingStoreys.StairTravelArrow(stair,0).Tip;
+    Assert(beforeHead.X<stair.Centre.X,
+        "Ascent points into the old dead-end upper landing.");
+    double reservedBack=new[] {BuildingStoreys.StairFootprint(stair),
+        BuildingStoreys.StairOpeningFootprint(stair)}
+        .Concat(BuildingStoreys.StairLandings(stair))
+        .SelectMany(p=>p).Max(p=>p.Y);
+    Assert(Math.Abs(1.5-reservedBack-0.3)<0.001,
+        "The pre-repair walkway beside the void is only 30cm.");
+
+    var result=original;
+    for(int level=0;level<=1;level++)
+    {
+        int count=SteppedLayoutFinisher.Refine(result,level,
+            Array.Empty<Guid>(),out var improved);
+        Assert(count==2,
+            $"Ground/upper stepped finisher should fix both faults on level {level}; got {count}");
+        result=improved;
+        Assert(BuildingStoreys.Validate(result,out reason),reason);
+    }
+    Assert(result.Staircases.Single().Id==stair.Id &&
+        result.Chimneys.Single().HearthRoomIds.Single()==living.Id,
+        "The flight position and linked fireplace must be preserved.");
+    for(int level=0;level<=1;level++)
+    {
+        var storey=BuildingStoreys.GetFloor(result,level);
+        var newHall=storey.Rooms.Single(r=>r.Type=="Hallway");
+        Assert(RoomLayoutPlanner.UnassignedArea(storey)<0.02,
+            "Notched exterior slivers must belong to a real room or hall.");
+        Assert(Math.Abs(storey.Rooms.Sum(r=>
+            PolygonGeometry.Area(r.Outline))-98.25)<0.02);
+        var newSideRoom=storey.Rooms.Single(r=>r.Name==
+            (level==0?"Living room 2":"Bedroom 2"));
+        Assert(Math.Abs(newSideRoom.Outline.Min(p=>p.Y)-2.3)<0.01,
+            "Shift the room wall away from the stair for a 1.1m walking route.");
+        Assert(newSideRoom.Outline.Max(p=>p.Y)==5.75);
+        var upperHeadRoute=R(0,1.2,3.6,2.3);
+        Assert(FloorGeometry.IsWithinPolygon(upperHeadRoute,newHall.Outline),
+            "A full-width 1.1m bypass must lead from the top landing to the hall.");
+        var enlarged=storey.Rooms.Single(r=>
+            r.Name==(level==0?"Living room":"Bedroom"));
+        Assert(enlarged.Outline.Count==6,
+            "Exterior room must follow the step with an L-shaped wall.");
+        Assert(Math.Abs(PolygonGeometry.Area(enlarged.Outline)-25.75)<0.01);
+        Assert(storey.Doors.Count==(level==0?5:4));
+        Assert(storey.Windows.Count==3);
+    }
+    Assert(original.Rooms[0].Outline.Count==10 &&
+        Math.Abs(RoomLayoutPlanner.UnassignedArea(original)-3.375)<0.001,
+        "The previously accepted source floor cannot be modified.");
+    Assert(SteppedLayoutFinisher.Refine(result,0,
+        Array.Empty<Guid>(),out _) == 0,
+        "The stair-side/exterior repair should be idempotent.");
+    Assert(SteppedLayoutFinisher.Refine(original,0,
+        original.Rooms.Select(r=>r.Id).ToArray(),out _) == 0,
+        "Hand-authored rooms must be protected.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
