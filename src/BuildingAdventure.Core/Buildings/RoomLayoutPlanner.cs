@@ -840,6 +840,175 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// A shallow generated storeroom must not isolate the room behind it
+    /// from the corridor. Turn a narrow strip along ONE end of that store
+    /// into an open hallway spur, rather than giving the store two doors
+    /// and making it a compulsory passage into a bedroom or living room.
+    /// This is typical of a service passage providing independent access
+    /// to a medieval buttery/pantry and to other rooms beyond.
+    ///
+    /// Only proposed storage rooms and proposed hallways may be reshaped.
+    /// Existing doors, fireplaces, windows, stairs, rooms, and floors are
+    /// left untouched. Every step passes whole-building validation.
+    /// </summary>
+    public static int OpenDirectAccessPastGeneratedStores(
+        BuildingDocument source, int floorIndex,
+        IReadOnlyCollection<Guid> originalRoomIds, out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        var original = originalRoomIds.ToHashSet();
+        int newAccessRoutes = 0;
+        const double epsilon = 1e-5;
+        const double passageWidth = 1.3;
+
+        for (int attempt = 0; attempt < 12; attempt++)
+        {
+            var floor = BuildingStoreys.GetFloor(updated, floorIndex);
+            var hall = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway" &&
+                !original.Contains(r.Id));
+            if (hall is null) break;
+            bool improved = false;
+
+            foreach (var store in floor.Rooms.Where(r =>
+                !original.Contains(r.Id) &&
+                r.Type is "Storeroom" or "Storage" or "Pantry" or
+                    "Buttery" or "Stockroom" or "Linen store").ToArray())
+            {
+                if (store.Outline.Count != 4) continue;
+                double x0 = store.Outline.Min(p => p.X);
+                double x1 = store.Outline.Max(p => p.X);
+                double y0 = store.Outline.Min(p => p.Y);
+                double y1 = store.Outline.Max(p => p.Y);
+                if (!store.Outline.All(p =>
+                    (Math.Abs(p.X - x0) < epsilon ||
+                     Math.Abs(p.X - x1) < epsilon) &&
+                    (Math.Abs(p.Y - y0) < epsilon ||
+                     Math.Abs(p.Y - y1) < epsilon)))
+                    continue;
+
+                // Never change a storeroom with an existing doorway (which
+                // may have been installed manually or accepted earlier).
+                if (floor.Doors.Any(d => Enumerable.Range(0, 4).Any(i =>
+                    PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                        store.Outline[i], store.Outline[(i + 1) % 4])
+                        .DistanceTo(d.Centre) < epsilon)))
+                    continue;
+
+                // A storage band touches the hallway along one long edge,
+                // and separates a substantive room from that hallway.
+                bool horizontal = x1 - x0 >= y1 - y0;
+                double length = horizontal ? x1 - x0 : y1 - y0;
+                double depth = horizontal ? y1 - y0 : x1 - x0;
+                if (length < 4.0 || depth < 1.6 || depth > 2.8 ||
+                    length - passageWidth < 2.4)
+                    continue;
+
+                bool hallAtHigh;
+                if (horizontal)
+                {
+                    if (Math.Abs(hall.Outline.Min(p => p.Y) - y1) < epsilon)
+                        hallAtHigh = true;
+                    else if (Math.Abs(hall.Outline.Max(p => p.Y) - y0) < epsilon)
+                        hallAtHigh = false;
+                    else if (BuildingConnectivity.ShareWall(hall.Outline,
+                        store.Outline, 2.0))
+                        hallAtHigh = hall.Outline.Average(p => p.Y) > (y0 + y1) / 2;
+                    else continue;
+                }
+                else
+                {
+                    if (Math.Abs(hall.Outline.Min(p => p.X) - x1) < epsilon)
+                        hallAtHigh = true;
+                    else if (Math.Abs(hall.Outline.Max(p => p.X) - x0) < epsilon)
+                        hallAtHigh = false;
+                    else if (BuildingConnectivity.ShareWall(hall.Outline,
+                        store.Outline, 2.0))
+                        hallAtHigh = hall.Outline.Average(p => p.X) > (x0 + x1) / 2;
+                    else continue;
+                }
+                if (!BuildingConnectivity.ShareWall(hall.Outline,
+                    store.Outline, 1.5)) continue;
+
+                var blocked = floor.Rooms.Where(r =>
+                    r.Id != hall.Id && r.Id != store.Id &&
+                    r.Type is not ("Hallway" or "Stairwell" or
+                        "Storeroom" or "Storage" or "Pantry" or
+                        "Buttery" or "Stockroom") &&
+                    BuildingConnectivity.ShareWall(r.Outline,
+                        store.Outline, 1.0) &&
+                    !BuildingConnectivity.ShareWall(r.Outline,
+                        hall.Outline, 0.8)).ToArray();
+                if (blocked.Length == 0) continue;
+
+                foreach (bool passageAtLow in new[] { true, false })
+                {
+                    double alongStart = horizontal ? x0 : y0;
+                    double alongEnd = horizontal ? x1 : y1;
+                    double cut = passageAtLow
+                        ? alongStart + passageWidth
+                        : alongEnd - passageWidth;
+                    var spur = horizontal
+                        ? Rectangle(passageAtLow ? x0 : cut, y0,
+                            passageAtLow ? cut : x1, y1)
+                        : Rectangle(x0, passageAtLow ? y0 : cut,
+                            x1, passageAtLow ? cut : y1);
+                    var shortened = horizontal
+                        ? Rectangle(passageAtLow ? cut : x0, y0,
+                            passageAtLow ? x1 : cut, y1)
+                        : Rectangle(x0, passageAtLow ? cut : y0,
+                            x1, passageAtLow ? y1 : cut);
+
+                    if (!blocked.Any(room =>
+                        BuildingConnectivity.ShareWall(room.Outline,
+                            spur, 1.0))) continue;
+                    if (PolygonGeometry.Area(shortened) < 5.0) continue;
+                    if (!BuildingConnectivity.ShareWall(hall.Outline, spur, 1.0))
+                        continue;
+
+                    // The new hallway must be one contiguous polygon.
+                    // Using the general polygon union supports a hall
+                    // that already acquired another access spur.
+                    var unionSource = new BuildingDocument
+                    {
+                        Perimeter = floor.Perimeter.ToList(),
+                        Rooms =
+                        [
+                            new RoomDefinition
+                            {
+                                Name = "Circulation", Type = "Hallway",
+                                Outline = hall.Outline.ToList()
+                            },
+                            new RoomDefinition
+                            {
+                                Name = "Access", Type = "Hallway", Outline = spur
+                            }
+                        ]
+                    };
+                    if (!RoomMerging.TryMergeRooms(unionSource,
+                        unionSource.Rooms[0].Id, unionSource.Rooms[1].Id,
+                        out var combined, out _)) continue;
+
+                    var trial = BuildingStoreys.Copy(updated);
+                    var edited = BuildingStoreys.GetFloor(trial, floorIndex);
+                    edited.Rooms.First(r => r.Id == hall.Id).Outline =
+                        combined.Rooms.Single().Outline.ToList();
+                    edited.Rooms.First(r => r.Id == store.Id).Outline = shortened;
+                    BuildingStoreys.SetFloor(trial, floorIndex, edited);
+                    if (!BuildingStoreys.Validate(trial, out _)) continue;
+
+                    updated = trial;
+                    newAccessRoutes++;
+                    improved = true;
+                    break;
+                }
+                if (improved) break;
+            }
+            if (!improved) break;
+        }
+        return newAccessRoutes;
+    }
+
+    /// <summary>
     /// A broad entrance alcove often has a usable pocket on BOTH sides of
     /// its external door. Preserve a clear passage from that door to the
     /// corridor, and make the flanking pockets enclosed storage rooms.
