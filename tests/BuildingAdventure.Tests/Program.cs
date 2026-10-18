@@ -5698,6 +5698,22 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
     }
     Assert(corrected.Staircases.Single().Centre.Equals(source.Staircases.Single().Centre));
     Assert(corrected.UpperFloors[0].Rooms.Count==source.UpperFloors[0].Rooms.Count);
+    // These two extra-long stores were created in front of the dining
+    // room and bedroom although no kitchen/workshop serves them. With
+    // individual access already restored, turn that wasted storage band
+    // into useful L-shaped accommodation instead of reinstating it.
+    int expanded = RoomLayoutPlanner.AbsorbMisplacedGeneratedStores(
+        corrected, 0, Array.Empty<Guid>(), out var functional);
+    Assert(expanded == 2,
+        $"Expected both misplaced 14m² store bands to be reallocated, got {expanded}.");
+    Assert(!functional.Rooms.Any(r => r.Type == "Storeroom"));
+    Assert(functional.Rooms.Single(r => r.Id == idDining).Outline.Count >= 6);
+    Assert(functional.Rooms.Single(r => r.Id == idBedroom).Outline.Count >= 6);
+    Assert(BuildingStoreys.Validate(functional, out reason), reason);
+    Assert(BuildingConnectivity.RoomsIsolatedByServiceSpaces(functional,0).Count==0);
+    Assert(functional.Staircases.Single().Centre.Equals(source.Staircases.Single().Centre));
+    Assert(corrected.Rooms.Count==7,
+        "Room consolidation must not modify the earlier repaired proposal.");
     Assert(source.Doors.Count==6 && source.Rooms[0].Outline.Count==4,
         "The suggestion must not silently edit the already saved source.");
     Assert(RoomLayoutPlanner.RepairGeneratedStorageAccess(
