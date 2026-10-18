@@ -1383,11 +1383,13 @@ public partial class MainWindow : Window
             lowerFloor < BuildingStoreys.LowestFloorIndex(_building) ||
             lowerFloor >= BuildingStoreys.HighestFloorIndex(_building) ||
             !TryReadMetres(StairLengthBox.Text, out double length) ||
+            !TryReadMetres(StairLandingBox.Text, out double landing) ||
             !TryReadMetres(StairWidthBox.Text, out double width) ||
             !TryReadMetres(OpeningWidthBox.Text, out double extraWidth) ||
             !TryReadMetres(OpeningLengthBox.Text, out double extraLength) ||
             !TryReadMetres(StairRotationBox.Text, out double angle) ||
-            !double.IsFinite(length) || !double.IsFinite(width) ||
+            !double.IsFinite(length) || !double.IsFinite(landing) ||
+            !double.IsFinite(width) ||
             !double.IsFinite(extraWidth) || !double.IsFinite(extraLength) ||
             !double.IsFinite(angle))
             return null;
@@ -1397,6 +1399,7 @@ public partial class MainWindow : Window
             LowerFloorIndex = lowerFloor,
             Length = length,
             Width = width,
+            LandingLength = landing,
             OpeningExtraWidth = extraWidth,
             OpeningExtraLength = extraLength,
             RotationDegrees = angle
@@ -1439,6 +1442,7 @@ public partial class MainWindow : Window
 
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         StairLengthBox.Text = stair.Length.ToString("R", culture);
+        StairLandingBox.Text = stair.LandingLength.ToString("R", culture);
         StairWidthBox.Text = stair.Width.ToString("R", culture);
         OpeningWidthBox.Text = stair.OpeningExtraWidth.ToString("R", culture);
         OpeningLengthBox.Text = stair.OpeningExtraLength.ToString("R", culture);
@@ -1518,6 +1522,7 @@ public partial class MainWindow : Window
         if (stair is null) return;
 
         if (!TryReadMetres(StairLengthBox.Text, out double length) ||
+            !TryReadMetres(StairLandingBox.Text, out double landing) ||
             !TryReadMetres(StairWidthBox.Text, out double width) ||
             !TryReadMetres(OpeningWidthBox.Text, out double extraWidth) ||
             !TryReadMetres(OpeningLengthBox.Text, out double extraLength) ||
@@ -1531,6 +1536,7 @@ public partial class MainWindow : Window
         }
 
         stair.Length = length;
+        stair.LandingLength = landing;
         stair.Width = width;
         stair.OpeningExtraWidth = extraWidth;
         stair.OpeningExtraLength = extraLength;
