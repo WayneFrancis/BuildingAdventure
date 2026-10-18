@@ -203,11 +203,12 @@ public static class BuildingGenerator
         // parlour where the COMPLETE perimeter and stacked stairs permit.
         // Only whole-building-generated rooms are replaced here.
         bool hallHouseBuilt = false;
+        string hallHouseFitReason = "";
         if (options.HallHouseLayout && options.Purpose == BuildingUse.Residence &&
             options.Rooms && options.Corridors && options.Doors)
         {
             if (MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
-                result, out var medieval, out _))
+                result, out var medieval, out hallHouseFitReason))
             {
                 result = medieval;
                 hallHouseBuilt = true;
@@ -245,7 +246,10 @@ public static class BuildingGenerator
                     $"{BuildingStoreys.FloorLabel(floorIndex)}: " +
                     string.Join(", ", isolated.Select(r => r.Name)) +
                     ". Those rooms need a route that does not pass " +
-                    "through a storeroom or another bedroom.";
+                    "through a storeroom or another bedroom." +
+                    (options.HallHouseLayout && !hallHouseBuilt
+                        ? " Historic layout also could not fit: " + hallHouseFitReason
+                        : "");
                 return false;
             }
         }
