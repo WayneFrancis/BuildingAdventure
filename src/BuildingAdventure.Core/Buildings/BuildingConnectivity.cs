@@ -186,33 +186,63 @@ public static class BuildingConnectivity
         return count;
     }
 
+    public static bool RoomUsuallyNeedsWindow(RoomDefinition room) =>
+        !new[] { "Hallway", "Corridor", "Stairwell", "Storeroom",
+                 "Storage", "Cellar", "Closet", "Cupboard", "Pantry",
+                 "Utility", "Boiler room", "Vault", "Dungeon", "Toilet" }
+            .Contains(room.Type, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Give each eligible exterior-facing room its own window, subject to
+    /// real wall geometry and opening clearance. Interior and storage rooms
+    /// are not assigned fictional exterior windows.
+    /// </summary>
     public static int AddWindows(BuildingDocument building, int floorIndex,
         out BuildingDocument updated)
     {
         updated = BuildingStoreys.Copy(building);
         int count = 0;
         var floor = BuildingStoreys.GetFloor(updated, floorIndex);
-        var walls = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
-            .Where(w => w.IsExterior && w.Length >= 2).OrderByDescending(w => w.Length);
-        foreach (var wall in walls)
+        var exteriorWalls = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
+            .Where(w => w.IsExterior && w.Length >= 1.7).ToList();
+        foreach (var room in floor.Rooms.Where(RoomUsuallyNeedsWindow))
         {
-            if (count >= 2) break;
-            var midpoint = Midpoint(wall);
-            if (!floor.Rooms.Any(r =>
-                !r.Type.Equals("Hallway", StringComparison.OrdinalIgnoreCase) &&
-                OnOutline(midpoint, r.Outline)))
+            if (floor.Windows.Any(w => OnOutline(w.Centre, room.Outline)))
                 continue;
-            var trial = BuildingStoreys.Copy(updated);
-            var candidate = BuildingStoreys.GetFloor(trial, floorIndex);
-            candidate.Windows.Add(new WindowDefinition
+            // A kitchen with a fireplace/chimney may reasonably be
+            // windowless; that exception can be modelled with the hearth.
+            foreach (var wall in exteriorWalls
+                .Where(w => OnOutline(Midpoint(w), room.Outline))
+                .OrderByDescending(w => w.Length))
             {
-                Centre = midpoint, Width = 1.2
-            });
-            BuildingStoreys.SetFloor(trial, floorIndex, candidate);
-            if (!BuildingStoreys.Validate(trial, out _)) continue;
-            updated = trial;
-            floor = candidate;
-            count++;
+                // Keep glazing away from the stairwell (including beside
+                // its corner on the same facade), not just out of it.
+                var location = Midpoint(wall);
+                if (floor.Rooms.Where(r => r.Type == "Stairwell").Any(r =>
+                    Enumerable.Range(0, r.Outline.Count).Any(i =>
+                        PolygonGeometry.ClosestPointOnSegment(location,
+                            r.Outline[i], r.Outline[(i + 1) % r.Outline.Count])
+                            .DistanceTo(location) < 1.5)))
+                    continue;
+                if (updated.Staircases.Any(s =>
+                    (s.LowerFloorIndex == floorIndex ||
+                     s.LowerFloorIndex + 1 == floorIndex) &&
+                    s.Centre.DistanceTo(location) < 2.3))
+                    continue;
+
+                var trial = BuildingStoreys.Copy(updated);
+                var next = BuildingStoreys.GetFloor(trial, floorIndex);
+                next.Windows.Add(new WindowDefinition
+                {
+                    Centre = location, Width = Math.Min(1.2, wall.Length - 0.4)
+                });
+                BuildingStoreys.SetFloor(trial, floorIndex, next);
+                if (!BuildingStoreys.Validate(trial, out _)) continue;
+                updated = trial;
+                floor = next;
+                count++;
+                break;
+            }
         }
         return count;
     }
