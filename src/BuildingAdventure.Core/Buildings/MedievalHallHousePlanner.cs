@@ -3,11 +3,13 @@ using BuildingAdventure.Core.Geometry;
 namespace BuildingAdventure.Core.Buildings;
 
 /// <summary>
-/// A small English medieval hall-house archetype, deliberately distinct
+/// An English domestic medieval-inspired layout, deliberately distinct
 /// from a modern full-length central corridor. A short cross/screens
-/// passage serves kitchen and pantry at the low end, an expansive hall
-/// occupies the middle, and (where possible) a parlour occupies the
-/// private high end. Later upper floors can remain separate chambers.
+/// passage serves kitchen and food/drink storage at the low end; a common
+/// living room occupies the middle of a modest house, becoming a Great hall
+/// only at manor scale. One-storey residences reserve a private end for at
+/// least one bedroom, while larger homes with upper sleeping floors may
+/// have a separate parlour. Upper floors remain separately partitioned.
 ///
 /// This is a conservative, detached alternative to the legacy layout:
 /// it accepts only orthogonal footprints, uses exact existing perimeter
