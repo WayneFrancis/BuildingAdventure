@@ -19,9 +19,10 @@
                 <MenuItem x:Name="UndoMenu" Header="_Undo" Click="Undo_Click" InputGestureText="Ctrl+Z"/>
                 <MenuItem x:Name="RedoMenu" Header="_Redo" Click="Redo_Click" InputGestureText="Ctrl+Y"/>
                 <Separator/>
-                <MenuItem Header="Remove selected corner (join walls)" Click="Delete_Click" InputGestureText="Delete"/>
+                <MenuItem Header="Delete selected item" Click="Delete_Click" InputGestureText="Delete"/>
                 <MenuItem Header="Delete selected room" Click="DeleteRoom_Click"/>
                 <MenuItem Header="Delete selected door" Click="DeleteDoor_Click"/>
+                <MenuItem Header="Delete selected fireplace / chimney" Click="DeleteChimney_Click"/>
                 <MenuItem Header="Cancel drawing" Click="Cancel_Click" InputGestureText="Esc"/>
             </MenuItem>
             <MenuItem Header="_View">
@@ -39,6 +40,7 @@
             <Button x:Name="RedoButton" Content="Redo" Click="Redo_Click" Padding="9,4"/>
             <Separator/>
             <Button x:Name="SelectButton" Content="Select / Edit" Click="SelectTool_Click" Padding="9,4"/>
+            <Button x:Name="DeleteSelectionButton" Content="Delete Selected" Click="Delete_Click" Padding="9,4" IsEnabled="False"/>
             <Button x:Name="DrawButton" Content="Draw Perimeter" Click="DrawTool_Click" Padding="9,4"/>
             <Button x:Name="SplitButton" Content="Split Perimeter" Click="SplitPerimeter_Click" Padding="9,4"/>
             <Button x:Name="RemoveCornerButton" Content="Remove Corner" Click="RemoveCornerTool_Click" Padding="9,4"/>
@@ -270,6 +272,20 @@
                     <Separator Margin="0,0,0,12"/>
                         </StackPanel>
                     </Expander>
+                    <Expander Header="FIREPLACES &amp; CHIMNEYS" IsExpanded="False"
+                              Margin="0,0,0,7" Padding="0,3,0,0">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBlock x:Name="SelectedChimneyText"
+                                       Text="Select a fireplace (FP) or flue (FL) on the plan."
+                                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <Button x:Name="DeleteChimneyButton" Content="Delete selected fireplace / chimney"
+                                    Click="DeleteChimney_Click" IsEnabled="False"
+                                    Padding="7" Margin="0,0,0,8"/>
+                            <TextBlock Text="Deleting a fireplace removes its entire connected chimney stack, including flues on other floors."
+                                       TextWrapping="Wrap" Foreground="#566579"
+                                       Margin="0,0,0,12"/>
+                        </StackPanel>
+                    </Expander>
                     <Expander x:Name="WallConstructionSection" Header="WALL CONSTRUCTION" IsExpanded="False"
                               Margin="0,0,0,7" Padding="0,3,0,0">
                         <StackPanel Margin="0,8,0,0">
@@ -301,7 +317,7 @@
                               Checked="SnapChanged" Unchecked="SnapChanged" Margin="0,0,0,18"/>
                     <Button x:Name="FinishButton" Content="Finish drawing" Click="Finish_Click"
                             Padding="8" Margin="0,0,0,10"/>
-                    <Button Content="Remove selected corner" Click="Delete_Click"
+                    <Button Content="Delete selected item" Click="Delete_Click"
                             Padding="8" Margin="0,0,0,14"/>
                     <Separator/>
                         </StackPanel>
