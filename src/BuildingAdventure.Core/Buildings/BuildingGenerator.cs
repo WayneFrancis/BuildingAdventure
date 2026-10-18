@@ -480,6 +480,17 @@ public static class BuildingGenerator
                 if (!placed) break;
             }
 
+            // Fill any accessible leftover orthogonal pockets (including
+            // L-shaped wings and custom-drawn non-metric wall offsets).
+            // The residual pass preserves all existing room geometry.
+            int filled = RoomLayoutPlanner.FillUnassignedRegions(
+                proposed, index, options.Purpose, random, out var completed);
+            if (filled > 0)
+            {
+                proposed = completed;
+                addedRooms += filled;
+                thisFloorRooms += filled;
+            }
             if (thisFloorRooms == 0) skippedFloors.Add(index);
             roomsPerFloor.Add($"{BuildingStoreys.FloorLabel(index)}: {thisFloorRooms} room(s)");
             }
