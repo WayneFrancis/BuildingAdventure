@@ -232,9 +232,10 @@ public static class BalancedSteppedRpgHousePlanner
         // its hearth face to the NEW room enclosing the same masonry.
         // This prevents a formerly living-room hearth from looking
         // unassigned after the new layout makes that area the Kitchen.
-        foreach(var chimney in result.Chimneys.Where(ch=>
+        var completedFloors=result;
+        foreach(var chimney in completedFloors.Chimneys.Where(ch=>
             ch.HearthRoomIds.Count==0 &&
-            BuildingStoreys.HasFloor(result,ch.HearthFloorIndex)))
+            BuildingStoreys.HasFloor(completedFloors,ch.HearthFloorIndex)))
         {
             var level=BuildingStoreys.GetFloor(result,chimney.HearthFloorIndex);
             var footprint=BuildingStoreys.ChimneyFootprint(chimney);
