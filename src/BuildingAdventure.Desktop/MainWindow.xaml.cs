@@ -666,12 +666,27 @@ public partial class MainWindow : Window
         Refresh();
     }
 
+    private GenerationOptions OptionsForCheckedFloorGeneration(int[] floors)
+    {
+        var options = SelectedGeneratorOptions();
+        // Matching the whole-building workflow, do not silently leave
+        // adjacent selected existing storeys unconnected. A single
+        // selected floor cannot acquire a flight by itself.
+        var set = floors.ToHashSet();
+        if (floors.Any(i => set.Contains(i + 1)))
+        {
+            options.Stairs = true;
+            GenerateStairsCheckBox.IsChecked = true;
+        }
+        return options;
+    }
+
     private void Suggest_Click(object sender, RoutedEventArgs e)
     {
         int[] floors = CheckedGeneratorFloors();
         var seed = Random.Shared.Next(1, int.MaxValue);
         if (!BuildingGenerator.TrySuggest(CurrentDocument(), floors, seed,
-            SelectedGeneratorOptions(), out var proposal, out var reason))
+            OptionsForCheckedFloorGeneration(floors), out var proposal, out var reason))
         {
             _hint = reason;
             Refresh();
@@ -684,7 +699,8 @@ public partial class MainWindow : Window
     {
         var floors = CheckedGeneratorFloors();
         if (!BuildingGenerator.TryRegenerate(CurrentDocument(), floors,
-                Random.Shared.Next(1, int.MaxValue), SelectedGeneratorOptions(),
+                Random.Shared.Next(1, int.MaxValue),
+                OptionsForCheckedFloorGeneration(floors),
                 out var proposal, out var reason))
         {
             _hint = reason;
