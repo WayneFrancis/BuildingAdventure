@@ -116,6 +116,11 @@ public static class BuildingConnectivity
         return false;
     }
 
+    /// <summary>
+    /// Build a navigable internal door network. An exterior entrance is
+    /// permitted only on ground floor; an existing outside door never
+    /// counts as a room's required connection to the interior.
+    /// </summary>
     public static int AddDoors(BuildingDocument building, int floorIndex,
         out BuildingDocument updated)
     {
@@ -123,68 +128,98 @@ public static class BuildingConnectivity
         int count = 0;
         var floor = BuildingStoreys.GetFloor(updated, floorIndex);
         var walls = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
-            .Where(w => w.Length >= 1.25).ToList();
-        var hallway = floor.Rooms.FirstOrDefault(r =>
-            r.Type.Equals("Hallway", StringComparison.OrdinalIgnoreCase));
-        bool hasExteriorEntrance = floor.Doors.Any(d =>
-            walls.Any(w => w.IsExterior && OnOutline(d.Centre, [w.A, w.B])));
-        // Hallways first: connecting them to the exterior establishes an
-        // entrance without turning every room into an exterior doorway.
-        var ordered = floor.Rooms.OrderBy(r => hallway is not null &&
-            r.Id == hallway.Id ? 0 : 1).ToList();
-        foreach (var room in ordered)
+            .Where(w => w.Length >= 1.1).ToList();
+        var hall = floor.Rooms.FirstOrDefault(r => r.Type.Equals(
+            "Hallway", StringComparison.OrdinalIgnoreCase));
+        bool hasEntrance = floor.Doors.Any(d => walls.Any(w => w.IsExterior &&
+            OnOutline(d.Centre, [w.A, w.B])));
+
+        // Ground-level street entrance: use hall if it reaches outside,
+        // otherwise a suitable living/common/shop room.
+        if (floorIndex == 0 && !hasEntrance)
         {
-            if (HasDoorOnRoom(room, floor.Doors)) continue;
-            var candidates = walls.Where(w =>
-                    OnOutline(Midpoint(w), room.Outline))
-                .OrderBy(w => w.IsExterior && !hasExteriorEntrance ? 0 :
-                    hallway is not null && room.Id != hallway.Id &&
-                    OnOutline(Midpoint(w), hallway.Outline) ? 1 :
-                    !w.IsExterior ? 2 : 3)
-                .ThenByDescending(w => w.Length)
-                .ToList();
-            foreach (var wall in candidates)
+            var preferred = floor.Rooms.OrderBy(r =>
+                r.Id == hall?.Id ? 0 :
+                r.Type is "Living room" or "Common room" or "Shop floor" ? 1 : 2);
+            foreach (var room in preferred)
             {
-                if (room.Id == hallway?.Id && !wall.IsExterior) continue;
+                var candidates = walls.Where(w => w.IsExterior &&
+                    OnOutline(Midpoint(w), room.Outline))
+                    .OrderByDescending(w => w.Length).ToList();
+                if (TryPlaceDoor(candidates, 0.9))
+                {
+                    hasEntrance = true;
+                    break;
+                }
+            }
+        }
+
+        // Connect ALL rooms to the internal plan. In particular, a ground
+        // floor living room with a street door must still have a hall door.
+        foreach (var room in floor.Rooms.Where(r => r.Id != hall?.Id))
+        {
+            if (HasConnectedInteriorDoor(room)) continue;
+            var candidates = walls.Where(w => !w.IsExterior &&
+                OnOutline(Midpoint(w), room.Outline) &&
+                floor.Rooms.Any(other => other.Id != room.Id &&
+                    OnOutline(Midpoint(w), other.Outline)))
+                .OrderBy(w => hall is not null &&
+                    OnOutline(Midpoint(w), hall.Outline) ? 0 : 1)
+                .ThenByDescending(w => w.Length);
+            TryPlaceDoor(candidates, 0.9);
+        }
+
+        // Secondary service routes: kitchen <-> dining and kitchen <->
+        // storage/pantry, plus direct shared-wall access to the hearth room.
+        var kitchen = floor.Rooms.FirstOrDefault(r => r.Type.Equals(
+            "Kitchen", StringComparison.OrdinalIgnoreCase));
+        if (kitchen is not null)
+        {
+            foreach (var partner in floor.Rooms.Where(r => r.Id != kitchen.Id &&
+                new[] { "Dining room", "Pantry", "Storeroom", "Storage",
+                        "Living room", "Common room" }
+                    .Contains(r.Type, StringComparer.OrdinalIgnoreCase)))
+            {
+                var wallCandidates = walls.Where(w => !w.IsExterior &&
+                    OnOutline(Midpoint(w), kitchen.Outline) &&
+                    OnOutline(Midpoint(w), partner.Outline))
+                    .OrderByDescending(w => w.Length);
+                bool linked = floor.Doors.Any(d =>
+                    OnOutline(d.Centre, kitchen.Outline) &&
+                    OnOutline(d.Centre, partner.Outline));
+                if (!linked) TryPlaceDoor(wallCandidates, 0.8);
+            }
+        }
+        return count;
+
+        bool HasConnectedInteriorDoor(RoomDefinition room) =>
+            floor.Doors.Any(d => walls.Any(w => !w.IsExterior &&
+                OnOutline(d.Centre, [w.A, w.B]) &&
+                OnOutline(d.Centre, room.Outline) &&
+                floor.Rooms.Any(other => other.Id != room.Id &&
+                    OnOutline(d.Centre, other.Outline))));
+
+        bool TryPlaceDoor(IEnumerable<WallSegment> candidates, double width)
+        {
+            foreach (var wall in candidates)
+            foreach (double t in new[] { 0.5, 0.32, 0.68, 0.2, 0.8 })
+            {
+                var centre = new Point2(wall.A.X + (wall.B.X - wall.A.X) * t,
+                    wall.A.Y + (wall.B.Y - wall.A.Y) * t);
+                if (floor.Doors.Any(d => d.Centre.DistanceTo(centre) < 0.5))
+                    continue;
                 var trial = BuildingStoreys.Copy(updated);
                 var edited = BuildingStoreys.GetFloor(trial, floorIndex);
-                edited.Doors.Add(new DoorDefinition
-                {
-                    Centre = Midpoint(wall), Width = 0.9
-                });
+                edited.Doors.Add(new DoorDefinition { Centre = centre, Width = width });
                 BuildingStoreys.SetFloor(trial, floorIndex, edited);
                 if (!BuildingStoreys.Validate(trial, out _)) continue;
                 updated = trial;
                 floor = edited;
-                if (wall.IsExterior) hasExteriorEntrance = true;
                 count++;
-                break;
+                return true;
             }
+            return false;
         }
-        // An existing plan may already have internal doorways but no entry
-        // from outdoors. Do not mistake internal connectivity for access.
-        if (!hasExteriorEntrance && floor.Rooms.Count > 0)
-        {
-            foreach (var wall in walls.Where(w => w.IsExterior)
-                .OrderByDescending(w => w.Length))
-            {
-                Point2 centre = Midpoint(wall);
-                if (!floor.Rooms.Any(r => OnOutline(centre, r.Outline)))
-                    continue;
-                var candidate = BuildingStoreys.Copy(updated);
-                var candidateFloor = BuildingStoreys.GetFloor(candidate, floorIndex);
-                candidateFloor.Doors.Add(new DoorDefinition
-                {
-                    Centre = centre, Width = 0.9
-                });
-                BuildingStoreys.SetFloor(candidate, floorIndex, candidateFloor);
-                if (!BuildingStoreys.Validate(candidate, out _)) continue;
-                updated = candidate;
-                count++;
-                break;
-            }
-        }
-        return count;
     }
 
     public static bool RoomUsuallyNeedsWindow(RoomDefinition room) =>
