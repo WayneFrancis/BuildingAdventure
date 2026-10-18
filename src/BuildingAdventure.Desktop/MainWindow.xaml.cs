@@ -669,6 +669,7 @@ public partial class MainWindow : Window
         Stairs = GenerateStairsCheckBox.IsChecked == true,
         Fireplaces = GenerateFireplacesCheckBox.IsChecked == true,
         HallHouseLayout = HallHouseLayoutCheckBox.IsChecked == true,
+        CompactRpgHouseLayout = CompactRpgHouseCheckBox.IsChecked == true,
         Purpose = Math.Clamp(GeneratorPurposeBox.SelectedIndex, 0, 4) switch
         {
             1 => BuildingUse.Inn,
