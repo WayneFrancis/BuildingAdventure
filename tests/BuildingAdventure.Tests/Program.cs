@@ -5274,5 +5274,121 @@ Check("Blank stepped floors put the staircase against a common corridor wall", (
     Assert(BuildingStoreys.Validate(aligned, out reason), reason);
 });
 
+Check("example2.json entrance creates two storage rooms beside door", () =>
+{
+    // Uploaded stepped ground plan: door at (16.764,3.048), 1.786m-deep
+    // excess hallway strip, 2m corridor and a shared upper-floor staircase.
+    var oversized = new BuildingDocument
+    {
+        SchemaVersion = 2, GridFeet = 5,
+        Perimeter = [
+            new(7.62,0),new(12.192,0),new(12.192,3.048),
+            new(21.336,3.048),new(21.336,10.668),new(7.62,10.668)
+        ],
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name="Hallway 1",Type="Hallway",Outline=[
+                    new(7.62,4.834),new(12.192,4.834),
+                    new(12.192,3.048),new(21.336,3.048),
+                    new(21.336,6.834),new(7.62,6.834)]
+            },
+            new RoomDefinition
+            {
+                Name="Living room",Type="Living room",Outline=[
+                    new(7.62,6.834),new(16.12,6.834),
+                    new(16.12,10.668),new(7.62,10.668)]
+            },
+            new RoomDefinition
+            {
+                Name="Kitchen",Type="Kitchen",Outline=[
+                    new(16.12,6.834),new(21.336,6.834),
+                    new(21.336,10.668),new(16.12,10.668)]
+            },
+            new RoomDefinition
+            {
+                Name="Dining room",Type="Dining room",Outline=[
+                    new(7.62,0),new(12.192,0),
+                    new(12.192,4.834),new(7.62,4.834)]
+            }
+        ],
+        Doors =
+        [
+            new DoorDefinition { Centre=new(16.764,3.048),Width=0.9 },
+            new DoorDefinition { Centre=new(10.34,6.834),Width=0.9 },
+            new DoorDefinition { Centre=new(18.728,6.834),Width=0.9 },
+            new DoorDefinition { Centre=new(9.906,4.834),Width=0.9 },
+            new DoorDefinition { Centre=new(16.12,8.751),Width=0.8 }
+        ],
+        UpperFloors =
+        [
+            new StoreyDefinition
+            {
+                Name="First Floor",
+                Perimeter=[
+                    new(7.62,0),new(12.192,0),new(12.192,4.572),
+                    new(21.336,4.572),new(21.336,10.668),
+                    new(7.62,10.668)],
+                Rooms=[
+                    new RoomDefinition
+                    {
+                        Name="Hallway 1",Type="Hallway",Outline=[
+                            new(7.62,4.834),new(12.192,4.834),
+                            new(12.192,4.572),new(21.336,4.572),
+                            new(21.336,6.834),new(7.62,6.834)]
+                    }
+                ]
+            }
+        ],
+        Staircases =
+        [
+            new StaircaseDefinition
+            {
+                LowerFloorIndex=0, Centre=new(14.478,6.384),
+                Length=2.8,Width=0.9,RotationDegrees=90,LandingLength=1
+            }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(oversized,out var reason),reason);
+    var originalDoor = oversized.Doors[0];
+    var originalStair = oversized.Staircases.Single().Copy();
+    var originalHall = oversized.Rooms.Single(r=>r.Type=="Hallway");
+    int count = RoomLayoutPlanner.PartitionGeneratedEntranceWing(
+        oversized,0,Array.Empty<Guid>(),out var improved);
+    Assert(count==2,$"Expected two entrance storerooms; got {count}.");
+    var storage=improved.Rooms.Where(r=>r.Type=="Storage").ToArray();
+    Assert(storage.Length==2);
+    foreach(var room in storage)
+        Assert(Math.Abs(PolygonGeometry.Area(room.Outline)-6.379592)<0.001,
+            "Each flanking room should reclaim the shallow entrance wing.");
+    var newHall=improved.Rooms.Single(r=>r.Type=="Hallway");
+    Assert(Math.Abs(PolygonGeometry.Area(newHall.Outline)-31.004)<0.01);
+    Assert(improved.Doors.Any(d=>d.Id==originalDoor.Id &&
+        d.Centre.Equals(originalDoor.Centre)));
+    Assert(improved.Staircases.Single().Centre.Equals(originalStair.Centre));
+    Assert(improved.UpperFloors[0].Rooms.Count==1);
+    Assert(BuildingStoreys.Validate(improved,out reason),reason);
+    Assert(oversized.Rooms.Count==4 &&
+        oversized.Rooms.Single(r=>r.Type=="Hallway").Outline
+            .SequenceEqual(originalHall.Outline));
+    int addedDoors=BuildingConnectivity.AddDoors(improved,0,out var accessed);
+    Assert(addedDoors==2,$"Expected access doors for two stores; got {addedDoors}.");
+    foreach(var room in accessed.Rooms.Where(r=>r.Type=="Storage"))
+        Assert(accessed.Doors.Any(d=>room.Outline.Zip(
+            room.Outline.Skip(1).Append(room.Outline[0]),
+            (a,b)=>PolygonGeometry.ClosestPointOnSegment(d.Centre,a,b)
+                .DistanceTo(d.Centre)).Any(distance=>distance<0.001)),
+            "Each storage room must have a door.");
+    Assert(BuildingStoreys.Validate(accessed,out reason),reason);
+    Assert(RoomLayoutPlanner.PartitionGeneratedEntranceWing(
+        accessed,0,Array.Empty<Guid>(),out _)==0,
+        "An already split entrance must not be partitioned twice.");
+    Assert(RoomLayoutPlanner.PartitionGeneratedEntranceWing(
+        oversized,0,[originalHall.Id],out var protectedPlan)==0 &&
+        protectedPlan.Rooms.Count==4,
+        "An existing user's hallway must not be changed by generation.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
