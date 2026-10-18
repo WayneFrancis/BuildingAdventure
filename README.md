@@ -4,6 +4,44 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.39 — Reclaim awkward stair wings on L-shaped generated halls (development)
+
+The uploaded `example5.json` demonstrates a valid but poor layout:
+an 11 × 10 m rectangular outer perimeter containing **42 m² of
+L-shaped corridor on each floor** (38% of its 110 m² floor area).
+The old hallway repair requires the entire stair flight and both
+landings inside a straight, 2m spine; the side bay here cannot satisfy
+that condition, so its oversized hallway was never reduced.
+
+- **Stair-aware L-hall repair:** detect generated orthogonal halls
+  composed of one full-length 2m corridor and one large rectangular
+  perpendicular stair wing. Preserve a compact cap around the entire
+  stair reservation and a 1.3m connecting approach, rather than
+  retaining the entire deep wing as corridor.
+- **Functional reclamation:** turn the spare rectangular pocket
+  (at least 7.5 m²) into a **Utility** room on the ground floor
+  or a **Bathroom** upstairs rather than another inexplicable
+  storeroom or windowless bedroom.
+- **Conservative validation:** preserve all doors, windows, other
+  rooms, chimneys, the original staircase location and both landings.
+  Reject the transformation if geometry, opening positions, cross-floor
+  reservations or the needed connecting passage cannot validate.
+- **Protected artwork:** only newly generated halls can be reclaimed.
+  Existing manually authored rooms are never automatically reshaped,
+  and applying this pass twice cannot repeatedly subdivide an already
+  repaired stair wing.
+- **Two generator paths:** run this pass during both whole-building
+  and selected-floor generation before the final access-door pass.
+- **Regression:** reproduce the real hallway, room partitions, all
+  floor-door and window coordinates and connected staircase from
+  `example5.json`; check both floors, surviving openings, the new
+  room's own hall door, stairs and unchanged source document.
+- **Scope:** this solves one class of wasteful *interior* nonrectangular
+  hallway. The uploaded example's *outer building* is rectangular.
+  Truly stepped, angled and asymmetrical exterior footprints still
+  require continuing archetype- and footprint-aware improvements;
+  this is not a universal irregular-layout generator.
+
 ## v0.38 — Door selection matches the visible symbol (development)
 
 Clicking a rendered door's open leaf previously selected the room beneath
