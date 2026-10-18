@@ -261,9 +261,10 @@ public static class SideLandingRpgHousePlanner
         // Existing chimney masonry is immutable, but its old room GUID
         // was removed by regeneration. Attach the hearth to the enclosing
         // room on the new ground plan.
-        foreach (var chimney in result.Chimneys.Where(ch =>
+        var completedFloors = result;
+        foreach (var chimney in completedFloors.Chimneys.Where(ch =>
             ch.HearthRoomIds.Count == 0 &&
-            BuildingStoreys.HasFloor(result, ch.HearthFloorIndex)))
+            BuildingStoreys.HasFloor(completedFloors, ch.HearthFloorIndex)))
         {
             var level = BuildingStoreys.GetFloor(result, chimney.HearthFloorIndex);
             var footprint = BuildingStoreys.ChimneyFootprint(chimney);
