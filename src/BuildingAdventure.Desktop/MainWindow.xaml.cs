@@ -755,17 +755,45 @@ public partial class MainWindow : Window
     private void Regenerate_Click(object sender, RoutedEventArgs e)
     {
         var floors = CheckedGeneratorFloors();
-        if (!BuildingGenerator.TryRegenerate(CurrentDocument(), floors,
-                Random.Shared.Next(1, int.MaxValue),
-                OptionsForCheckedFloorGeneration(floors),
-                out var proposal, out var reason))
+        var original = CurrentDocument();
+        var settings = OptionsForCheckedFloorGeneration(floors);
+        BuildingSuggestion? fresh = null;
+        string reason = "";
+        // A different RNG seed used to create the SAME fixed first-fit
+        // hall-house each time. In addition to seeded planning, compare
+        // geometry with both the accepted building AND the last preview.
+        // Reroll genuine room geometry, not just random IDs and doors.
+        for (int attempt = 0; attempt < 10; attempt++)
         {
-            ShowGeneratorFailure(reason);
+            if (!BuildingGenerator.TryRegenerate(original, floors,
+                    Random.Shared.Next(1, int.MaxValue), settings,
+                    out var candidate, out reason))
+                continue;
+            bool matchesCurrent = BuildingGenerator.SameRoomLayout(
+                original, candidate.Building, floors);
+            bool matchesPreview = _pendingSuggestion is not null &&
+                BuildingGenerator.SameRoomLayout(
+                    _pendingSuggestion.Building, candidate.Building, floors);
+            if (matchesCurrent || matchesPreview)
+            {
+                reason = "The generated room plan matches the last layout.";
+                continue;
+            }
+            fresh = candidate;
+            break;
+        }
+        if (fresh is null)
+        {
+            ShowGeneratorFailure(
+                "No distinct valid room arrangement could be found for this " +
+                "perimeter, stairs and generation settings after 10 attempts. " +
+                "Try different options or change the floor outline. " + reason);
             return;
         }
-        BeginSuggestion(proposal, whole: false);
-        _hint = "Replacement draft ready. Review the checked floors before " +
-            "Accept All; other floors and the original perimeter are preserved.";
+        BeginSuggestion(fresh, whole: false);
+        _hint = "New room arrangement ready (seed " + fresh.Seed +
+            "). Review the checked floors before Accept All; " +
+            "other floors and the original perimeter are preserved.";
         Refresh();
     }
 
