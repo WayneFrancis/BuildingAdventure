@@ -34,9 +34,10 @@ public static class BuildingGenerator
             out suggestion, out reason);
 
     public static bool TrySuggestWholeBuilding(int floorCount, int seed,
-        GenerationOptions options, out BuildingSuggestion suggestion, out string reason)
+        GenerationOptions options, out BuildingSuggestion suggestion, out string reason,
+        int gridFeet = 0)
     {
-        var blank = new BuildingDocument();
+        var blank = new BuildingDocument { GridFeet = gridFeet };
         suggestion = new BuildingSuggestion(blank, seed, [], "");
         if (floorCount is < 1 or > 4)
         {
