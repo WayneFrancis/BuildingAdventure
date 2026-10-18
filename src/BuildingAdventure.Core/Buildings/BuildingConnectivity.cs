@@ -230,6 +230,10 @@ public static class BuildingConnectivity
                      s.LowerFloorIndex + 1 == floorIndex) &&
                     s.Centre.DistanceTo(location) < 2.3))
                     continue;
+                if (updated.Chimneys.Any(ch =>
+                    BuildingStoreys.ChimneyFloors(updated, ch).Contains(floorIndex) &&
+                    ch.Centre.DistanceTo(location) < 1.5))
+                    continue;
 
                 var trial = BuildingStoreys.Copy(updated);
                 var next = BuildingStoreys.GetFloor(trial, floorIndex);
