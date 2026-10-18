@@ -4,6 +4,47 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.37 — Compact two-storey RPG house archetype (development)
+
+The default two-floor residence suggestion in the desktop editor can now
+use **Compact RPG two-storey house (preferred)**. This is the first
+architectural archetype inspired chiefly by fantasy tabletop battle
+maps, with historical floor plans used as plausibility references.
+
+- **Ground floor:** a small **Entrance lobby** between a **Guest room**
+  and **Study**, connecting to the **Living room** and **Dining room**.
+  The **Kitchen** sits at the back, with a possible second exterior door.
+- **First floor:** **three bedrooms** (including **Master Bedroom**),
+  **Bathroom**, **Sitting room** and a narrow **Upper landing** for
+  separate bedroom access. No bedroom is the only way to reach another.
+- **Staircase:** one straight flight, aligned between the two floors,
+  runs along the rear of the ground-floor living room and arrives in
+  the upper sitting room. Both landings and the slab opening are
+  checked against the complete partition layout.
+- **No giant hallway:** the ground floor uses a small foyer and
+  circulation through normal social rooms; only the upper level
+  needs a narrow bedroom-access landing.
+- **Regeneration:** seeded variants change room proportions, left/right
+  and front/back orientation, guest/study position and back-door
+  provision. Existing stair geometry is protected during regeneration,
+  and a selected-floor proposal never mutates the accepted plan.
+- **Safety/fallback:** initially supported on matching rectangular
+  ground/first-floor outlines with sufficient space, not arbitrary
+  notched or hand-drawn polygons. If the archetype cannot safely fit,
+  the existing residential generator remains available, with the
+  fallback stated in the whole-building suggestion.
+- **Editor:** the new checkbox is enabled by default for two-storey
+  Residence generation, takes priority over the historical hall-house
+  option when appropriate, and is saved in UI settings. Uncheck it
+  to retain the prior historical or classic generator behaviour.
+- **Tests:** direct geometry, room-door connectivity, bedroom count,
+  staircase landing protection, multiple seeds, whole-building
+  suggestions and regeneration around an already accepted flight.
+
+See [RPG house archetype design notes](docs/RPG_HOUSE_ARCHETYPES.md)
+for the room-role graph, constraints and planned cottage, merchant,
+manor, inn and farmhouse variants.
+
 ## v0.36 — Bedrooms in one-storey homes; common rooms in cottages (development)
 
 One-storey residence suggestions must contain somewhere to sleep. The
