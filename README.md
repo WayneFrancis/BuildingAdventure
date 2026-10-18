@@ -4,6 +4,41 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.36 — Bedrooms in one-storey homes; common rooms in cottages (development)
+
+One-storey residence suggestions must contain somewhere to sleep. The
+previous historical house planner created a kitchen, pantry, screens
+passage and a Great hall, sometimes a parlour, but **never a bedroom**.
+It also used "Great hall" for ordinary small homes, which is
+inappropriate for the building's scale.
+
+- **Mandatory sleeping accommodation:** every accepted one-storey
+  historical residence gets at least one named Bedroom with a private
+  doorway directly to its communal living space. A sufficiently large
+  footprint (85m²+ and appropriate dimensions) can generate two distinct
+  bedrooms. Bedrooms must each be at least 8m², and door positions are
+  checked against the complete floor plan.
+- **Historically proportional domestic rooms:** footprints under 140m²
+  use a **Common room** for everyday living rather than a lord's Great
+  hall. The Great hall role is reserved for larger manor-scale
+  residences.
+- **Bedrooms take priority over parlours:** the high/private end of a
+  one-storey home is dedicated to bedrooms. On multi-storey homes,
+  the optional parlour remains possible because sleeping rooms
+  normally occur on the upper storeys.
+- **No misleading incomplete previews:** if a one-storey residential
+  draft cannot fit even one bedroom, both whole-building suggestions
+  and regeneration of blank/cleared floors report failure instead
+  of offering a kitchen/pantry/common-room-only house.
+- **Regression coverage:** small 8×6m, 9×7m and 12×9m residences
+  over multiple seeds; private doors and bedroom area checks;
+  a manor-scale 19×12m Great hall; one-storey accepted-building
+  regeneration retaining beds; upper-storey staircase preservation.
+- The editor's Generator / Suggestions explanation reflects the
+  cottage/large-manor distinction. The hall-house checkbox continues
+  to control the architectural style; legacy generation is preserved
+  when unchecked.
+
 ## v0.35 — Meaningfully different room layouts on each regeneration (development)
 
 Previously, Regenerate chose a new random seed but the medieval
