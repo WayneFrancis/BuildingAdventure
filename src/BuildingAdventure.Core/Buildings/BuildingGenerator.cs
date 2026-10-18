@@ -74,6 +74,10 @@ public static class BuildingGenerator
         // Add windows only AFTER chimney placement, using actual full
         // window spans rather than testing only fireplace-centre distances.
         stageOptions.Windows = false;
+        // The historical footprint planner works on the COMPLETE draft,
+        // after stacked flights and stair bays are settled, not while
+        // individual floors are being staged.
+        stageOptions.HallHouseLayout = false;
         if (reserveStairwells)
         {
             stageOptions.Rooms = false;
@@ -108,6 +112,7 @@ public static class BuildingGenerator
             fill.Stairs = false;
             fill.Fireplaces = false;
             fill.Windows = false;
+            fill.HallHouseLayout = false;
             if (fill.Rooms || fill.Doors || fill.Windows)
             {
                 if (!TrySuggest(result, Enumerable.Range(0, floorCount).ToArray(),
@@ -191,6 +196,21 @@ public static class BuildingGenerator
             }
         }
 
+        // Replace the long modern central corridor with a screens
+        // passage, great hall, kitchen/pantry service end and private
+        // parlour where the COMPLETE perimeter and stacked stairs permit.
+        // Only whole-building-generated rooms are replaced here.
+        bool hallHouseBuilt = false;
+        if (options.HallHouseLayout && options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors)
+        {
+            if (MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+                result, out var medieval, out _))
+            {
+                result = medieval;
+                hallHouseBuilt = true;
+            }
+        }
         int chimneys = 0;
         if (options.Fireplaces &&
             BuildingConnectivity.TryAddChimney(result, out var withChimney, options.Purpose))
@@ -227,7 +247,12 @@ public static class BuildingGenerator
                 return false;
             }
         }
-        string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
+        string label = (hallHouseBuilt
+                ? "Medieval hall-house layout. "
+                : options.HallHouseLayout && options.Purpose == BuildingUse.Residence
+                    ? "Hall-house layout did not fit; using the traditional corridor layout. "
+                    : "") +
+            $"Whole building ({floorCount} floor(s)), seed {seed}: " +
             $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms, " +
             $"{result.UpperFloors.Sum(f => f.Doors.Count) + result.Doors.Count} doors, " +
             $"{stairs} new stair flight(s), {chimneys} chimney stack(s)";
@@ -777,6 +802,28 @@ public static class BuildingGenerator
             }
         }
 
+        // The selected-floor route may use the historical archetype too,
+        // but only for a previously blank ground floor. Never overwrite
+        // existing user rooms, windows or doors on an edited floor.
+        bool hallHouseSuggested = false;
+        if (options.HallHouseLayout && options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors &&
+            indices.Contains(0))
+        {
+            var untouchedGround = BuildingStoreys.GetFloor(original, 0);
+            if (untouchedGround.Rooms.Count == 0 &&
+                untouchedGround.Doors.Count == 0 &&
+                untouchedGround.Windows.Count == 0 &&
+                !BuildingStoreys.GetFloor(proposed, 0).Rooms
+                    .Any(r => r.Type == "Stairwell") &&
+                MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+                    proposed, out var medieval, out _))
+            {
+                proposed = medieval;
+                hallHouseSuggested = true;
+            }
+        }
+
         // Chimneys before glazing. Otherwise a 1.2m window can overlap
         // the edge of a fireplace even when its centre is far away.
         if (options.Fireplaces &&
@@ -867,7 +914,13 @@ public static class BuildingGenerator
                 $"{remaining:0.#} m² unused";
         }));
         string floorSummary = string.Join(", ", indices.Select(BuildingStoreys.FloorLabel));
-        string description = $"Seed {seed}: {addedFootprints} new perimeter(s), " +
+        string description = (hallHouseSuggested
+                ? "Medieval hall house with great hall and screens passage. "
+                : options.HallHouseLayout && options.Purpose == BuildingUse.Residence &&
+                  indices.Contains(0) && BuildingStoreys.GetFloor(original, 0).Rooms.Count == 0
+                    ? "Hall-house arrangement did not fit; corridor layout retained. "
+                    : "") +
+            $"Seed {seed}: {addedFootprints} new perimeter(s), " +
             $"{addedRooms} room(s), {addedCorridors} corridor(s), " +
             $"{absorbedHallStrips} connected hallway gap(s), " +
             $"{addedDoors} door(s), {addedWindows} window(s), " +
