@@ -4717,5 +4717,91 @@ Check("LShape2 uploaded two-floor 5ft plan has no unassigned 0.762m corridor str
         BuildingStoreys.GetFloor(suggested.Building,1))<0.001);
     Assert(BuildingStoreys.Validate(suggested.Building,out reason),reason);
 });
+Check("Upper-floor dragged perimeter corners honor 5-foot and 10-foot grid intervals", () =>
+{
+    var polygon = new List<Point2>
+    {
+        new(0,0),new(15.24,0),new(15.24,12.192),new(0,12.192)
+    };
+    foreach (int feet in new[] {5,10})
+    {
+        double step = feet * 0.3048;
+        var moved = GeometrySnap.ForMovedVertex(
+            new Point2(8.12,6.35), new Point2(0,0),
+            [polygon], 0.01, true, step);
+        Equal(moved.X, Math.Round(8.12 / step,
+            MidpointRounding.AwayFromZero) * step);
+        Equal(moved.Y, Math.Round(6.35 / step,
+            MidpointRounding.AwayFromZero) * step);
+        var free = GeometrySnap.ForMovedVertex(
+            new Point2(8.12,6.35), new Point2(0,0),
+            [polygon], 0.01, true, step, bypass:true);
+        Equal(free.X,8.12);
+        Equal(free.Y,6.35);
+    }
+});
+
+Check("Edited first-floor perimeter receives room and stair suggestions before subdivision", () =>
+{
+    var source = new BuildingDocument
+    {
+        GridFeet = 5,
+        Perimeter = [new(0,0),new(12.192,0),new(12.192,9.144),new(0,9.144)]
+    };
+    Assert(BuildingStoreys.TryAddFloor(source, out var resized, out var reason), reason);
+    var upper = BuildingStoreys.GetFloor(resized, 1);
+    upper.Perimeter = [new(0,0),new(10.668,0),new(10.668,9.144),new(0,9.144)];
+    BuildingStoreys.SetFloor(resized, 1, upper);
+    Assert(BuildingStoreys.Validate(resized, out reason), reason);
+    var options = new GenerationOptions
+    {
+        Rooms=true,Corridors=true,Doors=true,Windows=false,
+        Stairs=true,Purpose=BuildingUse.Residence
+    };
+    Assert(BuildingGenerator.TrySuggest(resized,[0,1],1881,options,
+        out var proposal,out reason),reason);
+    Assert(proposal.Building.Staircases.Count==1,
+        "Stairs should be reserved before filling rooms.");
+    foreach(int index in new[]{0,1})
+    {
+        var floor=BuildingStoreys.GetFloor(proposal.Building,index);
+        Assert(floor.Rooms.Any(r=>r.Type=="Hallway"));
+        Assert(floor.Rooms.Any(r=>r.Type!="Hallway"));
+        Assert(RoomLayoutPlanner.UnassignedArea(floor) <
+            PolygonGeometry.Area(floor.Perimeter)*0.25,
+            "A resized upper floor should not remain mostly unassigned.");
+    }
+    Assert(BuildingStoreys.Validate(proposal.Building,out reason),reason);
+    Assert(BuildingGenerator.TryRegenerate(resized,[0,1],1881,options,
+        out var replacement,out reason),reason);
+    Assert(replacement.Building.Staircases.Count==1);
+    Assert(BuildingStoreys.GetFloor(replacement.Building,1).Rooms.Count>=2);
+    Assert(BuildingStoreys.Validate(replacement.Building,out reason),reason);
+});
+
+Check("Stepped upper-floor footprint can use a shorter interior hallway", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter=[new(0,0),new(14,0),new(14,10),new(0,10)]
+    };
+    Assert(BuildingStoreys.TryAddFloor(source,out var two,out var reason),reason);
+    var upper=BuildingStoreys.GetFloor(two,1);
+    upper.Perimeter=[new(0,0),new(6,0),new(6,8.5),
+        new(14,8.5),new(14,10),new(0,10)];
+    BuildingStoreys.SetFloor(two,1,upper);
+    Assert(BuildingStoreys.Validate(two,out reason),reason);
+    Assert(BuildingConnectivity.TryAddCorridor(two,1,
+        out var withHall,out var hallId),
+        "A rectangular full-width hall is not the only valid hallway in an L.");
+    var hall=BuildingStoreys.GetFloor(withHall,1).Rooms.Single(r=>r.Id==hallId);
+    Assert(FloorGeometry.IsWithinPolygon(hall.Outline,upper.Perimeter));
+    Assert(BuildingGenerator.TrySuggest(two,[1],1777,
+        new GenerationOptions
+        {Rooms=true,Corridors=true,Doors=true,Stairs=false},
+        out var draft,out reason),reason);
+    Assert(BuildingStoreys.GetFloor(draft.Building,1).Rooms.Count>1);
+    Assert(BuildingStoreys.Validate(draft.Building,out reason),reason);
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
