@@ -325,6 +325,13 @@ public partial class MainWindow : Window
                 : _pendingSuggestion.Description +
                   $" | Previewing {BuildingStoreys.FloorLabel(_activeFloorIndex)}. " +
                   "Use Page Up / Page Down or View next selected floor to inspect other existing levels.";
+        if (WorkingFloorCountText is not null)
+        {
+            int count = BuildingStoreys.FloorCount(_building);
+            WorkingFloorCountText.Text = $"WORKING BUILDING — {count} FLOOR(S)";
+            EditableFloorHint.Text =
+                $"Editing {BuildingStoreys.FloorLabel(_activeFloorIndex)} — Select / Edit to select rooms";
+        }
         ZoomText.Text = $"{EditorSurface.PixelsPerMetre:0.#} px/m";
         string fileLabel = _filePath is null ? "Untitled" : Path.GetFileName(_filePath);
         Title = $"{NameBox.Text} — {fileLabel}{(IsDirty() ? " *" : "")} — BuildingAdventure";
@@ -569,6 +576,7 @@ public partial class MainWindow : Window
         _pendingWholeBuilding = false;
         EditorSurface?.SetSuggestionPreview(null);
         if (WholeBuildingPreviewPanel is not null) WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
+        if (WorkingFloorNavigationBar is not null) WorkingFloorNavigationBar.Visibility = Visibility.Visible;
         ProposalFloorPicker?.Items.Clear();
     }
 
@@ -611,7 +619,10 @@ public partial class MainWindow : Window
         _suggestionSource = CurrentJson();
         _pendingWholeBuilding = whole;
         if (!whole)
+        {
             WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
+            WorkingFloorNavigationBar.Visibility = Visibility.Visible;
+        }
         if (whole)
         {
             UpdateSuggestionPreview();
@@ -766,6 +777,7 @@ public partial class MainWindow : Window
         ProposedBuildingHeader.Text =
             $"PROPOSED {indices.Count}-FLOOR BUILDING — NOT YET ACCEPTED";
         WholeBuildingPreviewPanel.Visibility = Visibility.Visible;
+        WorkingFloorNavigationBar.Visibility = Visibility.Collapsed;
         ViewProposedFloor();
     }
 
@@ -803,6 +815,31 @@ public partial class MainWindow : Window
             ((ProposalFloorPicker.SelectedIndex + step) % count + count) % count;
     }
 
+    // Keep floor navigation visible even when the FLOORS sidebar is collapsed.
+    private void WorkingFloorPicker_SelectionChanged(
+        object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || EditorSurface is null ||
+            WorkingFloorPicker.SelectedItem is not ComboBoxItem item ||
+            item.Tag is not int index || index == _activeFloorIndex)
+            return;
+        if (_pendingWholeBuilding) return; // Pending floors are navigated above the draft.
+        if (EditorSurface.HasPendingStep)
+        {
+            _hint = "Finish or cancel the current drawing before changing floors.";
+            Refresh();
+            return;
+        }
+        _building = CurrentDocument();
+        ShowFloor(index);
+    }
+
+    private void PreviousWorkingFloor_Click(object sender, RoutedEventArgs e) =>
+        NavigateFloor(-1);
+
+    private void NextWorkingFloor_Click(object sender, RoutedEventArgs e) =>
+        NavigateFloor(1);
+
     private void AcceptSuggestion_Click(object sender, RoutedEventArgs e)
     {
         if (_pendingSuggestion is null) return;
@@ -829,9 +866,13 @@ public partial class MainWindow : Window
         }
 
         bool acceptedWholeBuilding = _pendingWholeBuilding;
+        int requestedFloorCount = _pendingSuggestion.FloorIndexes.Count;
         _history.RecordBefore(before, _activeFloorIndex);
         _building = BuildingStoreys.Copy(_pendingSuggestion.Building);
         int acceptedFloorCount = BuildingStoreys.FloorCount(_building);
+        if (acceptedWholeBuilding && acceptedFloorCount != requestedFloorCount)
+            throw new InvalidOperationException(
+                $"The accepted building has {acceptedFloorCount} floors, expected {requestedFloorCount}.");
         _activeFloorIndex = Math.Clamp(_activeFloorIndex,
             BuildingStoreys.LowestFloorIndex(_building),
             BuildingStoreys.HighestFloorIndex(_building));
@@ -839,6 +880,16 @@ public partial class MainWindow : Window
         NameBox.Text = _building.Name;
         RebuildFloorPicker();
         ShowFloor(_activeFloorIndex);
+        if (acceptedWholeBuilding)
+        {
+            // Player preview intentionally rejects editing. A generated draft
+            // becomes a working design and must switch to editable map mode.
+            MapModeBox.SelectedIndex = 0;
+            EditorSurface.SetDisplayMode(MapVisibilityMode.Editor);
+            EditorSurface.SetTool(EditorTool.Select);
+            EditorSurface.IsHitTestVisible = true;
+            EditorSurface.Focus();
+        }
         _hint = acceptedWholeBuilding
             ? $"Accepted the {acceptedFloorCount}-floor building. Switch levels using " +
               "the FLOORS selector or Page Up / Page Down. Ctrl+Z restores the old building."
@@ -920,7 +971,11 @@ public partial class MainWindow : Window
         _pendingWholeBuilding = entry.WholeBuilding;
         UpdateSuggestionPreview();
         if (_pendingWholeBuilding) ShowWholeBuildingPreview();
-        else WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
+        else
+        {
+            WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
+            WorkingFloorNavigationBar.Visibility = Visibility.Visible;
+        }
         _hint = "Saved candidate previewed; Accept to apply it (may replace newer edits).";
         Refresh();
     }
@@ -968,6 +1023,21 @@ public partial class MainWindow : Window
                 : _building.UpperFloors[i - 1].Name);
         FloorPicker.SelectedIndex =
             _activeFloorIndex - BuildingStoreys.LowestFloorIndex(_building);
+        if (WorkingFloorPicker is not null)
+        {
+            WorkingFloorPicker.Items.Clear();
+            foreach (int index in BuildingStoreys.FloorIndexes(_building))
+            {
+                int rooms = BuildingStoreys.GetFloor(_building, index).Rooms.Count;
+                WorkingFloorPicker.Items.Add(new ComboBoxItem
+                {
+                    Content = $"{BuildingStoreys.FloorLabel(index)} — {rooms} room(s)",
+                    Tag = index
+                });
+            }
+            WorkingFloorPicker.SelectedIndex =
+                _activeFloorIndex - BuildingStoreys.LowestFloorIndex(_building);
+        }
         if (GeneratorFloorChecks is not null)
         {
             GeneratorFloorChecks.Children.Clear();
@@ -997,6 +1067,9 @@ public partial class MainWindow : Window
         EditorSurface.SetTool(EditorTool.Select);
         FloorPicker.SelectedIndex =
             index - BuildingStoreys.LowestFloorIndex(_building);
+        if (WorkingFloorPicker is not null)
+            WorkingFloorPicker.SelectedIndex =
+                index - BuildingStoreys.LowestFloorIndex(_building);
         _loading = false;
         EditorSurface.FitToView();
         _hint = $"Editing {BuildingStoreys.FloorLabel(index)}.";
@@ -1523,7 +1596,19 @@ public partial class MainWindow : Window
     private void Delete_Click(object sender, RoutedEventArgs e) => EditorSurface.DeleteSelectedVertex();
     private void Cancel_Click(object sender, RoutedEventArgs e) => EditorSurface.CancelDrawing();
     private void Finish_Click(object sender, RoutedEventArgs e) => EditorSurface.FinishDrawing();
-    private void SelectTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.Select);
+    private void SelectTool_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingWholeBuilding)
+        {
+            _hint = "This is a read-only draft. Accept all proposed floors first to edit rooms.";
+            Refresh();
+            return;
+        }
+        if (MapModeBox.SelectedIndex == 2)
+            MapModeBox.SelectedIndex = 0;
+        EditorSurface.SetTool(EditorTool.Select);
+        EditorSurface.Focus();
+    }
     private void DrawTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.DrawPerimeter);
     private void SplitPerimeter_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.SplitPerimeter);
     private void RemoveCornerTool_Click(object sender, RoutedEventArgs e) => EditorSurface.SetTool(EditorTool.RemoveCorner);
