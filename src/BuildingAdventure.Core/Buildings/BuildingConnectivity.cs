@@ -1004,6 +1004,47 @@ public static class BuildingConnectivity
         }
     }
 
+    /// <summary>
+    /// Find ordinary rooms that cannot be reached from a hallway without
+    /// walking through a storeroom or somebody else's private bedroom.
+    /// This is a generator quality check, not a restriction on hand-drawn
+    /// historical or fantasy structures.
+    /// </summary>
+    public static IReadOnlyList<RoomDefinition> RoomsIsolatedByServiceSpaces(
+        BuildingDocument building, int floorIndex)
+    {
+        var floor = BuildingStoreys.GetFloor(building, floorIndex);
+        var hallway = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+        if (hallway is null) return [];
+
+        static bool IsStorage(RoomDefinition room) =>
+            room.Type is "Storeroom" or "Storage" or "Pantry" or
+                "Buttery" or "Stockroom" or "Closet" or "Linen store";
+        bool HasDoor(RoomDefinition a, RoomDefinition b) =>
+            floor.Doors.Any(d =>
+                OnOutline(d.Centre, a.Outline) &&
+                OnOutline(d.Centre, b.Outline));
+        var seen = new HashSet<Guid> { hallway.Id };
+        var queue = new Queue<RoomDefinition>();
+        queue.Enqueue(hallway);
+        while (queue.Count > 0)
+        {
+            var from = queue.Dequeue();
+            if (IsStorage(from) ||
+                from.Type is "Bedroom" or "Guest room" or "Suite")
+                continue;
+            foreach (var to in floor.Rooms.Where(r =>
+                !seen.Contains(r.Id) && HasDoor(from, r)))
+            {
+                seen.Add(to.Id);
+                queue.Enqueue(to);
+            }
+        }
+        return floor.Rooms.Where(r =>
+            r.Id != hallway.Id && r.Type != "Stairwell" &&
+            !IsStorage(r) && !seen.Contains(r.Id)).ToArray();
+    }
+
     public static int CountRoomsWithoutDoors(BuildingDocument building,
         int floorIndex)
     {
