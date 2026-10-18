@@ -18,6 +18,9 @@ public sealed class GenerationOptions
     // corridor generator; the desktop editor enables this by default
     // for residence suggestions. Non-residences are unaffected.
     public bool HallHouseLayout { get; set; }
+    // RPG battle-map style for two-floor houses. Opt-in for API callers;
+    // the desktop UI enables it by default for modest residences.
+    public bool CompactRpgHouseLayout { get; set; }
     // Internal multi-step generation: circulation cannot be judged until
     // reserved stair bays are merged and the final layout is in place.
     public bool DeferCirculationValidation { get; set; }
@@ -28,6 +31,7 @@ public sealed class GenerationOptions
         Rooms = Rooms, Corridors = Corridors, Doors = Doors,
         Windows = Windows, Stairs = Stairs, Fireplaces = Fireplaces,
         HallHouseLayout = HallHouseLayout,
+        CompactRpgHouseLayout = CompactRpgHouseLayout,
         DeferCirculationValidation = DeferCirculationValidation, Purpose = Purpose
     };
 
