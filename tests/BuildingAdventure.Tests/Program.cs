@@ -4146,5 +4146,58 @@ Check("One fireplace chimney stacks through all covering floors including baseme
     Assert(BuildingStoreys.Validate(loaded, out reason), reason);
 });
 
+Check("Generated 5-foot and 10-foot maps have exact tabletop-aligned outer footprints", () =>
+{
+    foreach (int feet in new[] { 5, 10 })
+    {
+        var settings = new GenerationOptions
+        {
+            Corridors = true, Rooms = true, Doors = true, Windows = true
+        };
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(3, 25843, settings,
+            out var draft, out var reason, feet), reason);
+        Assert(draft.Building.GridFeet == feet);
+        Assert(BuildingStoreys.FloorCount(draft.Building) == 3);
+        double step = feet * 0.3048;
+        foreach (int index in BuildingStoreys.FloorIndexes(draft.Building))
+        {
+            var perimeter = BuildingStoreys.GetFloor(draft.Building, index).Perimeter;
+            foreach (var corner in perimeter)
+            {
+                Assert(Math.Abs(corner.X / step - Math.Round(corner.X / step)) < 1e-7,
+                    $"X perimeter coordinate must lie on the {feet}-foot grid.");
+                Assert(Math.Abs(corner.Y / step - Math.Round(corner.Y / step)) < 1e-7,
+                    $"Y perimeter coordinate must lie on the {feet}-foot grid.");
+            }
+        }
+    }
+});
+
+Check("A three-floor layout keeps generated windows away from stairwell facades", () =>
+{
+    var settings = new GenerationOptions
+    {
+        Corridors = true, Rooms = true, Doors = true, Windows = true, Stairs = true
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(3, 812, settings,
+        out var draft, out var reason), reason);
+    foreach (int index in BuildingStoreys.FloorIndexes(draft.Building))
+    {
+        var floor = BuildingStoreys.GetFloor(draft.Building, index);
+        var stairwell = floor.Rooms.Single(r => r.Type == "Stairwell");
+        foreach (var window in floor.Windows)
+        foreach (int i in Enumerable.Range(0, stairwell.Outline.Count))
+        {
+            double distance = PolygonGeometry.ClosestPointOnSegment(
+                window.Centre, stairwell.Outline[i],
+                stairwell.Outline[(i + 1) % stairwell.Outline.Count])
+                .DistanceTo(window.Centre);
+            Assert(distance >= 1.5 - 1e-6,
+                "A window must not be immediately beside the stairwell.");
+        }
+    }
+    Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
