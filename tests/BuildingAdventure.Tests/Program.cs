@@ -4035,5 +4035,112 @@ Check("Automatic stairs without corridors no longer float in the middle of the b
     Assert(BuildingStoreys.Validate(proposal, out reason), reason);
 });
 
+Check("Five and ten-foot map grids persist exactly through building JSON", () =>
+{
+    foreach (int grid in new[] { 0, 5, 10 })
+    {
+        var doc = new BuildingDocument
+        {
+            GridFeet = grid, Perimeter = rectangle.ToList()
+        };
+        Assert(BuildingStoreys.Validate(doc, out var reason), reason);
+        Assert(BuildingDocumentJson.Deserialize(
+            BuildingDocumentJson.Serialize(doc)).GridFeet == grid);
+        Assert(BuildingStoreys.Copy(doc).GridFeet == grid);
+    }
+    var invalid = new BuildingDocument { GridFeet = 7, Perimeter = rectangle.ToList() };
+    Assert(!BuildingStoreys.Validate(invalid, out _));
+});
+
+Check("A generated three-floor staircase reserves two one-metre landings per flight", () =>
+{
+    var options = new GenerationOptions
+    {
+        Corridors = true, Rooms = true, Doors = true,
+        Stairs = true, Purpose = BuildingUse.Residence
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(3, 812, options,
+        out var draft, out var reason), reason);
+    Assert(draft.Building.Staircases.Count == 2);
+    foreach (var stair in draft.Building.Staircases)
+    {
+        Assert(stair.LandingLength >= 1);
+        var landings = BuildingStoreys.StairLandings(stair);
+        Assert(landings.Count == 2);
+        foreach (var landing in landings)
+        {
+            Assert(Math.Abs(PolygonGeometry.Area(landing) -
+                stair.Width * stair.LandingLength) < 1e-6);
+            for (int index = stair.LowerFloorIndex;
+                 index <= stair.LowerFloorIndex + 1; index++)
+                Assert(FloorGeometry.IsWithinPolygon(landing,
+                    BuildingStoreys.GetFloor(draft.Building, index).Perimeter));
+        }
+    }
+    Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
+    var loaded = BuildingDocumentJson.Deserialize(
+        BuildingDocumentJson.Serialize(draft.Building));
+    Assert(loaded.Staircases.All(s => s.LandingLength == 1));
+});
+
+Check("Windows go to exterior bedrooms and living rooms, not to storerooms", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = [new(0,0), new(12,0), new(12,8), new(0,8)],
+        Rooms =
+        [
+            new RoomDefinition { Name = "Bedroom", Type = "Bedroom",
+                Outline = [new(0,0), new(6,0), new(6,4), new(0,4)] },
+            new RoomDefinition { Name = "Living room", Type = "Living room",
+                Outline = [new(6,0), new(12,0), new(12,4), new(6,4)] },
+            new RoomDefinition { Name = "Storeroom", Type = "Storeroom",
+                Outline = [new(0,4), new(6,4), new(6,8), new(0,8)] },
+            new RoomDefinition { Name = "Dining room", Type = "Dining room",
+                Outline = [new(6,4), new(12,4), new(12,8), new(6,8)] }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(building, out var reason), reason);
+    Assert(BuildingConnectivity.AddWindows(building, 0, out var glazed) == 3);
+    Assert(building.Windows.Count == 0);
+    foreach (var room in glazed.Rooms)
+    {
+        bool hasWindow = glazed.Windows.Any(w =>
+            Enumerable.Range(0, room.Outline.Count).Any(i =>
+                PolygonGeometry.ClosestPointOnSegment(w.Centre, room.Outline[i],
+                    room.Outline[(i + 1) % room.Outline.Count])
+                    .DistanceTo(w.Centre) < 1e-5));
+        Assert(hasWindow == (room.Type != "Storeroom"));
+    }
+    Assert(BuildingStoreys.Validate(glazed, out reason), reason);
+});
+
+Check("One fireplace chimney stacks through all covering floors including basement", () =>
+{
+    var ground = new BuildingDocument { Perimeter = rectangle.ToList() };
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out var reason), reason);
+    Assert(BuildingStoreys.TryAddBasement(two, out var three, out reason), reason);
+    Assert(BuildingConnectivity.TryAddChimney(three, out var withChimney));
+    Assert(withChimney.Chimneys.Count == 1);
+    var chimney = withChimney.Chimneys.Single();
+    Assert(BuildingStoreys.ChimneyFloors(withChimney, chimney)
+        .SequenceEqual([-1, 0, 1]));
+    Assert(BuildingStoreys.Validate(withChimney, out reason), reason);
+    var loaded = BuildingDocumentJson.Deserialize(
+        BuildingDocumentJson.Serialize(withChimney));
+    Assert(loaded.Chimneys.Single().Id == chimney.Id);
+    Assert(BuildingStoreys.ChimneyFloors(loaded, loaded.Chimneys.Single()).Count == 3);
+
+    // Basement doesn't share the stack's footprint, so it doesn't get a
+    // phantom fireplace even though the other levels retain theirs.
+    var basement = BuildingStoreys.GetFloor(loaded, -1);
+    basement.Perimeter =
+        [new(2,0), new(10,0), new(10,8), new(2,8)];
+    BuildingStoreys.SetFloor(loaded, -1, basement);
+    Assert(BuildingStoreys.ChimneyFloors(loaded, loaded.Chimneys.Single())
+        .SequenceEqual([0, 1]));
+    Assert(BuildingStoreys.Validate(loaded, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
