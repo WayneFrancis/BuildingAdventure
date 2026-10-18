@@ -44,27 +44,29 @@ public static class BuildingConnectivity
                 StringComparison.OrdinalIgnoreCase)))
             return false;
 
-        int left = (int)Math.Ceiling(floor.Perimeter.Min(p => p.X) * 2);
-        int right = (int)Math.Floor(floor.Perimeter.Max(p => p.X) * 2);
-        int top = (int)Math.Ceiling(floor.Perimeter.Min(p => p.Y) * 2);
-        int bottom = (int)Math.Floor(floor.Perimeter.Max(p => p.Y) * 2);
-        int width = right - left, height = bottom - top;
-        if (width < 12 || height < 12) return false;
+        // Use *exact* drawn exterior extents. Previously ceil/floor to
+        // half-metre increments left a visible strip at both ends of the
+        // hallway on imperial and custom-sized perimeters.
+        double left = floor.Perimeter.Min(p => p.X);
+        double right = floor.Perimeter.Max(p => p.X);
+        double top = floor.Perimeter.Min(p => p.Y);
+        double bottom = floor.Perimeter.Max(p => p.Y);
+        double width = right - left, height = bottom - top;
+        if (width < 6 || height < 6) return false;
 
         bool vertical = height >= width;
-        int minorLow = vertical ? left : top;
-        int minorHigh = vertical ? right : bottom;
-        int centre = (minorLow + minorHigh - 4) / 2;
-        int[] offsets = [0, -2, 2, -4, 4, -6, 6];
-        foreach (int offset in offsets)
+        double minorLow = vertical ? left : top;
+        double minorHigh = vertical ? right : bottom;
+        double centre = (minorLow + minorHigh - 2.0) / 2.0;
+        double[] offsets = [0, -1, 1, -2, 2, -3, 3];
+        foreach (double offset in offsets)
         {
-            int corridorStart = centre + offset;
-            if (corridorStart < minorLow + 2 || corridorStart + 4 > minorHigh - 2)
+            double a = centre + offset;
+            double b = a + 2.0;
+            if (a < minorLow + 1 || b > minorHigh - 1)
                 continue;
-            double a = corridorStart / 2.0;
-            double b = (corridorStart + 4) / 2.0;
-            double fullLow = (vertical ? top : left) / 2.0;
-            double fullHigh = (vertical ? bottom : right) / 2.0;
+            double fullLow = vertical ? top : left;
+            double fullHigh = vertical ? bottom : right;
             List<Point2> shape = vertical
                 ? [new(a, fullLow), new(b, fullLow),
                    new(b, fullHigh), new(a, fullHigh)]
