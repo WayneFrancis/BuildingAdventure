@@ -211,12 +211,31 @@ public static class BuildingConnectivity
         foreach (var room in floor.Rooms.Where(r => r.Id != hall?.Id))
         {
             if (HasConnectedInteriorDoor(room)) continue;
+            bool serviceStore = IsServiceStore(room);
             var candidates = walls.Where(w => !w.IsExterior &&
                 OnOutline(Midpoint(w), room.Outline) &&
                 floor.Rooms.Any(other => other.Id != room.Id &&
                     OnOutline(Midpoint(w), other.Outline)))
-                .OrderBy(w => hall is not null &&
-                    OnOutline(Midpoint(w), hall.Outline) ? 0 : 1)
+                // A storage room usually has ONE purposeful entrance:
+                // directly off the kitchen/workshop if it serves that
+                // activity, or off circulation otherwise. Never make a
+                // bedroom the preferred way into general household stores.
+                .OrderBy(w =>
+                {
+                    var neighbours = floor.Rooms.Where(other =>
+                        other.Id != room.Id &&
+                        OnOutline(Midpoint(w), other.Outline)).ToArray();
+                    if (serviceStore && neighbours.Any(other =>
+                        other.Type is "Kitchen" or "Workshop" or "Bakehouse" or
+                            "Brewery" or "Brewhouse" or "Scullery")) return 0;
+                    if (neighbours.Any(other => other.Id == hall?.Id)) return 1;
+                    if (neighbours.Any(other => other.Type is "Living room" or
+                            "Dining room" or "Great hall" or "Common room")) return 2;
+                    if (neighbours.Any(other => IsServiceStore(other))) return 4;
+                    if (neighbours.Any(other => other.Type is "Bedroom" or
+                            "Guest room" or "Suite")) return 6;
+                    return 3;
+                })
                 .ThenByDescending(w => w.Length);
             TryPlaceDoor(candidates, 0.9);
         }
@@ -239,11 +258,20 @@ public static class BuildingConnectivity
                 bool linked = floor.Doors.Any(d =>
                     OnOutline(d.Centre, kitchen.Outline) &&
                     OnOutline(d.Centre, partner.Outline));
-                if (!linked) TryPlaceDoor(wallCandidates, 0.8);
+                // A storeroom with an existing internal entrance is
+                // already accessible: do not punch a second door into it
+                // just because the kitchen happens to share another wall.
+                if (!linked && (!IsServiceStore(partner) ||
+                    !HasConnectedInteriorDoor(partner)))
+                    TryPlaceDoor(wallCandidates, 0.8);
             }
         }
         updated = working;
         return count;
+
+        static bool IsServiceStore(RoomDefinition room) =>
+            room.Type is "Storeroom" or "Storage" or "Stockroom" or
+                "Pantry" or "Buttery" or "Linen store" or "Closet";
 
         bool HasConnectedInteriorDoor(RoomDefinition room) =>
             floor.Doors.Any(d => walls.Any(w => !w.IsExterior &&
