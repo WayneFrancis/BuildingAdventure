@@ -680,6 +680,23 @@ public partial class MainWindow : Window
         BeginSuggestion(proposal, whole: false);
     }
 
+    private void Regenerate_Click(object sender, RoutedEventArgs e)
+    {
+        var floors = CheckedGeneratorFloors();
+        if (!BuildingGenerator.TryRegenerate(CurrentDocument(), floors,
+                Random.Shared.Next(1, int.MaxValue), SelectedGeneratorOptions(),
+                out var proposal, out var reason))
+        {
+            _hint = reason;
+            Refresh();
+            return;
+        }
+        BeginSuggestion(proposal, whole: false);
+        _hint = "Replacement draft ready. Review the checked floors before " +
+            "Accept All; other floors and the original perimeter are preserved.";
+        Refresh();
+    }
+
     private void NextSuggestedFloor_Click(object sender, RoutedEventArgs e)
     {
         if (_pendingSuggestion is null || _pendingSuggestion.FloorIndexes.Count == 0)
@@ -891,11 +908,15 @@ public partial class MainWindow : Window
             Refresh();
             return;
         }
-        if (_pendingWholeBuilding || changedBase)
+        bool regenerating = _pendingSuggestion.Description.StartsWith(
+            "REPLACEMENT DRAFT", StringComparison.Ordinal);
+        if (_pendingWholeBuilding || changedBase || regenerating)
         {
             string explanation = _pendingWholeBuilding
                 ? "Accepting this whole-building draft REPLACES the current building."
-                : "The building changed since this suggestion was saved. Applying it will REPLACE the current building with the saved candidate.";
+                : regenerating
+                    ? "Accepting this regeneration REPLACES rooms, doors and windows on the checked floors. The current perimeter and untouched floors are kept."
+                    : "The building changed since this suggestion was saved. Applying it will REPLACE the current building with the saved candidate.";
             if (MessageBox.Show(this, explanation +
                     "\n\nThe current design can be restored with Ctrl+Z. Continue?",
                 "Apply suggested building", MessageBoxButton.YesNo,
