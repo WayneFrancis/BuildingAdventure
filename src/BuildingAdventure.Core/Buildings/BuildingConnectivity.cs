@@ -379,9 +379,9 @@ public static class BuildingConnectivity
         double minY = ground.Perimeter.Min(p => p.Y);
         double maxY = ground.Perimeter.Max(p => p.Y);
         double hallLength = vertical ? hBottom - hTop : hRight - hLeft;
-        // The 3.6 m flight and two 1.0 m landing areas require 5.6 m.
-        // Reserve a 6.0 m bay so neither endpoint terminates at a wall.
-        double pocketLength = 6.0;
+        // Compact domestic stairs: 2.8 m flight plus 1 m landing at both
+        // ends. The full 4.8 m requirement fits inside a 5 m side bay.
+        double pocketLength = 5.0;
         if (hallLength < pocketLength)
         {
             reason = "The hall is too short to reserve a landing beside the stairs.";
@@ -401,7 +401,7 @@ public static class BuildingConnectivity
                 : (leftSide ? hTop : maxY);
             // Reserve space between the flight and its doorway for access
             // to the hall, not just enough floor area for the stairs.
-            if (sideEnd - sideStart < 2.8) continue;
+            if (sideEnd - sideStart < 2.2) continue;
             double axisStart = vertical ? hTop : hLeft;
             double axisEnd = vertical ? hBottom : hRight;
             double from = farEnd ? axisEnd - pocketLength : axisStart;
@@ -422,8 +422,7 @@ public static class BuildingConnectivity
             // The gap between its other side and the hallway is an
             // accessible landing instead of a staircase in open floor.
             const double wallClearance = 0.20;
-            const double halfWidth = 1.4 / 2;
-            const double halfLength = 3.6 / 2;
+            const double halfWidth = 1.0 / 2;
             double sideCentre = leftSide
                 ? sideStart + halfWidth + wallClearance
                 : sideEnd - halfWidth - wallClearance;
@@ -463,7 +462,7 @@ public static class BuildingConnectivity
                 {
                     LowerFloorIndex = lower,
                     Centre = centre,
-                    Length = 3.6, Width = 1.4,
+                    Length = 2.8, Width = 1.0,
                     LandingLength = 1.0,
                     RotationDegrees = vertical ? 0 : 90
                 };
