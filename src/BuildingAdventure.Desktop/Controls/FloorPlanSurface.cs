@@ -666,7 +666,11 @@ public sealed class FloorPlanSurface : FrameworkElement
             Point centre = ToScreen(labelPoint);
             DrawText(dc, room.Name, new Point(centre.X + 5, centre.Y - 12),
                      13, selected ? Brushes.DarkBlue : Brushes.DarkSlateGray);
-            DrawText(dc, $"{PolygonGeometry.Area(room.Outline):0.#} m²",
+            double area = PolygonGeometry.Area(room.Outline);
+            string areaLabel = GridFeet == 0
+                ? $"{area:0.#} m²"
+                : $"{area / (0.3048 * 0.3048):0.#} ft²";
+            DrawText(dc, areaLabel,
                      new Point(centre.X + 5, centre.Y + 4), 10, Brushes.DimGray);
         }
 
@@ -1227,7 +1231,11 @@ public sealed class FloorPlanSurface : FrameworkElement
             if (a.DistanceTo(b) * _pixelsPerMetre < 48) continue;
             var midpoint = new Point((ToScreen(a).X + ToScreen(b).X) / 2,
                                      (ToScreen(a).Y + ToScreen(b).Y) / 2);
-            DrawText(dc, $"{a.DistanceTo(b):0.##} m",
+            double length = a.DistanceTo(b);
+            string label = GridFeet == 0
+                ? $"{length:0.##} m"
+                : $"{length / 0.3048:0.##} ft";
+            DrawText(dc, label,
                      new Point(midpoint.X + 5, midpoint.Y + 5), 11, Brushes.DarkSlateGray);
         }
     }
