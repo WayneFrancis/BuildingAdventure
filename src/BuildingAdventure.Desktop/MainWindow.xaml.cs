@@ -1134,8 +1134,12 @@ public partial class MainWindow : Window
                 {
                     Content = BuildingStoreys.FloorLabel(i),
                     Tag = i,
+                    // New building levels participate in a suggestion by
+                    // default. The old ground-only default silently left
+                    // newly added first floors unchecked, so no connecting
+                    // staircase could ever be requested.
                     IsChecked = priorSelection.TryGetValue(i, out bool selected)
-                        ? selected : i == 0,
+                        ? selected : true,
                     Margin = new Thickness(0, 0, 0, 5)
                 });
         }
