@@ -459,6 +459,22 @@ public static class BuildingGenerator
                     thisFloorRooms += planned;
                 }
             }
+            // Deal with a long shallow band alongside the hallway BEFORE
+            // the residual-filling pass can turn it into a 6ft x 25ft
+            // "bedroom". It belongs to circulation, not accommodation.
+            // Temporary stairwell bays used by whole-building generation
+            // must stay rectangular until their own merge is complete.
+            if (corridor is not null &&
+                !BuildingStoreys.GetFloor(proposed, index).Rooms
+                    .Any(r => r.Type == "Stairwell"))
+            {
+                absorbedHallStrips += RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(
+                    proposed, index, out var withShallowPassage);
+                proposed = withShallowPassage;
+                floor = BuildingStoreys.GetFloor(proposed, index);
+                corridor = floor.Rooms.FirstOrDefault(r => r.Id == corridor.Id);
+            }
+
             int targetRooms = thisFloorRooms > 0 ? 0 : 1 + random.Next(3);
             bool TryPlace(int x, int y, int width, int height)
             {
