@@ -119,7 +119,7 @@ public static class BalancedSteppedRpgHousePlanner
         double rightRearWidth=width-hallRight;
         if(rightFrontWidth<3.5 || rightRearWidth<4.5 ||
             kitchenDepth<3 || stepY-kitchenDepth<1.5 ||
-            bedroomDepth<3 || stepY-bedroomDepth<1.5 ||
+            bedroomDepth<3.05 || stepY-bedroomDepth<1.5 ||
             rearHeight<3.1)
             return false;
 
