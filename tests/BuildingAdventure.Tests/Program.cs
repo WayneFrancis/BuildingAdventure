@@ -4491,5 +4491,36 @@ Check("Dining and pantry room roles are favoured beside a kitchen wall", () =>
     Assert(pantry == "Pantry", "A compact storage space can adjoin the kitchen.");
 });
 
+Check("Narrow exterior slivers extend new rooms but never alter hand-drawn rooms", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(10,0),new(10,8),new(0,8)]
+    };
+    var proposal = BuildingStoreys.Copy(source);
+    proposal.Rooms.Add(new RoomDefinition
+    {
+        Type = "Bedroom", Name = "Bedroom",
+        Outline = [new(0,0),new(9.6,0),new(9.6,8),new(0,8)]
+    });
+    Assert(BuildingStoreys.Validate(proposal, out var reason), reason);
+    Assert(RoomLayoutPlanner.ExtendSuggestedRoomsToExterior(
+        source, proposal, 0, out var extended) > 0);
+    Assert(RoomLayoutPlanner.UnassignedArea(extended) < 0.001);
+    Assert(proposal.Rooms[0].Outline.Any(p => Math.Abs(p.X - 9.6) < 1e-6));
+
+    var existing = BuildingStoreys.Copy(proposal);
+    var retained = BuildingStoreys.Copy(existing);
+    retained.Rooms.Add(new RoomDefinition
+    {
+        Type = "Closet", Name = "New closet",
+        Outline = [new(9.6,0),new(10,0),new(10,8),new(9.6,8)]
+    });
+    Assert(RoomLayoutPlanner.ExtendSuggestedRoomsToExterior(
+        existing, retained, 0, out var kept) == 0);
+    Assert(kept.Rooms.First().Outline.SequenceEqual(existing.Rooms[0].Outline));
+    Assert(BuildingStoreys.Validate(kept, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
