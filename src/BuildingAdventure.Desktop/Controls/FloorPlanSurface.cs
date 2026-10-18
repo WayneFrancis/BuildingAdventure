@@ -2736,6 +2736,19 @@ public sealed class FloorPlanSurface : FrameworkElement
             return false;
         }
 
+        // When inserting an exterior corner into an existing straight
+        // wall, snap its new along-wall coordinate to the selected map grid.
+        // Reproject onto the wall so a diagonal edge remains geometrically
+        // exact. Shift continues to bypass snapping.
+        if (SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            IReadOnlyList<Point2> vertices = exterior
+                ? _outline : _rooms.First(r => r.Id == roomId).Outline;
+            point = PolygonGeometry.ClosestPointOnSegment(
+                SnapToGridPoint(point), vertices[edge],
+                vertices[(edge + 1) % vertices.Count]);
+        }
+
         var previous = Snapshot();
         if (!PerimeterEditing.TrySplitWall(Document(), exterior, roomId, edge,
             point, out var updated, out var reason))
