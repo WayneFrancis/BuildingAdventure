@@ -483,7 +483,10 @@ public static class BuildingConnectivity
             flights = added;
             return true;
         }
-        reason = "No valid stair bay could fit beside the corridor: " + lastError;
+        reason = "No valid stair bay could fit beside the corridor: " + lastError +
+            $"; perimeter=({minX:0.##},{minY:0.##})-({maxX:0.##},{maxY:0.##}), " +
+            $"hall=({hLeft:0.##},{hTop:0.##})-({hRight:0.##},{hBottom:0.##}), " +
+            $"vertical={vertical}.";
         return false;
     }
 
