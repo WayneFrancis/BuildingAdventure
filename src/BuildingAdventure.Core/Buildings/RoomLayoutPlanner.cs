@@ -927,6 +927,7 @@ public static class RoomLayoutPlanner
                     .Distinct().OrderBy(v => v).ToArray();
 
                 var pieces = new List<List<Point2>>();
+                bool validPieces = true;
                 for (int x = 0; x < xs.Length - 1; x++)
                 {
                     int y = 0;
@@ -946,7 +947,7 @@ public static class RoomLayoutPlanner
                         double upper = ys[top], lower = ys[y];
                         if (right - left < 1.8 || lower - upper < 1.8)
                         {
-                            pieces.Clear();
+                            validPieces = false;
                             break;
                         }
                         // A long 2m-deep wing can contain two useful small
@@ -966,10 +967,10 @@ public static class RoomLayoutPlanner
                         else
                             pieces.Add(Rectangle(left, upper, right, lower));
                     }
-                    if (pieces.Count == 0) break;
+                    if (!validPieces) break;
                 }
                 double reclaimed = pieces.Sum(PolygonGeometry.Area);
-                if (pieces.Count == 0 || pieces.Count > 8 ||
+                if (!validPieces || pieces.Count == 0 || pieces.Count > 8 ||
                     reclaimed < 8 || Math.Abs(reclaimed + PolygonGeometry.Area(spine) -
                         hallArea) > 0.01) continue;
 
