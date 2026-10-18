@@ -158,7 +158,7 @@
                                       Content="Medieval hall-house layout (residences)"
                                       IsChecked="True" Margin="0,0,0,6"/>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,10"
-                                       Text="Uses a great hall, short screens passage, service rooms and a private parlour where the footprint and stairs permit. Uncheck to use the central-corridor generator."/>
+                                       Text="Small homes use a Common room with one or two bedrooms, kitchen, pantry/buttery and short screens passage. Great halls are reserved for large manors. Uncheck to use the central-corridor generator."/>
                             <TextBlock FontWeight="SemiBold" Text="Generate features" Margin="0,0,0,6"/>
                             <WrapPanel Margin="0,0,0,10">
                                 <CheckBox x:Name="GenerateRoomsCheckBox" Content="Rooms" IsChecked="True" Margin="0,0,12,6"/>
