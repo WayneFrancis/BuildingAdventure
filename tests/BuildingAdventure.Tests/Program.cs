@@ -6975,11 +6975,11 @@ Check("example7 side-stair utility and upstairs bathroom move down like example8
         "Example7 ground floor is mathematically fully assigned.");
 
     Assert(SideStairApproachPlanner.TryRebalance(plan,0,
-        Array.Empty<Guid>(),out var lower),
-        "Utility room must shift south as in example8, leaving access to the foot.");
+        Array.Empty<Guid>(),out var lower,out var groundStage),
+        "Utility room must shift south as in example8: "+groundStage);
     Assert(SideStairApproachPlanner.TryRebalance(lower,1,
-        Array.Empty<Guid>(),out var repaired),
-        "First-floor bathroom must shift south too for upper stair access.");
+        Array.Empty<Guid>(),out var repaired,out var upstairsStage),
+        "First-floor bathroom must shift south too: "+upstairsStage);
     Assert(BuildingStoreys.Validate(repaired,out reason),reason);
     Assert(repaired.Staircases.Single().Id==stairId &&
         repaired.Chimneys.Single().Id==fireplaceId,
