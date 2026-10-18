@@ -271,7 +271,9 @@ public static class BuildingConnectivity
             double sideEnd = vertical
                 ? (leftSide ? hLeft : maxX)
                 : (leftSide ? hTop : maxY);
-            if (sideEnd - sideStart < 2.5) continue;
+            // Reserve space between the flight and its doorway for access
+            // to the hall, not just enough floor area for the stairs.
+            if (sideEnd - sideStart < 2.8) continue;
             double axisStart = vertical ? hTop : hLeft;
             double axisEnd = vertical ? hBottom : hRight;
             double from = farEnd ? axisEnd - pocketLength : axisStart;
@@ -287,9 +289,22 @@ public static class BuildingConnectivity
                     new(from, sideStart), new(to, sideStart),
                     new(to, sideEnd), new(from, sideEnd)
                 };
+            // The flight hugs the OUTER long wall of its stairwell
+            // (0.2 m clearance), with its run toward the end wall.
+            // The gap between its other side and the hallway is an
+            // accessible landing instead of a staircase in open floor.
+            const double wallClearance = 0.20;
+            const double halfWidth = 1.4 / 2;
+            const double halfLength = 3.6 / 2;
+            double sideCentre = leftSide
+                ? sideStart + halfWidth + wallClearance
+                : sideEnd - halfWidth - wallClearance;
+            double runCentre = farEnd
+                ? to - halfLength - wallClearance
+                : from + halfLength + wallClearance;
             var centre = vertical
-                ? new Point2((sideStart + sideEnd) / 2, (from + to) / 2)
-                : new Point2((from + to) / 2, (sideStart + sideEnd) / 2);
+                ? new Point2(sideCentre, runCentre)
+                : new Point2(runCentre, sideCentre);
             var candidate = BuildingStoreys.Copy(source);
             bool roomsFit = true;
             foreach (int index in levels)
