@@ -18,7 +18,15 @@ public static class SideStairApproachPlanner
         IReadOnlyCollection<Guid> protectedRoomIds,
         out BuildingDocument updated)
     {
+        return TryRebalance(source,floorIndex,protectedRoomIds,out updated,out _);
+    }
+
+    public static bool TryRebalance(BuildingDocument source, int floorIndex,
+        IReadOnlyCollection<Guid> protectedRoomIds,
+        out BuildingDocument updated, out string stage)
+    {
         updated = BuildingStoreys.Copy(source);
+        stage="Initial geometry or pattern not matched";
         if (!BuildingStoreys.HasFloor(source, floorIndex)) return false;
         var floor = BuildingStoreys.GetFloor(source, floorIndex);
         var hall = floor.Rooms.SingleOrDefault(r =>
@@ -32,6 +40,7 @@ public static class SideStairApproachPlanner
             r.Outline.Count == 4 && Orthogonal(r.Outline));
         if (service is null) return false;
 
+        stage="Recognized generated hallway and service room";
         var flights = source.Staircases.Where(s =>
             s.LowerFloorIndex == floorIndex ||
             s.LowerFloorIndex + 1 == floorIndex).ToArray();
@@ -101,6 +110,7 @@ public static class SideStairApproachPlanner
                 Math.Abs(hall.Outline.Max(V)-depth)>Epsilon)
                 continue;
 
+            stage="Detected main corridor and utility bay";
             // Require the original service room and the side corridor
             // to form ONE rectangular bay from x=0 to spineRight,
             // y=roomTop to the rear perimeter.
@@ -108,6 +118,7 @@ public static class SideStairApproachPlanner
             if (!FloorGeometry.IsWithinPolygon(wing,floor.Perimeter))
                 continue;
 
+            stage="Verified side wing inside exterior";
             double minFlightU=reserved.SelectMany(p=>p).Min(U);
             double maxFlightU=reserved.SelectMany(p=>p).Max(U);
             double minFlightV=reserved.SelectMany(p=>p).Min(V);
@@ -121,6 +132,7 @@ public static class SideStairApproachPlanner
             // example8), not beside the length of the staircase (as
             // in example7). Keep a 1.35m stair-width aisle along the
             // outer wall, containing the entire flight and landings.
+            stage="Flight geometry is eligible for side access";
             double aisleWidth=Math.Max(1.35, Math.Ceiling(
                 (maxFlightU+0.15)*20)/20);
             if (aisleWidth>=spineLeft-2.3 ||
@@ -137,6 +149,7 @@ public static class SideStairApproachPlanner
             // The arrival landing needs to be reached from the bar.
             // The bar and the narrow stair aisle must overlap along
             // a complete line, not join at a single point.
+            stage="Computed cross passage and stair aisle";
             var newHall=new List<Point2>
             {
                 P(spineLeft,0),P(spineRight,0),
@@ -167,6 +180,7 @@ public static class SideStairApproachPlanner
             // exchanging a portion of some unrelated existing room.
             // Whole-building geometry validation follows.
 
+            stage="Validated proposed room and stair geometry";
             var draft=BuildingStoreys.Copy(source);
             var edited=BuildingStoreys.GetFloor(draft,floorIndex);
             edited.Rooms.Single(r=>r.Id==hall.Id).Outline=newHall;
@@ -180,9 +194,18 @@ public static class SideStairApproachPlanner
             edited.Doors.RemoveAll(d=>
                 !FloorGeometry.TryFindDoorWall(d,walls,out _));
             BuildingStoreys.SetFloor(draft,floorIndex,edited);
-            if (!BuildingStoreys.Validate(draft,out _)) continue;
+            if (!BuildingStoreys.Validate(draft,out var draftFailure))
+            {
+                stage="Draft validation: "+draftFailure;
+                continue;
+            }
             BuildingConnectivity.AddDoors(draft,floorIndex,out var connected);
-            if (!BuildingStoreys.Validate(connected,out _)) continue;
+            if (!BuildingStoreys.Validate(connected,out var connectedFailure))
+            {
+                stage="Door validation: "+connectedFailure;
+                continue;
+            }
+            stage="Door network generated";
 
             // Every room except the hall should have a direct internal
             // door into circulation; especially the upstairs study on
@@ -201,6 +224,7 @@ public static class SideStairApproachPlanner
                 continue;
 
             updated=connected;
+            stage="";
             return true;
         }
         return false;
