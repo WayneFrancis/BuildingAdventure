@@ -6,7 +6,7 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
 
 ## v0.31 — Entrance storage rooms rather than oversized hallways (development)
 
-The user's \`example2.json\` is a two-storey stepped residence with an
+The user's `example2.json` is a two-storey stepped residence with an
 exterior entrance at (16.764, 3.048). Both sides of that doorway were
 unnecessarily included in a 43.8 m² L-shaped hallway. The extra strip is
 1.786 m deep and wide enough for two small storage rooms.
@@ -25,7 +25,7 @@ unnecessarily included in a 43.8 m² L-shaped hallway. The extra strip is
 - Applies to generated whole buildings and selected blank floors,
   without modifying previously drawn rooms. The existing broad hallway
   reclamation follows this more targeted pass.
-- Regression recreates \`example2.json\`'s entry, rooms, stairs and
+- Regression recreates `example2.json`'s entry, rooms, stairs and
   different upper-floor perimeter. Verifies two ~6.38 m² stores, the
   ~31 m² remaining hall, two new interior doors, and safe rotational
   placement.
