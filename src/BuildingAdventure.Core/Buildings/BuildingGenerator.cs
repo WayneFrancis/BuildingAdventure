@@ -266,6 +266,14 @@ public static class BuildingGenerator
             floor.Windows.Clear();
             BuildingStoreys.SetFloor(cleared, index, floor);
         }
+        // Existing flues remain, but deleted/renamed room IDs cannot
+        // continue representing hearth faces after room regeneration.
+        foreach (var chimney in cleared.Chimneys.Where(ch =>
+            indices.Contains(ch.HearthFloorIndex)))
+        {
+            chimney.HearthRoomIds.Clear();
+            chimney.OtherHearthCentre = null;
+        }
         if (!BuildingStoreys.Validate(cleared, out reason))
         {
             reason = "Cannot regenerate while keeping existing stairs/chimneys: " + reason;
