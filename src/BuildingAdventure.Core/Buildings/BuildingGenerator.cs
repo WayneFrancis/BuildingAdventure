@@ -346,6 +346,34 @@ public static class BuildingGenerator
         int addedChimneys = 0;
         var skippedFloors = new List<int>();
         var roomsPerFloor = new List<string>();
+
+        // When two existing levels are being suggested together, reserve
+        // their vertical connection BEFORE subdividing the unallocated
+        // space. The previous rooms-first order could fill every usable
+        // landing bay and then fail to add stairs, discarding both proposed
+        // floor layouts. Reuse any existing hallways and retain the normal
+        // room pass below for all other features.
+        bool hasAdjacentFloors = indices.Any(i => indices.Contains(i + 1));
+        if (options.Stairs && options.Rooms && options.Corridors &&
+            hasAdjacentFloors &&
+            indices.All(i => BuildingStoreys.GetFloor(proposed, i).Perimeter.Count >= 3))
+        {
+            foreach (int index in indices)
+            {
+                var floor = BuildingStoreys.GetFloor(proposed, index);
+                if (floor.Rooms.Any(r => r.Type == "Hallway")) continue;
+                if (BuildingConnectivity.TryAddCorridor(proposed, index,
+                        out var withHall, out _))
+                {
+                    proposed = withHall;
+                    addedCorridors++;
+                }
+            }
+
+            addedStairs += BuildingConnectivity.AddStairs(
+                proposed, indices, out var reservedStairs);
+            proposed = reservedStairs;
+        }
         foreach (int index in indices)
         {
             var floor = BuildingStoreys.GetFloor(proposed, index);
@@ -537,7 +565,7 @@ public static class BuildingGenerator
         }
         if (options.Stairs)
         {
-            addedStairs = BuildingConnectivity.AddStairs(
+            addedStairs += BuildingConnectivity.AddStairs(
                 proposed, indices, out var withStairs);
             proposed = withStairs;
             // A requested multi-floor staircase is a connectivity
