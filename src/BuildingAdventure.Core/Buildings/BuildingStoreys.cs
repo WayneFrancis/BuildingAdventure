@@ -43,6 +43,10 @@ public sealed class StaircaseDefinition
     public double OpeningExtraWidth { get; set; }
     public double OpeningExtraLength { get; set; }
 
+    // Clear platform at BOTH ends of the flight, on both connected levels.
+    // Zero maintains compatibility with previously saved stairs.
+    public double LandingLength { get; set; }
+
     public StaircaseDefinition Copy() => new()
     {
         Id = Id,
@@ -52,7 +56,8 @@ public sealed class StaircaseDefinition
         Width = Width,
         RotationDegrees = RotationDegrees,
         OpeningExtraWidth = OpeningExtraWidth,
-        OpeningExtraLength = OpeningExtraLength
+        OpeningExtraLength = OpeningExtraLength,
+        LandingLength = LandingLength
     };
 }
 
@@ -568,7 +573,9 @@ public static class BuildingStoreys
                 !double.IsFinite(stair.OpeningExtraWidth) ||
                 stair.OpeningExtraWidth < 0 || stair.OpeningExtraWidth > 4 ||
                 !double.IsFinite(stair.OpeningExtraLength) ||
-                stair.OpeningExtraLength < 0 || stair.OpeningExtraLength > 6)
+                stair.OpeningExtraLength < 0 || stair.OpeningExtraLength > 6 ||
+                !double.IsFinite(stair.LandingLength) ||
+                stair.LandingLength < 0 || stair.LandingLength > 3)
             {
                 reason = "Invalid staircase location, floor connection, or dimensions.";
                 return false;
@@ -601,6 +608,23 @@ public static class BuildingStoreys
                         reason = $"The staircase crosses an interior wall on {FloorLabel(i)}.";
                         return false;
                     }
+                }
+            }
+
+            // Generated flights require a clear, usable landing at each
+            // end on BOTH levels; older manually positioned flights retain
+            // their prior behaviour with LandingLength == 0.
+            foreach (var landing in StairLandings(stair))
+            for (int i = stair.LowerFloorIndex; i <= stair.LowerFloorIndex + 1; i++)
+            {
+                var level = GetFloor(building, i);
+                if (!FloorGeometry.IsWithinPolygon(landing, level.Perimeter) ||
+                    FloorGeometry.BuildWalls(level.Perimeter, level.Rooms)
+                        .Any(w => !w.IsExterior &&
+                            WallCrossesFootprintInterior(w, landing)))
+                {
+                    reason = $"A stair landing has insufficient unobstructed space on {FloorLabel(i)}.";
+                    return false;
                 }
             }
 
@@ -669,6 +693,25 @@ public static class BuildingStoreys
                 return false;
         }
         return true;
+    }
+
+    /// <summary>Rectangular clear floor areas beyond both ends of a flight.</summary>
+    public static IReadOnlyList<List<Point2>> StairLandings(StaircaseDefinition stair)
+    {
+        if (stair.LandingLength <= 0) return [];
+        double angle = stair.RotationDegrees * Math.PI / 180;
+        double dx = -Math.Sin(angle), dy = Math.Cos(angle);
+        double distance = (stair.Length + stair.LandingLength) / 2;
+        var result = new List<List<Point2>>(2);
+        foreach (int sign in new[] { -1, 1 })
+        {
+            var landing = stair.Copy();
+            landing.Centre = new Point2(stair.Centre.X + sign * dx * distance,
+                stair.Centre.Y + sign * dy * distance);
+            landing.Length = stair.LandingLength;
+            result.Add(StairFootprint(landing));
+        }
+        return result;
     }
 
     public static List<Point2> StairFootprint(StaircaseDefinition stair)
