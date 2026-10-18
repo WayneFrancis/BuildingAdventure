@@ -5706,11 +5706,11 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
         corrected, 0, Array.Empty<Guid>(), out var functional);
     Assert(expanded == 2,
         $"Expected both misplaced 14m² store bands to be reallocated, got {expanded}.");
-    Assert(!functional.Rooms.Any(r => r.Type == "Storeroom"));
-    Assert(functional.Rooms.Single(r => r.Id == idDining).Outline.Count >= 6);
-    Assert(functional.Rooms.Single(r => r.Id == idBedroom).Outline.Count >= 6);
+    Assert(!functional.Rooms.Any(r => r.Type == "Storeroom"), "Both obsolete stores should be removed.");
+    Assert(functional.Rooms.Single(r => r.Id == idDining).Outline.Count >= 6, "Expanded dining room should retain a nonrectangular outline.");
+    Assert(functional.Rooms.Single(r => r.Id == idBedroom).Outline.Count >= 6, "Expanded bedroom should retain a nonrectangular outline.");
     Assert(BuildingStoreys.Validate(functional, out reason), reason);
-    Assert(BuildingConnectivity.RoomsIsolatedByServiceSpaces(functional,0).Count==0);
+    Assert(BuildingConnectivity.RoomsIsolatedByServiceSpaces(functional,0).Count==0, "No room should be stranded behind storage after consolidating.");
     Assert(functional.Staircases.Single().Centre.Equals(source.Staircases.Single().Centre));
     Assert(corrected.Rooms.Count==7,
         "Room consolidation must not modify the earlier repaired proposal.");
