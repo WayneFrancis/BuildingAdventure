@@ -4,6 +4,36 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.28 — Proportion-aware rooms and slim L-wing circulation (development)
+
+The user-supplied `L.json` revealed a ground-floor 25-foot-long,
+approximately 5-foot-10-inch-wide bedroom (7.62 × 1.786m). The
+hall-frontage planner correctly rejected the shallow strip as a normal
+2m-deep room, but the residual filler later placed a 13.6m² rectangle
+and named it Bedroom based on area alone.
+
+- **Absorb slim, elongated circulation wings before room allocation.**
+  The existing exterior-to-hallway merger now handles clear strips up
+  to 2.0m deep, provided the exposed run is at least 3.5m long and
+  its length/depth ratio is at least 2.5. It runs immediately after the
+  main hallway-frontage subdivision, *before* residual rooms can claim
+  the narrow wing. The corridor becomes a legitimate stepped hallway
+  rather than a fabricated bedroom; no user-authored room is reshaped.
+- **Room roles respect minimum usable dimensions.** A long narrow
+  rectangle below 2.35m wide with aspect >=2.8 is identified as
+  Passage when it cannot be joined into an existing hallway. A sleeping
+  room narrower than 2.5m is instead assigned a storage/closet role,
+  even when its total square metres are bedroom-sized. Other building
+  functions retain their existing naming priorities.
+- **Stairs remain protected.** The corridor expansion is skipped while
+  temporary stairwell reservations are present, preserving the
+  whole-building planner's required rectangular stair-bay geometry.
+- **Regression tests:** reconstruct the exact L.json perimeter and
+  ground-floor room dividers, verify its 7.62 × 1.786m gap joins hallway
+  circulation, ensure acceptable sleeping-room proportions, and
+  generate multiple room drafts from the original L-shaped two-storey
+  footprints with the first floor smaller than ground.
+
 ## v0.27 — Shared staircase planning for unequal empty storeys (development)
 
 Previously, **Suggest on checked floors** placed an independently centred
