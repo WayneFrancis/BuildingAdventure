@@ -5388,6 +5388,33 @@ Check("example2.json entrance creates two storage rooms beside door", () =>
         oversized,0,[originalHall.Id],out var protectedPlan)==0 &&
         protectedPlan.Rooms.Count==4,
         "An existing user's hallway must not be changed by generation.");
+
+    // Rotation regression: the same entrance may be on an east/west wall.
+    // Flip both coordinates (and the stair axis) without changing lengths.
+    var rotated = BuildingStoreys.Copy(oversized);
+    Point2 Swap(Point2 p) => new(p.Y, p.X);
+    rotated.Perimeter = rotated.Perimeter.Select(Swap).ToList();
+    foreach (var room in rotated.Rooms)
+        room.Outline = room.Outline.Select(Swap).ToList();
+    foreach (var door in rotated.Doors) door.Centre = Swap(door.Centre);
+    foreach (var upper in rotated.UpperFloors)
+    {
+        upper.Perimeter = upper.Perimeter.Select(Swap).ToList();
+        foreach (var room in upper.Rooms)
+            room.Outline = room.Outline.Select(Swap).ToList();
+    }
+    foreach (var stair in rotated.Staircases)
+    {
+        stair.Centre = Swap(stair.Centre);
+        stair.RotationDegrees = 0;
+    }
+    Assert(BuildingStoreys.Validate(rotated,out reason),reason);
+    Assert(RoomLayoutPlanner.PartitionGeneratedEntranceWing(
+        rotated,0,Array.Empty<Guid>(),out var turned)==2,
+        "Storage allocation must work for entrances on vertical exterior walls.");
+    Assert(BuildingStoreys.Validate(turned,out reason),reason);
+    Assert(BuildingConnectivity.AddDoors(turned,0,out var turnedAccess)==2);
+    Assert(BuildingStoreys.Validate(turnedAccess,out reason),reason);
 });
 
 Console.WriteLine($"{passed} passed; {failed} failed.");
