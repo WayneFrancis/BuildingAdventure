@@ -90,6 +90,46 @@ public static class BuildingGenerator
                 "to establish its initial floor layout.";
             return false;
         }
+        // Prefer a genuine two-storey RPG plan over the old whole-width
+        // corridor-first arrangement. The planner owns both sets of rooms
+        // and the connecting stair in one transaction, so the door network
+        // and landing geometry are verified before showing any preview.
+        if (floorCount == 2 && options.CompactRpgHouseLayout &&
+            options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors &&
+            options.Stairs &&
+            BuildingStoreys.TryAddFloor(blank, out var compactBasis, out _) &&
+            CompactRpgHousePlanner.TryGenerate(compactBasis, seed,
+                out var compact, out _))
+        {
+            int compactChimneys = 0;
+            if (options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(compact,
+                    out var withHearth, options.Purpose))
+            {
+                compact = withHearth;
+                compactChimneys = 1;
+            }
+            if (options.Windows)
+            {
+                foreach (int level in new[] { 0, 1 })
+                {
+                    BuildingConnectivity.AddWindows(compact, level,
+                        out var glazed);
+                    compact = glazed;
+                }
+            }
+            if (BuildingStoreys.Validate(compact, out reason))
+            {
+                suggestion = new BuildingSuggestion(compact, seed, [0, 1],
+                    "Compact two-storey RPG house. " +
+                    $"Seed {seed}: 3 upstairs bedrooms, " +
+                    $"{compact.Rooms.Count + compact.UpperFloors[0].Rooms.Count} rooms, " +
+                    $"1 staircase, {compactChimneys} chimney stack(s)");
+                return true;
+            }
+        }
+
         // A single-storey hall house can be planned directly from its
         // exterior footprint. Building and then deleting a modern corridor
         // is unnecessary and may fail the temporary door-access checks
@@ -327,7 +367,12 @@ public static class BuildingGenerator
                 "generation style. No incomplete residence was proposed.";
             return false;
         }
-        string label = (hallHouseBuilt
+        string label = (options.CompactRpgHouseLayout &&
+            options.Purpose == BuildingUse.Residence && floorCount == 2
+                ? "Compact RPG floor plan was not geometrically feasible; " +
+                  "used the fallback residential planner. "
+                : "") +
+            (hallHouseBuilt
                 ? "Medieval residence layout. "
                 : options.HallHouseLayout && options.Purpose == BuildingUse.Residence
                     ? "Hall-house layout did not fit; using the traditional corridor layout. "
@@ -508,6 +553,46 @@ public static class BuildingGenerator
         {
             reason = "A selected floor no longer exists.";
             return false;
+        }
+
+        // The user may be generating a blank matched pair of floors or
+        // regenerating a previously accepted two-storey RPG house. Respect
+        // any existing staircase (never move it) and other floors; only
+        // use this archetype when BOTH complete floors are blank.
+        if (options.CompactRpgHouseLayout &&
+            options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors &&
+            options.Stairs &&
+            indices.Length == 2 && indices[0] == 0 && indices[1] == 1 &&
+            BuildingStoreys.FloorCount(source) == 2 &&
+            CompactRpgHousePlanner.TryGenerate(source, seed,
+                out var compact, out _))
+        {
+            int compactChimneys = 0;
+            if (options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(compact,
+                    out var heated, options.Purpose))
+            {
+                compact = heated;
+                compactChimneys = 1;
+            }
+            if (options.Windows)
+            {
+                foreach (int index in indices)
+                {
+                    BuildingConnectivity.AddWindows(compact, index,
+                        out var glazed);
+                    compact = glazed;
+                }
+            }
+            if (BuildingStoreys.Validate(compact, out reason))
+            {
+                suggestion = new BuildingSuggestion(compact, seed, indices,
+                    "Compact two-storey RPG house. " +
+                    $"Seed {seed}: 3 upstairs bedrooms, " +
+                    $"1 staircase, {compactChimneys} new chimney stack(s)");
+                return true;
+            }
         }
 
         var random = new Random(seed);
