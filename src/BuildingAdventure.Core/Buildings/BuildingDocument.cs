@@ -27,6 +27,26 @@ public sealed class BuildingDocument
     // Root-level geometry remains for legacy document compatibility.
     public bool HasGroundFloor { get; set; } = true;
     public List<StaircaseDefinition> Staircases { get; set; } = new();
+    public List<ChimneyDefinition> Chimneys { get; set; } = new();
+}
+
+/// <summary>
+/// A continuous masonry chimney serving a fireplace on every level it
+/// intersects. Placement may be against an exterior or interior wall;
+/// the world-space stack location does not move between storeys.
+/// </summary>
+public sealed class ChimneyDefinition
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Point2 Centre { get; set; }
+    public double Width { get; set; } = 0.8;
+    public double Depth { get; set; } = 0.8;
+    public bool Exterior { get; set; } = true;
+    public ChimneyDefinition Copy() => new()
+    {
+        Id = Id, Centre = Centre, Width = Width,
+        Depth = Depth, Exterior = Exterior
+    };
 }
 
 public static class BuildingDocumentJson
