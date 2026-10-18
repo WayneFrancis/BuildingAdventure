@@ -8,6 +8,10 @@ public sealed class BuildingDocument
 {
     public int SchemaVersion { get; set; } = 1;
     public string Name { get; set; } = "Untitled Building";
+    // 0 = metric (1m visual grid, 0.5m editing snap);
+    // 5/10 = imperial tabletop squares (metres remain canonical geometry).
+    public int GridFeet { get; set; }
+
     public List<Point2> Perimeter { get; set; } = new();
     public List<RoomDefinition> Rooms { get; set; } = new();
     public List<DoorDefinition> Doors { get; set; } = new();
