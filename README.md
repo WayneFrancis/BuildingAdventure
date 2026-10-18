@@ -4,6 +4,32 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.31 — Entrance storage rooms rather than oversized hallways (development)
+
+The user's \`example2.json\` is a two-storey stepped residence with an
+exterior entrance at (16.764, 3.048). Both sides of that doorway were
+unnecessarily included in a 43.8 m² L-shaped hallway. The extra strip is
+1.786 m deep and wide enough for two small storage rooms.
+
+- On a **newly generated ground floor** with an oversized orthogonal
+  entrance wing, reserve a clear 2 m-wide path from the exterior door to
+  the existing main corridor, then turn the pockets on its left and right
+  into named **Storage** rooms with interior access doors.
+- Keep the existing exterior entrance and its opening, room outlines,
+  floor perimeter, staircase flights, upper-floor stairwell openings and
+  landing clearances unchanged. Storage pocket depth may be less than the
+  minimum for bedrooms; 1.786 m is useful for a closet or storeroom.
+- Geometry is based on the original world coordinates; both horizontal
+  and vertical exterior wall orientations work. A narrow/noisy or
+  hand-edited entrance is left alone if the partition does not validate.
+- Applies to generated whole buildings and selected blank floors,
+  without modifying previously drawn rooms. The existing broad hallway
+  reclamation follows this more targeted pass.
+- Regression recreates \`example2.json\`'s entry, rooms, stairs and
+  different upper-floor perimeter. Verifies two ~6.38 m² stores, the
+  ~31 m² remaining hall, two new interior doors, and safe rotational
+  placement.
+
 ## v0.30 — Recover useful rooms from oversized hallways (development)
 
 The uploaded `example(1).json` showed a 50.2 m² ground-floor hallway in an
