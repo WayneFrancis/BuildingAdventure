@@ -6485,5 +6485,134 @@ Check("example5 oversized L-shaped stair wing becomes compact circulation on bot
         "Once corrected, do not repeatedly subdivide the stair wing.");
 });
 
+Check("example6(1) stepped two-storey footprint reclaims 77-percent L-shaped hallways", () =>
+{
+    // Faithfully reconstructed geometry from the accepted example6(1).json.
+    // Both floors had 68.125m² halls within an 88.75m² stepped perimeter;
+    // the kitchen/bedroom was the only other room on each level.
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    List<Point2> Shape() =>
+        [new(0,0),new(8.5,0),new(8.5,5.5),
+         new(10.5,5.5),new(10.5,9.5),new(0,9.5)];
+    List<Point2> Hall() =>
+        [new(0,0),new(5,0),new(5,5.75),
+         new(10.5,5.75),new(10.5,9.5),new(0,9.5)];
+    var original = new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=Shape(),
+        Rooms=
+        [
+            new RoomDefinition
+                {Name="Hallway 1",Type="Hallway",Outline=Hall()},
+            new RoomDefinition
+                {Name="Kitchen",Type="Kitchen",Outline=R(5,0,8.5,5.75)}
+        ],
+        Doors=
+        [
+            new DoorDefinition{Centre=new(10.5,6.75),Width=0.9},
+            new DoorDefinition{Centre=new(6.75,5.75),Width=0.9}
+        ],
+        UpperFloors=
+        [
+            new StoreyDefinition
+            {
+                Name="First Floor",Perimeter=Shape(),
+                Rooms=
+                [
+                    new RoomDefinition
+                        {Name="Hallway 1",Type="Hallway",Outline=Hall()},
+                    new RoomDefinition
+                        {Name="Bedroom",Type="Bedroom",Outline=R(5,0,8.5,5.75)}
+                ],
+                Doors=
+                [
+                    new DoorDefinition{Centre=new(6.75,5.75),Width=0.9}
+                ],
+                Windows=
+                [
+                    new WindowDefinition{Centre=new(6.75,0),Width=1.2}
+                ]
+            }
+        ],
+        Staircases=
+        [
+            new StaircaseDefinition
+            {
+                LowerFloorIndex=0,Centre=new(2.5,0.7),
+                Length=2.8,Width=1,RotationDegrees=90,LandingLength=1
+            }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    Assert(Math.Abs(PolygonGeometry.Area(original.Perimeter)-88.75)<0.001);
+    Assert(Math.Abs(PolygonGeometry.Area(original.Rooms[0].Outline)-68.125)<0.001);
+    var protectedHallId=original.Rooms[0].Id;
+    var initialStairId=original.Staircases[0].Id;
+
+    int groundAdded=IrregularHallRepair.Reclaim(
+        original,0,Array.Empty<Guid>(),BuildingUse.Residence,
+        out var groundRepaired);
+    Assert(groundAdded==3,
+        "Should recover THREE domestic rooms from the oversized ground hallway.");
+    int firstAdded=IrregularHallRepair.Reclaim(
+        groundRepaired,1,Array.Empty<Guid>(),BuildingUse.Residence,
+        out var repaired);
+    Assert(firstAdded==3,
+        "Should recover upstairs sleeping/private rooms, not keep a 77% hallway.");
+    Assert(BuildingStoreys.Validate(repaired,out reason),reason);
+    Assert(repaired.Staircases.Single().Id==initialStairId);
+    for(int index=0;index<=1;index++)
+    {
+        var floor=BuildingStoreys.GetFloor(repaired,index);
+        Assert(floor.Rooms.Count==5,
+            "Each floor should now have four functional rooms and circulation.");
+        var h=floor.Rooms.Single(r=>r.Type=="Hallway");
+        Assert(PolygonGeometry.Area(h.Outline)<43,
+            "Circulation must be less than half the usable floor area.");
+        Assert(floor.Rooms.Count(r=>r.Type=="Kitchen")== (index==0?1:0));
+        Assert(floor.Rooms.Any(r=>r.Type=="Living room"||r.Type=="Bedroom"));
+        foreach(var flight in repaired.Staircases)
+        {
+            Assert(FloorGeometry.IsWithinPolygon(
+                BuildingStoreys.StairFootprint(flight),h.Outline));
+            Assert(FloorGeometry.IsWithinPolygon(
+                BuildingStoreys.StairOpeningFootprint(flight),h.Outline));
+            Assert(BuildingStoreys.StairLandings(flight).All(l=>
+                FloorGeometry.IsWithinPolygon(l,h.Outline)));
+        }
+        Assert(Math.Abs(floor.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))-88.25)<0.02,
+            "The original narrow 0.5m² gap must not grow or lose covered area.");
+    }
+    BuildingConnectivity.AddDoors(repaired,0,out var doorsGround);
+    BuildingConnectivity.AddDoors(doorsGround,1,out var allDoors);
+    Assert(BuildingStoreys.Validate(allDoors,out reason),reason);
+    for(int index=0;index<=1;index++)
+    {
+        var floor=BuildingStoreys.GetFloor(allDoors,index);
+        var hall=floor.Rooms.Single(r=>r.Type=="Hallway");
+        bool On(Point2 point,IReadOnlyList<Point2> ring)=>
+            Enumerable.Range(0,ring.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(point,
+                    ring[i],ring[(i+1)%ring.Count]).DistanceTo(point)<1e-5);
+        foreach(var room in floor.Rooms.Where(r=>r.Type!="Hallway"))
+            Assert(floor.Doors.Any(d=>On(d.Centre,hall.Outline)&&
+                On(d.Centre,room.Outline)),
+                $"Every {room.Type} needs its own access from the hall.");
+    }
+    Assert(allDoors.Doors.Any(d=>d.Centre.Equals(new Point2(10.5,6.75))),
+        "Keep the original entrance at the end of the L wing.");
+    Assert(original.Rooms.Count==2 &&
+        Math.Abs(PolygonGeometry.Area(original.Rooms[0].Outline)-68.125)<0.001,
+        "The original saved plan must remain untouched.");
+    Assert(IrregularHallRepair.Reclaim(original,0,[protectedHallId],
+        BuildingUse.Residence,out _)==0,
+        "Never change a manually drawn L-shaped hallway.");
+    Assert(IrregularHallRepair.Reclaim(repaired,0,Array.Empty<Guid>(),
+        BuildingUse.Residence,out _)==0,
+        "Do not repartition a hallway more than once.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
