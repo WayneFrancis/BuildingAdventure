@@ -3962,7 +3962,7 @@ Check("Three-floor house reserves aligned open staircase alcoves beside the hall
     }
 });
 
-Check("Hall-only multi-floor stair suggestions never block a pre-existing corridor", () =>
+Check("Hall-only multi-floor stair suggestions use a wall-side flight without blocking circulation", () =>
 {
     var doc = new BuildingDocument { Perimeter = rectangle.ToList() };
     Assert(BuildingStoreys.TryAddFloor(doc, out var two, out var reason), reason);
@@ -3974,9 +3974,13 @@ Check("Hall-only multi-floor stair suggestions never block a pre-existing corrid
     {
         Rooms = false, Corridors = false, Doors = false, Stairs = true
     };
-    Assert(!BuildingGenerator.TrySuggest(source, [0, 1], 1223, options,
-        out _, out reason));
-    Assert(source.Staircases.Count == 0);
+    Assert(BuildingGenerator.TrySuggest(source, [0, 1], 1223, options,
+        out var suggestion, out reason), reason);
+    Assert(suggestion.Building.Staircases.Count == 1,
+        "Furnished hallways now admit a wall-side flight and both landings.");
+    Assert(source.Staircases.Count == 0,
+        "A suggestion must not modify the accepted building.");
+    Assert(BuildingStoreys.Validate(suggestion.Building, out reason), reason);
 });
 
 Check("Compact domestic stairs stay against a wall with landing clearance", () =>
