@@ -153,8 +153,9 @@
                                 <CheckBox x:Name="GenerateRoomsCheckBox" Content="Rooms" IsChecked="True" Margin="0,0,12,6"/>
                                 <CheckBox x:Name="GenerateCorridorsCheckBox" Content="Corridors" IsChecked="True" Margin="0,0,12,6"/>
                                 <CheckBox x:Name="GenerateDoorsCheckBox" Content="Doors" IsChecked="True" Margin="0,0,12,6"/>
-                                <CheckBox x:Name="GenerateWindowsCheckBox" Content="Windows" Margin="0,0,12,6"/>
+                                <CheckBox x:Name="GenerateWindowsCheckBox" Content="Windows" IsChecked="True" Margin="0,0,12,6"/>
                                 <CheckBox x:Name="GenerateStairsCheckBox" Content="Stairs" Margin="0,0,12,6"/>
+                                <CheckBox x:Name="GenerateFireplacesCheckBox" Content="Fireplace / chimney stack" Margin="0,0,12,6"/>
                             </WrapPanel>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,8"
                                        Text="Rooms are arranged beside a corridor when one can fit. Doors use actual shared walls. Windows and stairs are optional; stair flights require both adjoining floors checked. Every candidate is validated before preview."/>
