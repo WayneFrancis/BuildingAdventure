@@ -209,6 +209,12 @@ public static class BuildingConnectivity
             .Where(w => w.IsExterior && w.Length >= 1.7).ToList();
         foreach (var room in floor.Rooms.Where(RoomUsuallyNeedsWindow))
         {
+            // Kitchens are normally glazed, except where a fireplace/hearth
+            // occupies the room and supplies the main exterior-wall feature.
+            if (room.Type.Equals("Kitchen", StringComparison.OrdinalIgnoreCase) &&
+                chimneyStacks.Any(ch =>
+                    PolygonGeometry.ContainsPoint(room.Outline, ch.Centre)))
+                continue;
             if (floor.Windows.Any(w => OnOutline(w.Centre, room.Outline)))
                 continue;
             // A kitchen with a fireplace/chimney may reasonably be
