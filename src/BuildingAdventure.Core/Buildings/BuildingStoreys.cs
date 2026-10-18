@@ -95,6 +95,7 @@ public static class BuildingStoreys
     {
         SchemaVersion = source.SchemaVersion,
         Name = source.Name,
+        GridFeet = source.GridFeet,
         HasGroundFloor = source.HasGroundFloor,
         Perimeter = source.Perimeter.ToList(),
         Rooms = source.Rooms.Select(r => r.Copy()).ToList(),
@@ -163,6 +164,7 @@ public static class BuildingStoreys
             return new BuildingDocument
             {
                 Name = building.Name,
+                GridFeet = building.GridFeet,
                 Perimeter = building.Perimeter.ToList(),
                 Rooms = building.Rooms.Select(r => r.Copy()).ToList(),
                 Doors = building.Doors.Select(d => d.Copy()).ToList(),
@@ -176,6 +178,7 @@ public static class BuildingStoreys
         return new BuildingDocument
         {
             Name = building.Name,
+            GridFeet = building.GridFeet,
             Perimeter = floor.Perimeter.ToList(),
             Rooms = floor.Rooms.Select(r => r.Copy()).ToList(),
             Doors = floor.Doors.Select(d => d.Copy()).ToList(),
@@ -500,6 +503,11 @@ public static class BuildingStoreys
     public static bool Validate(BuildingDocument building, out string reason)
     {
         reason = "";
+        if (building.GridFeet is not (0 or 5 or 10))
+        {
+            reason = "Grid scale must be metric, 5 feet or 10 feet.";
+            return false;
+        }
         if (building.WallThickness is null)
         {
             reason = "Ground Floor: Wall thickness settings are missing.";
