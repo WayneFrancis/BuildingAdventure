@@ -5662,6 +5662,11 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
         ]
     };
     Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    var unreachableBefore = BuildingConnectivity.RoomsIsolatedByServiceSpaces(source,0);
+    Assert(unreachableBefore.Count == 2 &&
+        unreachableBefore.Any(r => r.Type == "Dining room") &&
+        unreachableBefore.Any(r => r.Type == "Bedroom"),
+        "The old result must be recognised as two inaccessible main rooms.");
     var idHall=source.Rooms[0].Id;
     var idDining=source.Rooms[3].Id;
     var idBedroom=source.Rooms[4].Id;
@@ -5671,6 +5676,8 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
         source,0,Array.Empty<Guid>(),out var corrected);
     Assert(routes==2,$"Expected two usable hall branches after removing generated store doors; got {routes}.");
     Assert(BuildingStoreys.Validate(corrected,out reason),reason);
+    Assert(BuildingConnectivity.RoomsIsolatedByServiceSpaces(corrected,0).Count==0,
+        "The generator must reject any final draft with blocked living rooms.");
     bool Touches(RoomDefinition room,Point2 centre) =>
         Enumerable.Range(0,room.Outline.Count).Any(i=>
             PolygonGeometry.ClosestPointOnSegment(centre,room.Outline[i],
