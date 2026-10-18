@@ -427,6 +427,100 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// Convert a temporary enclosed stair bay to an OPEN side alcove in
+    /// the hallway. A rectangular hall and a rectangular bay sharing a
+    /// wall become one orthogonal, sometimes L-shaped, hallway polygon.
+    /// This avoids leaving an unassigned "gap" around the stairs while
+    /// not introducing an artificial separate stair-room enclosure.
+    /// </summary>
+    public static bool TryMergeStairBayIntoHall(BuildingDocument building,
+        int floorIndex, out BuildingDocument updated, out string reason)
+    {
+        updated = BuildingStoreys.Copy(building);
+        reason = "";
+        var floor = BuildingStoreys.GetFloor(updated, floorIndex);
+        var hall = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway");
+        var bay = floor.Rooms.FirstOrDefault(r => r.Type == "Stairwell");
+        if (hall is null || bay is null ||
+            hall.Outline.Count != 4 || bay.Outline.Count != 4)
+        {
+            reason = "An open stair alcove needs a rectangular hall and reserved bay.";
+            return false;
+        }
+        static bool Eq(double x, double y) => Math.Abs(x - y) < 1e-5;
+        double hl = hall.Outline.Min(p => p.X), hr = hall.Outline.Max(p => p.X);
+        double ht = hall.Outline.Min(p => p.Y), hb = hall.Outline.Max(p => p.Y);
+        double pl = bay.Outline.Min(p => p.X), pr = bay.Outline.Max(p => p.X);
+        double pt = bay.Outline.Min(p => p.Y), pb = bay.Outline.Max(p => p.Y);
+        bool horizontal = hr - hl >= hb - ht;
+        List<Point2>? merged = null;
+        if (horizontal && pl >= hl - 1e-5 && pr <= hr + 1e-5)
+        {
+            if (Eq(pb, ht))
+                merged = [new(hl,ht),new(pl,ht),new(pl,pt),new(pr,pt),
+                    new(pr,ht),new(hr,ht),new(hr,hb),new(hl,hb)];
+            else if (Eq(pt, hb))
+                merged = [new(hl,ht),new(hr,ht),new(hr,hb),new(pr,hb),
+                    new(pr,pb),new(pl,pb),new(pl,hb),new(hl,hb)];
+        }
+        else if (!horizontal && pt >= ht - 1e-5 && pb <= hb + 1e-5)
+        {
+            if (Eq(pr, hl))
+                merged = [new(hl,ht),new(hr,ht),new(hr,hb),new(hl,hb),
+                    new(hl,pb),new(pl,pb),new(pl,pt),new(hl,pt)];
+            else if (Eq(pl, hr))
+                merged = [new(hl,ht),new(hr,ht),new(hr,pt),new(pr,pt),
+                    new(pr,pb),new(hr,pb),new(hr,hb),new(hl,hb)];
+        }
+        if (merged is null)
+        {
+            reason = "The stair pocket does not share a valid hallway side.";
+            return false;
+        }
+
+        // Remove straight-line vertices and repeated end points that arise
+        // when the stair bay reaches the end of the hall.
+        bool changed;
+        do
+        {
+            changed = false;
+            for (int i = 0; i < merged.Count && merged.Count > 4; i++)
+            {
+                var a = merged[(i + merged.Count - 1) % merged.Count];
+                var b = merged[i];
+                var d = merged[(i + 1) % merged.Count];
+                double cross = (b.X - a.X) * (d.Y - b.Y) -
+                    (b.Y - a.Y) * (d.X - b.X);
+                if (a.DistanceTo(b) > 1e-5 && Math.Abs(cross) > 1e-5)
+                    continue;
+                merged.RemoveAt(i);
+                changed = true;
+                break;
+            }
+        } while (changed);
+
+        // The former hall/stair-bay door is inside this single open space.
+        // Do not retain a floating door with no wall under it.
+        var oldHall = hall.Outline.ToList();
+        var oldBay = bay.Outline.ToList();
+        static bool On(Point2 point, IReadOnlyList<Point2> outline) =>
+            Enumerable.Range(0, outline.Count).Any(i =>
+                PolygonGeometry.ClosestPointOnSegment(point,
+                    outline[i], outline[(i + 1) % outline.Count])
+                    .DistanceTo(point) < 1e-5);
+        floor.Doors.RemoveAll(d => On(d.Centre, oldHall) &&
+            On(d.Centre, oldBay));
+        hall.Outline = merged;
+        floor.Rooms.Remove(bay);
+        BuildingStoreys.SetFloor(updated, floorIndex, floor);
+        if (BuildingStoreys.Validate(updated, out reason))
+            return true;
+        reason = "Could not convert the enclosed stair bay to open hallway: " + reason;
+        updated = BuildingStoreys.Copy(building);
+        return false;
+    }
+
+    /// <summary>
     /// Choose useful rooms in architectural priority order, not in a random
     /// order which may omit the kitchen or create multiple living rooms.
     /// Repeatable accommodation roles (bedrooms, guest rooms and cells) may
