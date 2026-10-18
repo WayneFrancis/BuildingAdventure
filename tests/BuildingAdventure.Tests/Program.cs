@@ -6341,5 +6341,149 @@ Check("Door swing hit testing follows diagonal door-support walls", () =>
         "A diagonal door's open leaf should be selectable like a straight one.");
 });
 
+Check("example5 oversized L-shaped stair wing becomes compact circulation on both floors", () =>
+{
+    // Reproduces the room/stair/door geometry in example5.json. The
+    // exterior is 11m x 10m rectangular, but each L-shaped hallway
+    // occupies 42 of its 110 square metres. The stair flight lives in
+    // the side wing and cannot fit the earlier straight-spine repair.
+    List<Point2> Box(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    List<Point2> BadHall() =>
+        [new(0,4),new(6,4),new(6,0),new(11,0),
+         new(11,6),new(0,6)];
+    var plan=new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=Box(0,0,11,10),
+        Rooms=
+        [
+            new RoomDefinition {Name="Hallway 1",Type="Hallway",Outline=BadHall()},
+            new RoomDefinition {Name="Kitchen",Type="Kitchen",Outline=Box(0,0,2.5,4)},
+            new RoomDefinition {Name="Dining room",Type="Dining room",Outline=Box(2.5,0,6,4)},
+            new RoomDefinition {Name="Living room",Type="Living room",Outline=Box(0,6,7,10)},
+            new RoomDefinition {Name="Bedroom",Type="Bedroom",Outline=Box(7,6,11,10)}
+        ],
+        Doors=
+        [
+            new DoorDefinition {Centre=new(11,5),Width=0.9},
+            new DoorDefinition {Centre=new(1.25,4),Width=0.9},
+            new DoorDefinition {Centre=new(4.25,4),Width=0.9},
+            new DoorDefinition {Centre=new(3.5,6),Width=0.9},
+            new DoorDefinition {Centre=new(9,6),Width=0.9},
+            new DoorDefinition {Centre=new(2.5,2),Width=0.8}
+        ],
+        Windows=
+        [
+            new WindowDefinition {Centre=new(4,0),Width=1.2},
+            new WindowDefinition {Centre=new(3.5,10),Width=1.2},
+            new WindowDefinition {Centre=new(11,8),Width=1.2}
+        ],
+        UpperFloors=
+        [
+            new StoreyDefinition
+            {
+                Name="First Floor",Perimeter=Box(0,0,11,10),
+                Rooms=
+                [
+                    new RoomDefinition {Name="Hallway 1",Type="Hallway",Outline=BadHall()},
+                    new RoomDefinition {Name="Bedroom",Type="Bedroom",Outline=Box(0,0,2.5,4)},
+                    new RoomDefinition {Name="Study",Type="Study",Outline=Box(2.5,0,6,4)},
+                    new RoomDefinition {Name="Bedroom 2",Type="Bedroom",Outline=Box(0,6,7,10)},
+                    new RoomDefinition {Name="Bedroom 3",Type="Bedroom",Outline=Box(7,6,11,10)}
+                ],
+                Doors=
+                [
+                    new DoorDefinition {Centre=new(1.25,4),Width=0.9},
+                    new DoorDefinition {Centre=new(4.25,4),Width=0.9},
+                    new DoorDefinition {Centre=new(3.5,6),Width=0.9},
+                    new DoorDefinition {Centre=new(9,6),Width=0.9}
+                ],
+                Windows=
+                [
+                    new WindowDefinition {Centre=new(1.25,0),Width=1.2},
+                    new WindowDefinition {Centre=new(4.25,0),Width=1.2},
+                    new WindowDefinition {Centre=new(3.5,10),Width=1.2},
+                    new WindowDefinition {Centre=new(11,8),Width=1.2}
+                ]
+            }
+        ],
+        Staircases=
+        [
+            new StaircaseDefinition
+            {
+                LowerFloorIndex=0,Centre=new(8.5,0.7),Length=2.8,
+                Width=1,RotationDegrees=90,LandingLength=1
+            }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(plan,out var reason),reason);
+    Assert(Math.Abs(PolygonGeometry.Area(plan.Rooms[0].Outline)-42)<1e-6);
+    int fixedLower=RoomLayoutPlanner.ReclaimOversizedGeneratedStairWing(
+        plan,0,Array.Empty<Guid>(),out var lower);
+    Assert(fixedLower==1,"Ground-floor side stair wing should be reclaimed.");
+    int fixedUpper=RoomLayoutPlanner.ReclaimOversizedGeneratedStairWing(
+        lower,1,Array.Empty<Guid>(),out var result);
+    Assert(fixedUpper==1,"Upper side stair wing should be reclaimed.");
+    Assert(BuildingStoreys.Validate(result,out reason),reason);
+    foreach(var index in new[]{0,1})
+    {
+        var floor=BuildingStoreys.GetFloor(result,index);
+        var hall=floor.Rooms.Single(r=>r.Type=="Hallway");
+        Assert(PolygonGeometry.Area(hall.Outline)<34,
+            "The 42m² L hallway must shrink to useful circulation.");
+        Assert(floor.Rooms.Count==6,"Reclaim the spare space as a useful room.");
+        var added=floor.Rooms.Single(r=>r.Type ==
+            (index==0?"Utility":"Bathroom"));
+        Assert(PolygonGeometry.Area(added.Outline)>=7.5);
+        Assert(Math.Abs(floor.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))-110)<0.01,
+            "Every square metre of the 11 x 10m footprint must be accounted for.");
+        foreach(var stair in result.Staircases.Where(s=>
+            s.LowerFloorIndex==index || s.LowerFloorIndex+1==index))
+        {
+            Assert(FloorGeometry.IsWithinPolygon(
+                BuildingStoreys.StairFootprint(stair),hall.Outline));
+            foreach(var landing in BuildingStoreys.StairLandings(stair))
+                Assert(FloorGeometry.IsWithinPolygon(landing,hall.Outline),
+                    "Both stair landings must remain clear.");
+        }
+    }
+    BuildingConnectivity.AddDoors(result,0,out var groundDoor);
+    BuildingConnectivity.AddDoors(groundDoor,1,out var accessible);
+    Assert(BuildingStoreys.Validate(accessible,out reason),reason);
+    for(int index=0;index<=1;index++)
+    {
+        var floor=BuildingStoreys.GetFloor(accessible,index);
+        var added=floor.Rooms.Single(r=>r.Type==
+            (index==0?"Utility":"Bathroom"));
+        var hallway=floor.Rooms.Single(r=>r.Type=="Hallway");
+        bool On(Point2 point,IReadOnlyList<Point2> poly)=>
+            Enumerable.Range(0,poly.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(point,
+                    poly[i],poly[(i+1)%poly.Count]).DistanceTo(point)<1e-5);
+        Assert(floor.Doors.Any(d=>On(d.Centre,added.Outline) &&
+            On(d.Centre,hallway.Outline)),
+            "The reclaimed room needs its own hallway access.");
+        Assert(floor.Windows.Count==(index==0?3:4),
+            "Existing exterior windows must survive reclamation.");
+    }
+    Assert(accessible.Doors.Any(d=>d.Centre.Equals(new Point2(11,5))),
+        "Original street entry must stay where it was.");
+    Assert(plan.Rooms.Count==5 &&
+        Math.Abs(PolygonGeometry.Area(plan.Rooms[0].Outline)-42)<1e-6,
+        "Original example5 must not be edited in place.");
+    Assert(plan.Staircases.Single().Id==accessible.Staircases.Single().Id,
+        "The original flight ID and position must be preserved.");
+
+    int protectedChange=RoomLayoutPlanner.ReclaimOversizedGeneratedStairWing(
+        plan,0,[plan.Rooms[0].Id],out var protectedResult);
+    Assert(protectedChange==0 && protectedResult.Rooms.Count==5,
+        "Never repartition a manually authored hallway.");
+    int again=RoomLayoutPlanner.ReclaimOversizedGeneratedStairWing(
+        result,0,Array.Empty<Guid>(),out var rerun);
+    Assert(again==0 && rerun.Rooms.Count==6,
+        "Once corrected, do not repeatedly subdivide the stair wing.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
