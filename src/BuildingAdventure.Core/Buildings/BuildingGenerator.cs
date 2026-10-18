@@ -283,6 +283,19 @@ public static class BuildingGenerator
                     BuildingConnectivity.AddDoors(result, level, out var accessed);
                     result = accessed;
                 }
+                // Oversized L-shaped stair wings cannot be reduced to a
+                // straight corridor, since their stairs lie in the wing.
+                // Preserve a compact stair cap and approach; turn the
+                // remaining pocket into useful accommodation.
+                int reclaimedStairWing =
+                    RoomLayoutPlanner.ReclaimOversizedGeneratedStairWing(
+                        result, level, Array.Empty<Guid>(), out var wingFixed);
+                result = wingFixed;
+                if (reclaimedStairWing > 0 && options.Doors)
+                {
+                    BuildingConnectivity.AddDoors(result, level, out var withAccess);
+                    result = withAccess;
+                }
                 // Critical final pass: access spurs cannot be validated
                 // until staircase enclosures have been removed and ALL
                 // generated storage partitions are in their final place.
@@ -951,6 +964,17 @@ public static class BuildingGenerator
                     addedDoors += BuildingConnectivity.AddDoors(
                         proposed, index, out var withAccess);
                     proposed = withAccess;
+                }
+                int reclaimedStairWing =
+                    RoomLayoutPlanner.ReclaimOversizedGeneratedStairWing(
+                        proposed, index, protectedRooms, out var withCompactWing);
+                proposed = withCompactWing;
+                addedRooms += reclaimedStairWing;
+                if (reclaimedStairWing > 0 && options.Doors)
+                {
+                    addedDoors += BuildingConnectivity.AddDoors(
+                        proposed, index, out var withWingAccess);
+                    proposed = withWingAccess;
                 }
                 // Storage created by the final consolidation or recovery
                 // pass needs a fresh accessibility check, after doors
