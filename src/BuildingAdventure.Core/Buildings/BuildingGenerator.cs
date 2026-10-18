@@ -338,6 +338,7 @@ public static class BuildingGenerator
         var random = new Random(seed);
         int addedRooms = 0;
         int addedCorridors = 0;
+        int absorbedHallStrips = 0;
         int addedDoors = 0;
         int addedWindows = 0;
         int addedFootprints = 0;
@@ -521,6 +522,12 @@ public static class BuildingGenerator
             if (thisFloorRooms == 0) skippedFloors.Add(index);
             roomsPerFloor.Add($"{BuildingStoreys.FloorLabel(index)}: {thisFloorRooms} room(s)");
             }
+            // In an L wing the perimeter may step in close to one side
+            // of a hallway, leaving a 0.762m strip that cannot be a room.
+            // Make that strip part of the hallway before placing doors.
+            absorbedHallStrips += RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(
+                proposed, index, out var withConnectedHall);
+            proposed = withConnectedHall;
             if (options.Doors)
             {
                 addedDoors += BuildingConnectivity.AddDoors(
@@ -555,7 +562,7 @@ public static class BuildingGenerator
 
         if (addedRooms == 0 && addedCorridors == 0 &&
             addedDoors == 0 && addedWindows == 0 && addedStairs == 0 &&
-            addedChimneys == 0)
+            addedChimneys == 0 && absorbedHallStrips == 0)
         {
             bool roomOnly = options.Rooms && !options.Corridors &&
                 !options.Doors && !options.Windows && !options.Stairs && !options.Fireplaces;
@@ -583,6 +590,7 @@ public static class BuildingGenerator
         string floorSummary = string.Join(", ", indices.Select(BuildingStoreys.FloorLabel));
         string description = $"Seed {seed}: {addedFootprints} new perimeter(s), " +
             $"{addedRooms} room(s), {addedCorridors} corridor(s), " +
+            $"{absorbedHallStrips} connected hallway gap(s), " +
             $"{addedDoors} door(s), {addedWindows} window(s), " +
             $"{addedStairs} stair flight(s) across {floorSummary}. " +
             (options.Doors && roomsWithoutDoors > 0 ?
