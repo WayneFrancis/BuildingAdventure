@@ -113,9 +113,13 @@ public static class BuildingGenerator
                 Enumerable.Range(0, floorCount).ToArray(), out var withStairs);
             result = withStairs;
         }
-        int chimneys = options.Fireplaces &&
-            BuildingConnectivity.TryAddChimney(result, out var withChimney) ? 1 : 0;
-        if (chimneys > 0) result = withChimney;
+        int chimneys = 0;
+        if (options.Fireplaces &&
+            BuildingConnectivity.TryAddChimney(result, out var withChimney))
+        {
+            result = withChimney;
+            chimneys = 1;
+        }
         string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
             $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms, " +
             $"{result.UpperFloors.Sum(f => f.Doors.Count) + result.Doors.Count} doors, " +
