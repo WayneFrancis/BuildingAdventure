@@ -892,8 +892,11 @@ public sealed class FloorPlanSurface : FrameworkElement
                         .Contains(r.Type, StringComparer.OrdinalIgnoreCase) &&
                     PolygonGeometry.ContainsPoint(r.Outline, chimney.Centre));
             bool hearthHere = linkedHearth || legacyHearth;
-            DrawText(dc, hearthHere ? "FIREPLACE" : "FLUE",
-                new Point(centre.X + 7, centre.Y - 14), 10, Brushes.Maroon);
+            // Keep the symbol INSIDE its footprint. Long labels could
+            // extend into the adjacent exterior window even with valid
+            // physical clearance between the fireplace and glazing.
+            DrawText(dc, hearthHere ? "FP" : "FL",
+                new Point(centre.X - 6, centre.Y - 6), 9, Brushes.White);
 
             // A shared wall has two fireplace faces, but only one vertical
             // flue. The other face is never drawn on an upstairs bedroom.
@@ -905,8 +908,8 @@ public sealed class FloorPlanSurface : FrameworkElement
                     new Pen(Brushes.Firebrick, 2),
                     BuildGeometry(BuildingStoreys.ChimneyFootprint(other), true));
                 Point otherAt = ToScreen(other.Centre);
-                DrawText(dc, "KITCHEN / SHARED HEARTH",
-                    new Point(otherAt.X + 6, otherAt.Y + 12), 9, Brushes.Maroon);
+                DrawText(dc, "FP",
+                    new Point(otherAt.X - 6, otherAt.Y - 6), 9, Brushes.White);
             }
         }
 
