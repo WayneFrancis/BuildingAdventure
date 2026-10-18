@@ -365,13 +365,13 @@ public static class BuildingGenerator
                         result, level, Array.Empty<Guid>(),
                         out var withUsableApproach))
                         result = withUsableApproach;
-                    // Restore real pedestrian access to the upstairs
-                    // head of a wall-side flight, then allocate narrow
-                    // wedges along notched exterior walls to the rooms.
-                    SteppedLayoutFinisher.Refine(result, level,
-                        Array.Empty<Guid>(), out var withFinishedEdges);
-                    result = withFinishedEdges;
                 }
+                // This geometry correction is independent of the door
+                // toggle: a room-only suggestion must not leave an
+                // unassigned strip or inaccessible stairhead either.
+                SteppedLayoutFinisher.Refine(result, level,
+                    Array.Empty<Guid>(), out var withFinishedEdges);
+                result = withFinishedEdges;
             }
         }
 
@@ -1102,11 +1102,11 @@ public static class BuildingGenerator
                         proposed, index, protectedRooms,
                         out var withUsableApproach))
                         proposed = withUsableApproach;
-                    SteppedLayoutFinisher.Refine(
-                        proposed, index, protectedRooms,
-                        out var withFinishedEdges);
-                    proposed = withFinishedEdges;
                 }
+                SteppedLayoutFinisher.Refine(
+                    proposed, index, protectedRooms,
+                    out var withFinishedEdges);
+                proposed = withFinishedEdges;
             }
         }
 
