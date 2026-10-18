@@ -246,7 +246,6 @@ public partial class MainWindow : Window
             GenerateStairs = GenerateStairsCheckBox.IsChecked == true,
             GenerateFireplaces = GenerateFireplacesCheckBox.IsChecked == true,
             HallHouseLayout = HallHouseLayoutCheckBox.IsChecked == true,
-        CompactRpgHouseLayout = CompactRpgHouseCheckBox.IsChecked == true,
             CompactRpgHouseLayout = CompactRpgHouseCheckBox.IsChecked == true,
             GeneratorPurposeIndex = Math.Max(0, GeneratorPurposeBox.SelectedIndex),
             MapModeIndex = Math.Max(0, MapModeBox.SelectedIndex),
