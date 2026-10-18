@@ -276,18 +276,19 @@ public static class BuildingConnectivity
                      s.LowerFloorIndex + 1 == floorIndex) &&
                     s.Centre.DistanceTo(location) < 2.3))
                     continue;
+                var proposedWindow = new WindowDefinition
+                {
+                    Centre = location, Width = Math.Min(1.2, wall.Length - 0.4)
+                };
+                var current = updated;
                 if (chimneyStacks.Any(ch =>
-                    FloorGeometry.IsWithinPolygon(
-                        BuildingStoreys.ChimneyFootprint(ch), floor.Perimeter) &&
-                    ch.Centre.DistanceTo(location) < 1.5))
+                    BuildingStoreys.WindowConflictsWithChimney(
+                        current, floorIndex, proposedWindow, ch)))
                     continue;
 
                 var trial = BuildingStoreys.Copy(updated);
                 var next = BuildingStoreys.GetFloor(trial, floorIndex);
-                next.Windows.Add(new WindowDefinition
-                {
-                    Centre = location, Width = Math.Min(1.2, wall.Length - 0.4)
-                });
+                next.Windows.Add(proposedWindow);
                 BuildingStoreys.SetFloor(trial, floorIndex, next);
                 if (!BuildingStoreys.Validate(trial, out _)) continue;
                 updated = trial;
