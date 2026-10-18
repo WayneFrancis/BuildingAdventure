@@ -212,6 +212,10 @@ public static class BuildingGenerator
         {
             foreach (int floorIndex in BuildingStoreys.FloorIndexes(result))
             {
+                // The established upper-floor layout mode may contain
+                // interconnected private suites. This guard currently
+                // targets the ground-level service-band defect.
+                if (floorIndex != 0) continue;
                 var isolated = BuildingConnectivity.RoomsIsolatedByServiceSpaces(
                     result, floorIndex);
                 if (isolated.Count == 0) continue;
@@ -833,6 +837,7 @@ public static class BuildingGenerator
         {
             foreach (int index in indices)
             {
+                if (index != 0) continue;
                 var level = BuildingStoreys.GetFloor(proposed, index);
                 if (level.Rooms.Any(r => r.Type == "Stairwell")) continue;
                 var originalIds = BuildingStoreys.GetFloor(original, index)
