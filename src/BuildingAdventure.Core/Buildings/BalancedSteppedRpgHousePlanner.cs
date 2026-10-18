@@ -241,11 +241,27 @@ public static class BalancedSteppedRpgHousePlanner
                     PolygonGeometry.ClosestPointOnSegment(p,
                         poly[i],poly[(i+1)%poly.Count])
                         .DistanceTo(p)<Eps);
-            if(floor.Rooms.Where(r=>r.Type!="Hallway").Any(room=>
-                !floor.Doors.Any(d=>
+            // The pantry should be a purposeful service room off
+            // the kitchen; it need not consume a second door directly
+            // into the hall. All other rooms (especially bedrooms)
+            // require independent hall access, not through another
+            // bedroom or a bathroom.
+            foreach(var room in floor.Rooms.Where(r=>r.Type!="Hallway"))
+            {
+                bool fromHall=floor.Doors.Any(d=>
                     On(d.Centre,hall.Outline) &&
-                    On(d.Centre,room.Outline))))
-                return false;
+                    On(d.Centre,room.Outline));
+                bool fromKitchen=room.Type=="Pantry" &&
+                    floor.Doors.Any(d=>On(d.Centre,room.Outline) &&
+                        floor.Rooms.Any(other=>other.Type=="Kitchen" &&
+                            On(d.Centre,other.Outline)));
+                if(!fromHall && !fromKitchen)
+                {
+                    reason=$"Floor {index} {room.Name} has no valid " +
+                        "hallway or kitchen entrance.";
+                    return false;
+                }
+            }
             if(index==0 && !floor.Rooms.Any(r=>r.Type=="Kitchen"))
                 return false;
             double covered=floor.Rooms.Sum(r=>
