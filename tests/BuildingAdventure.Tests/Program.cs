@@ -4176,5 +4176,80 @@ Check("Three-floor plans keep windows away from staircase flights", () =>
     Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
 });
 
+Check("Imperial-room frontage ends exactly at exterior walls, without half-metre gaps", () =>
+{
+    foreach (double w in new[] { 10.668, 12.192 })
+    {
+        double h = 8.636;
+        var doc = new BuildingDocument
+        {
+            GridFeet = 5,
+            Perimeter = [new(0,0), new(w,0), new(w,h), new(0,h)]
+        };
+        Assert(BuildingConnectivity.TryAddCorridor(doc, 0,
+            out var withHall, out var hallId));
+        int count = RoomLayoutPlanner.FillHallFrontage(withHall, 0, hallId,
+            BuildingUse.Residence, new Random(73), out var divided);
+        Assert(count > 0);
+        Assert(divided.Rooms.Any(r => r.Type != "Hallway" &&
+            r.Outline.Any(p => Math.Abs(p.Y - h) < 1e-6)),
+            "A room must reach the exact lower exterior wall.");
+        Assert(divided.Rooms.Any(r => r.Type != "Hallway" &&
+            r.Outline.Any(p => Math.Abs(p.Y) < 1e-6)),
+            "A room must reach the exact upper exterior wall.");
+        Assert(BuildingStoreys.Validate(divided, out var reason), reason);
+    }
+});
+
+Check("Medieval footprint profiles distinguish cottages from inns and can create L-wings", () =>
+{
+    double meanResidence = Enumerable.Range(1, 20).Average(seed =>
+        PolygonGeometry.Area(BuildingGenerator.MedievalFootprint(
+            BuildingUse.Residence, 1, 0, new Random(seed))));
+    double meanInn = Enumerable.Range(1, 20).Average(seed =>
+        PolygonGeometry.Area(BuildingGenerator.MedievalFootprint(
+            BuildingUse.Inn, 2, 0, new Random(seed))));
+    Assert(meanResidence < meanInn,
+        "A medieval cottage shouldn't have the same footprint as an inn.");
+    Assert(meanResidence >= 40 && meanResidence < 110);
+    Assert(meanInn >= 90);
+    Assert(Enumerable.Range(1, 150).Any(seed =>
+        BuildingGenerator.MedievalFootprint(BuildingUse.Inn, 2, 5,
+            new Random(seed)).Count == 6),
+        "Nonrectangular L-shaped wings should be produced sometimes.");
+    foreach (int feet in new[] { 5, 10 })
+    foreach (int seed in new[] { 7, 18, 53 })
+    {
+        double step = feet * 0.3048;
+        var shape = BuildingGenerator.MedievalFootprint(
+            BuildingUse.Mixed, 2, feet, new Random(seed));
+        Assert(PolygonGeometry.IsValidOutline(shape, out _));
+        Assert(shape.All(p =>
+            Math.Abs(p.X / step - Math.Round(p.X / step)) < 1e-7 &&
+            Math.Abs(p.Y / step - Math.Round(p.Y / step)) < 1e-7));
+    }
+});
+
+Check("Generated hearth in a furnished residence is not placed inside its hallway", () =>
+{
+    var options = new GenerationOptions
+    {
+        Rooms = true, Corridors = true, Doors = true, Fireplaces = true
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(1, 1834, options,
+        out var draft, out var reason), reason);
+    foreach (var chimney in draft.Building.Chimneys)
+    {
+        var floor = BuildingStoreys.GetFloor(draft.Building, 0);
+        Assert(!floor.Rooms.Any(r =>
+            r.Type == "Hallway" &&
+            PolygonGeometry.ContainsPoint(r.Outline, chimney.Centre)));
+        Assert(floor.Rooms.Any(r => r.Type != "Hallway" &&
+            PolygonGeometry.ContainsPoint(r.Outline, chimney.Centre)),
+            "The hearth should be positioned within a living or cooking room.");
+    }
+    Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
