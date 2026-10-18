@@ -2742,11 +2742,11 @@ public sealed class FloorPlanSurface : FrameworkElement
         // exact. Shift continues to bypass snapping.
         if (SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         {
-            IReadOnlyList<Point2> vertices = exterior
+            IReadOnlyList<Point2> wallVertices = exterior
                 ? _outline : _rooms.First(r => r.Id == roomId).Outline;
             point = PolygonGeometry.ClosestPointOnSegment(
-                SnapToGridPoint(point), vertices[edge],
-                vertices[(edge + 1) % vertices.Count]);
+                SnapToGridPoint(point), wallVertices[edge],
+                wallVertices[(edge + 1) % wallVertices.Count]);
         }
 
         var previous = Snapshot();
