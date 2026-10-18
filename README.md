@@ -4,6 +4,48 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.32 — Historically informed service rooms and independent access (development)
+
+The uploaded `example2(1).json` exposed a circulation problem: two shallow
+storerooms separated a ground-floor dining room and bedroom from the hallway,
+and the only doors into those rooms went **through** the stores. Storing
+supplies in a bedroom's sole access route is a poor default, even though
+the floor geometry is technically valid.
+
+- **No compulsory walk-through storerooms:** when a new rectangular shallow
+  store is the only intervening room between a main hallway and a substantive
+  living, dining or sleeping room, the generator can reclaim a 1.3 m-wide
+  edge strip from that store and merge it into the hallway as a short
+  access spur. Both the main room and storage room can then receive
+  their own access door without crossing the other.
+- **Service-room access preference:** prioritize a direct door from the
+  kitchen, workshop, brewery or scullery if adjoining; otherwise prefer
+  the hallway. Avoid bedroom access for general stores unless no other
+  valid connection is possible. Adding a kitchen/service connection
+  must not create an unnecessary second door in a store that already
+  has a usable entrance.
+- **Keep useful storage:** service rooms at least 8 m² and 1.6 m wide
+  are not indiscriminately absorbed into an L-shaped bedroom or dining
+  room. Very small generated fragments can still be merged.
+- **Non-destructive:** the generator changes only newly proposed
+  storage-room/hallway geometry and validates every attempt against
+  walls, doors, stairs, landings, and all floors. Previously authored
+  geometry remains untouched.
+- **New regressions:** recreate the precise stepped ground and upper
+  footprints and stacked stair from `example2(1).json`; verify
+  direct hallway access for dining and bedroom, one storeroom door per
+  store, preserved staircase, and single-door access from an adjoining
+  kitchen in another scenario.
+
+Historic design references: English medieval hall houses often grouped
+pantry and buttery at the service end of a hall, reached via a short
+screens passage, with family rooms at the more private end.
+This inspires sensible adjacency choices rather than imposing one
+universal plan on all medieval buildings:
+- [Historic England: Tyneham medieval manor house service bay](https://historicengland.org.uk/listing/the-list/list-entry/1491507)
+- [BBC History: The Great Hall and its screens passage](https://bbc.com.im/history/british/middle_ages/great_hall_01.shtml)
+- [Sarah Pearson, *The Provision of Services in Medieval Houses in Kent* (2012)](https://doi.org/10.1179/0305547712Z.0000000004) cautions that service layouts were more varied than the familiar buttery/pantry stereotype.
+
 ## v0.31 — Entrance storage rooms rather than oversized hallways (development)
 
 The user's `example2.json` is a two-storey stepped residence with an
