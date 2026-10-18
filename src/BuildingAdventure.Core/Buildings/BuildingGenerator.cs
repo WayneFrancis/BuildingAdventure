@@ -131,6 +131,53 @@ public static class BuildingGenerator
     }
 
     /// <summary>
+    /// English/Welsh vernacular-inspired size bands, NOT modern house
+    /// dimensions. A single-storey cottage differs substantially from a
+    /// prosperous multi-storey residence, an inn, or a trading workshop.
+    /// Some footprints include a modest wing instead of a rectangle.
+    /// Internal layouts and fireplace placement are handled separately.
+    /// </summary>
+    public static List<Point2> MedievalFootprint(BuildingUse use,
+        int floors, int gridFeet, Random random)
+    {
+        (double lowW, double highW, double lowD, double highD) = use switch
+        {
+            BuildingUse.Residence when floors == 1 => (7, 10, 6, 9),
+            BuildingUse.Residence => (8.5, 11.5, 8, 11),
+            BuildingUse.Inn => (12, 18, 9, 13),
+            BuildingUse.Shop => (6.5, 10, 8, 12),
+            BuildingUse.Dungeon => (11, 19, 9, 15),
+            _ => (9, 15, 8, 12)
+        };
+
+        // The wall generator uses metres internally. For imperial maps
+        // *all* external vertices snap to exact 5/10-foot squares.
+        double cell = gridFeet is 5 or 10 ? gridFeet * 0.3048 : 0.5;
+        double width = Math.Max(cell * 2,
+            Math.Round((lowW + random.NextDouble() * (highW - lowW)) / cell) * cell);
+        double depth = Math.Max(cell * 2,
+            Math.Round((lowD + random.NextDouble() * (highD - lowD)) / cell) * cell);
+
+        // Optional rear-side wing; its low end does not overlap the
+        // central corridor. Modest residences mostly remain rectangular.
+        bool wing = (use != BuildingUse.Residence || floors > 1) &&
+            random.Next(4) == 0 && width >= 7 * cell && depth >= 5 * cell;
+        if (!wing)
+            return [new(0, 0), new(width, 0), new(width, depth), new(0, depth)];
+
+        double wingWidth = gridFeet == 10 ? cell :
+            Math.Max(cell, Math.Round(2.0 / cell) * cell);
+        double wingStart = Math.Round(depth * 0.6 / cell) * cell;
+        wingStart = Math.Clamp(wingStart, 2 * cell, depth - 2 * cell);
+        return
+        [
+            new(0, 0), new(width, 0),
+            new(width, wingStart), new(width + wingWidth, wingStart),
+            new(width + wingWidth, depth), new(0, depth)
+        ];
+    }
+
+    /// <summary>
     /// Accept precisely one room from a detached suggestion on one floor.
     /// Other suggested rooms and all other floors remain untouched.
     /// If the target floor has no perimeter, carry over its suggested
@@ -220,27 +267,8 @@ public static class BuildingGenerator
             {
                 // First-draft building generation: start with a usable
                 // rectangular outline, then subdivide it into rooms.
-                double width, depth;
-                if (proposed.GridFeet is 5 or 10)
-                {
-                    double cell = proposed.GridFeet * 0.3048;
-                    // The exterior footprint lands on exact tabletop
-                    // squares; interior subdivisions may still be metric.
-                    width = random.Next(proposed.GridFeet == 5 ? 7 : 5,
-                        proposed.GridFeet == 5 ? 12 : 9) * cell;
-                    depth = random.Next(proposed.GridFeet == 5 ? 6 : 4,
-                        proposed.GridFeet == 5 ? 10 : 7) * cell;
-                }
-                else
-                {
-                    width = random.Next(22, 37) * 0.5;
-                    depth = random.Next(16, 29) * 0.5;
-                }
-                floor.Perimeter =
-                [
-                    new Point2(0, 0), new Point2(width, 0),
-                    new Point2(width, depth), new Point2(0, depth)
-                ];
+                floor.Perimeter = MedievalFootprint(options.Purpose, floors,
+                    proposed.GridFeet, random);
                 BuildingStoreys.SetFloor(proposed, index, floor);
                 if (!BuildingStoreys.Validate(proposed, out reason))
                 {
