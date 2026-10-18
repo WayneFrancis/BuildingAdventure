@@ -4,6 +4,30 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.30 — Recover useful rooms from oversized hallways (development)
+
+The uploaded `example(1).json` showed a 50.2 m² ground-floor hallway in an
+88.3 m² house (56.8%). Its complete area was technically assigned, but
+long merged `Passage` regions had swallowed much of the usable building.
+
+- **Keep the circulation spine compact.** On generated orthogonal floors,
+  a hallway exceeding both 28 m² and 36% of the usable floor may be
+  repartitioned into a continuous 2 m-wide corridor and useful adjoining
+  rooms. Existing external outlines, hand-drawn rooms, stairs and their
+  1 m landings remain protected. Imperial coordinates are preserved exactly.
+- **Recover narrow service wings.** An elongated 2 m-deep region is divided
+  into realistic utility-sized rooms instead of becoming another long passage.
+  New rooms receive interior doors when door generation is enabled.
+- **Wall-hugging stairs.** Generated flights now meet a common hallway
+  wall instead of floating 15 cm away from it, while retaining a walking
+  lane on the other side. The generator avoids creating doors over a flight
+  or its end landings.
+- **Applies to checked-floor and whole-building generation.** Hand-drawn
+  and pre-existing hallways are never automatically resized.
+- **Regression:** recreates the uploaded two-storey stepped footprint and
+  overlarge 50.2 m² hall; tests reclaiming three rooms, staircase and
+  upper-floor preservation, and the staircase's shared-wall alignment.
+
 ## v0.29 — Universal selection, fireplace deletion and L-shaped generated rooms (development)
 
 The example `example.json` shows a deliberately hand-shaped six-vertex
