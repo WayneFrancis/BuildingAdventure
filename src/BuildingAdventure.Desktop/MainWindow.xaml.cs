@@ -84,6 +84,7 @@ public partial class MainWindow : Window
         EditorSurface.SetTool(EditorTool.DrawPerimeter);
         RebuildFloorPicker();
         EditorSurface.SetStairOverlay(_building.Staircases, 0);
+        EditorSurface.SetChimneyOverlay(_building.Chimneys);
         UpdateAlignmentReferences();
         GridScaleBox.SelectedIndex = _building.GridFeet == 10 ? 2 : _building.GridFeet == 5 ? 1 : 0;
         _lastSavedJson = CurrentJson();
@@ -175,6 +176,7 @@ public partial class MainWindow : Window
             GenerateDoorsCheckBox.IsChecked = saved.GenerateDoors;
             GenerateWindowsCheckBox.IsChecked = saved.GenerateWindows;
             GenerateStairsCheckBox.IsChecked = saved.GenerateStairs;
+            GenerateFireplacesCheckBox.IsChecked = saved.GenerateFireplaces;
             GeneratorPurposeBox.SelectedIndex =
                 Math.Clamp(saved.GeneratorPurposeIndex, 0, 4);
             MapModeBox.SelectedIndex = Math.Clamp(saved.MapModeIndex, 0, 2);
@@ -222,6 +224,7 @@ public partial class MainWindow : Window
             GenerateDoors = GenerateDoorsCheckBox.IsChecked == true,
             GenerateWindows = GenerateWindowsCheckBox.IsChecked == true,
             GenerateStairs = GenerateStairsCheckBox.IsChecked == true,
+            GenerateFireplaces = GenerateFireplacesCheckBox.IsChecked == true,
             GeneratorPurposeIndex = Math.Max(0, GeneratorPurposeBox.SelectedIndex),
             MapModeIndex = Math.Max(0, MapModeBox.SelectedIndex),
             ReferenceOpacity = AlignmentOpacitySlider.Value
@@ -600,6 +603,7 @@ public partial class MainWindow : Window
         Doors = GenerateDoorsCheckBox.IsChecked == true,
         Windows = GenerateWindowsCheckBox.IsChecked == true,
         Stairs = GenerateStairsCheckBox.IsChecked == true,
+        Fireplaces = GenerateFireplacesCheckBox.IsChecked == true,
         Purpose = Math.Clamp(GeneratorPurposeBox.SelectedIndex, 0, 4) switch
         {
             1 => BuildingUse.Inn,
@@ -801,6 +805,7 @@ public partial class MainWindow : Window
         WholeBuildingPreviewSurface.LoadDocument(
             BuildingStoreys.GetFloor(proposal, floorIndex));
         WholeBuildingPreviewSurface.SetStairOverlay(proposal.Staircases, floorIndex);
+        WholeBuildingPreviewSurface.SetChimneyOverlay(proposal.Chimneys);
         WholeBuildingPreviewSurface.SetSuggestionPreview(null);
         WholeBuildingPreviewSurface.SetFloorReferences([], 0);
         WholeBuildingPreviewSurface.SetFloorSilhouettes([]);
@@ -1083,6 +1088,7 @@ public partial class MainWindow : Window
         UpdateSuggestionPreview();
         LoadWallThicknessControls();
         EditorSurface.SetStairOverlay(_building.Staircases, index);
+        EditorSurface.SetChimneyOverlay(_building.Chimneys);
         UpdateAlignmentReferences();
         EditorSurface.SetTool(EditorTool.Select);
         FloorPicker.SelectedIndex =
