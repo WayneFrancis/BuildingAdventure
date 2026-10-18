@@ -4443,5 +4443,53 @@ Check("A shared kitchen-living hearth serves two rooms but not the upstairs bedr
     Assert(BuildingStoreys.Validate(restored, out reason), reason);
 });
 
+Check("Upper bedrooms follow compatible kitchen-living partition locations", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(12,0),new(12,8),new(0,8)],
+        Rooms =
+        [
+            new RoomDefinition { Type = "Hallway", Name = "Hallway",
+                Outline = [new(0,3),new(12,3),new(12,5),new(0,5)] },
+            new RoomDefinition { Type = "Living room", Name = "Living room",
+                Outline = [new(0,0),new(7,0),new(7,3),new(0,3)] },
+            new RoomDefinition { Type = "Kitchen", Name = "Kitchen",
+                Outline = [new(7,0),new(12,0),new(12,3),new(7,3)] }
+        ]
+    };
+    Assert(BuildingStoreys.TryAddFloor(building, out var two, out var reason), reason);
+    var upstairs = BuildingStoreys.GetFloor(two, 1);
+    var hallway = building.Rooms.First(r => r.Type == "Hallway").Copy();
+    upstairs.Rooms.Add(hallway);
+    BuildingStoreys.SetFloor(two, 1, upstairs);
+    Assert(RoomLayoutPlanner.FillHallFrontage(two, 1, hallway.Id,
+        BuildingUse.Residence, new Random(44), out var result) > 0);
+    var rooms = BuildingStoreys.GetFloor(result, 1).Rooms;
+    Assert(rooms.Any(r => r.Type != "Hallway" &&
+        r.Outline.Any(p => Math.Abs(p.X - 7) < 1e-6)),
+        "An upper partition should align with the 7m kitchen/living wall below.");
+    Assert(BuildingStoreys.Validate(result, out reason), reason);
+});
+
+Check("Dining and pantry room roles are favoured beside a kitchen wall", () =>
+{
+    var kitchen = new RoomDefinition { Type = "Kitchen", Name = "Kitchen",
+        Outline = [new(0,0),new(4,0),new(4,4),new(0,4)] };
+    var candidate = new List<Point2> { new(4,0),new(7,0),new(7,4),new(4,4) };
+    var dining = RoomLayoutPlanner.ChooseRoomTypeForOutline(
+        BuildingUse.Residence, 0, 12, [kitchen], candidate, new Random(23));
+    Assert(dining == "Dining room", "Dining should be a preferred kitchen neighbour.");
+    var withDining = new List<RoomDefinition>
+    {
+        kitchen,
+        new RoomDefinition { Type = "Dining room", Name = "Dining room",
+            Outline = [new(0,4),new(4,4),new(4,7),new(0,7)] }
+    };
+    var pantry = RoomLayoutPlanner.ChooseRoomTypeForOutline(
+        BuildingUse.Residence, 0, 8, withDining, candidate, new Random(23));
+    Assert(pantry == "Pantry", "A compact storage space can adjoin the kitchen.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
