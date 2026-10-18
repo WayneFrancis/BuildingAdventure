@@ -261,6 +261,21 @@ public static class BuildingConnectivity
                     wall.A.Y + (wall.B.Y - wall.A.Y) * t);
                 if (floor.Doors.Any(d => d.Centre.DistanceTo(centre) < 0.5))
                     continue;
+                // Stair reservations are placed before interior doors.
+                // A doorway touching a flight or landing would otherwise
+                // make the room nominally accessible but unusable.
+                if (working.Staircases.Any(stair =>
+                    (stair.LowerFloorIndex == floorIndex ||
+                     stair.LowerFloorIndex + 1 == floorIndex) &&
+                    new[] { BuildingStoreys.StairFootprint(stair) }
+                        .Concat(BuildingStoreys.StairLandings(stair))
+                        .Any(shape => PolygonGeometry.ContainsPoint(shape, centre) ||
+                            Enumerable.Range(0, shape.Count).Any(i =>
+                                PolygonGeometry.ClosestPointOnSegment(
+                                    centre, shape[i],
+                                    shape[(i + 1) % shape.Count])
+                                    .DistanceTo(centre) < width / 2 + 0.1))))
+                    continue;
                 var trial = BuildingStoreys.Copy(working);
                 var edited = BuildingStoreys.GetFloor(trial, floorIndex);
                 edited.Doors.Add(new DoorDefinition { Centre = centre, Width = width });
@@ -885,9 +900,10 @@ public static class BuildingConnectivity
         const double run = 2.8;
         const double landing = 1.0;
         const double stairWidth = 0.9;
-        const double margin = 0.15;
-        // This leaves at least 0.8 metres clear along the opposite side
-        // of an ordinary 2-metre corridor. Do not block its full width.
+        const double margin = 0.0;
+        // The flight's outside edge must meet the hallway wall rather than
+        // floating 15 cm off it. A 2m corridor still leaves 1.1m alongside
+        // the 0.9m run (provided its landings fit).
         if (width - stairWidth - margin < 0.8) yield break;
         double axisStart = horizontal ? x0 : y0;
         double axisEnd = horizontal ? x1 : y1;
@@ -907,8 +923,10 @@ public static class BuildingConnectivity
                 axis + halfTotal > axisEnd - 0.10) continue;
             foreach (double cross in new[]
             {
-                crossStart + stairWidth / 2 + margin,
-                crossEnd - stairWidth / 2 - margin
+                // Prefer the room-facing side, usually a continuous shared
+                // wall on BOTH levels of a stepped residential footprint.
+                crossEnd - stairWidth / 2 - margin,
+                crossStart + stairWidth / 2 + margin
             })
                 yield return new StaircaseDefinition
                 {
