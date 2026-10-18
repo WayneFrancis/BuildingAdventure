@@ -122,7 +122,7 @@ public static class BuildingGenerator
             if(BuildingStoreys.Validate(balanced,out reason))
             {
                 suggestion=new BuildingSuggestion(balanced,seed,[0,1],
-                    $"{(balanced.Rooms.Any(r=>r.Name==\"Short entry passage\") ? "Side-landing" : "Balanced")} L-shaped RPG house. Seed {seed}: "+
+                    $"{(balanced.Rooms.Any(r=>r.Name=="Short entry passage") ? "Side-landing" : "Balanced")} L-shaped RPG house. Seed {seed}: "+
                     "staircase in the ground living area, "+
                     $"independent upstairs room zoning, {hearths} hearth(s)");
                 return true;
@@ -703,7 +703,7 @@ public static class BuildingGenerator
             if(BuildingStoreys.Validate(balanced,out reason))
             {
                 suggestion=new BuildingSuggestion(balanced,seed,indices,
-                    $"{(balanced.Rooms.Any(r=>r.Name==\"Short entry passage\") ? "Side-landing" : "Balanced")} L-shaped RPG house. Seed {seed}: "+
+                    $"{(balanced.Rooms.Any(r=>r.Name=="Short entry passage") ? "Side-landing" : "Balanced")} L-shaped RPG house. Seed {seed}: "+
                     "kitchen, dining, independent upstairs partitions, "+
                     $"three proportionate bedrooms, {hearths} new hearth(s)");
                 return true;
