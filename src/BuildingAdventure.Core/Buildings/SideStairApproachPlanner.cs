@@ -150,7 +150,10 @@ public static class SideStairApproachPlanner
             // Example7's Study begins at v=6.5; a passage ending at
             // 7.5m would leave a short shared wall. Allow 1.8m here.
             double crossEnd=roomTop+1.8;
-            if (crossEnd>depth-2.5 || crossEnd>minFlightV+1.25)
+            // The lower stair landing intentionally overlaps the
+            // cross-passage: that is how visitors approach the foot
+            // directly, without squeezing alongside the treads.
+            if (crossEnd>depth-2.5)
                 continue;
             // The arrival landing needs to be reached from the bar.
             // The bar and the narrow stair aisle must overlap along
