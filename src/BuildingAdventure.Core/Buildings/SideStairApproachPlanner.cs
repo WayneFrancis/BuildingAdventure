@@ -199,9 +199,22 @@ public static class SideStairApproachPlanner
             // the replacement service room. Keep every valid door (in
             // particular the outside entrance) and regenerate ONLY
             // those whose old supporting wall has disappeared.
+            static bool OnPartition(Point2 p,IReadOnlyList<Point2> outline)=>
+                Enumerable.Range(0,outline.Count).Any(i=>
+                    PolygonGeometry.ClosestPointOnSegment(p,
+                        outline[i],outline[(i+1)%outline.Count])
+                        .DistanceTo(p)<Epsilon);
             var walls=FloorGeometry.BuildWalls(edited.Perimeter,edited.Rooms);
             edited.Doors.RemoveAll(d=>
-                !FloorGeometry.TryFindDoorWall(d,walls,out _));
+                !FloorGeometry.TryFindDoorWall(d,walls,out _) ||
+                // A former Study-to-Hall door can become a valid
+                // Study-to-Bathroom door on the new partition.
+                // Rebuild it: a geometrically valid door is not
+                // necessarily the same connection as before.
+                OnPartition(d.Centre,hall.Outline) &&
+                    !OnPartition(d.Centre,newHall) ||
+                OnPartition(d.Centre,service.Outline) &&
+                    !OnPartition(d.Centre,newService));
             BuildingStoreys.SetFloor(draft,floorIndex,edited);
             if (!BuildingStoreys.Validate(draft,out var draftFailure))
             {
