@@ -307,6 +307,7 @@ public static class BuildingConnectivity
         out BuildingDocument updated, BuildingUse use = BuildingUse.Residence)
     {
         updated = BuildingStoreys.Copy(building);
+        var working = updated;
         if (updated.Chimneys.Count > 0) return false;
         int ground = BuildingStoreys.HasFloor(building, 0)
             ? 0 : BuildingStoreys.LowestFloorIndex(building);
@@ -354,7 +355,7 @@ public static class BuildingConnectivity
                     continue;
                 pair.OtherHearthCentre = secondary;
                 pair.HearthRoomIds.Add(living.Id);
-                if (TryCommit(pair)) return true;
+                if (TryCommit(pair)) { updated = working; return true; }
             }
         }
 
@@ -387,7 +388,7 @@ public static class BuildingConnectivity
         {
             var candidate = TryHearth(wall, t, sign, room);
             if (candidate is not null && TryCommit(candidate))
-                return true;
+            { updated = working; return true; }
         }
         return false;
 
@@ -436,7 +437,7 @@ public static class BuildingConnectivity
             var trial = BuildingStoreys.Copy(building);
             trial.Chimneys.Add(chimney);
             if (!BuildingStoreys.Validate(trial, out _)) return false;
-            updated = trial;
+            working = trial;
             return true;
         }
     }
