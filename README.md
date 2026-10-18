@@ -4,6 +4,34 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.27 — Shared staircase planning for unequal empty storeys (development)
+
+Previously, **Suggest on checked floors** placed an independently centred
+hallway on each unallocated storey, then tried to install a staircase.
+Even small first-floor perimeter reductions could shift the two hallways
+apart, leaving no common passage wide/long enough for a 2.8m stair
+flight and 1m landings, despite abundant empty floor area. Generation
+would fail with a misleading request to regenerate the same empty floors.
+
+The generator now jointly lays out both empty adjoining storeys:
+- Computes their common overlapping footprint, searches aligned
+  two-metre corridor bands in both orientations, with several offsets,
+  and tests each hall against its own actual exterior outline.
+- Where possible, extends each floor's hallway along that floor's own
+  full length, so an inset first floor need not shrink the ground-floor
+  corridor. It also tries a common-length fallback on irregular plans.
+- Places a real staircase and validates its entire flight, two landings
+  and upper opening **before** generating any other room partitions.
+- Keeps original hand-drawn perimeters unchanged, and falls back to
+  the existing furnished-floor workflow when rooms already exist.
+- Reports more specific reasons when there genuinely is no overlapping
+  space suitable for a staircase.
+
+Regressions cover multiple upper-floor inset/offset positions on
+metric, 5-foot and 10-foot grids, plus standalone paired hallway/stair
+reservation. Both **Suggest** and **Regenerate** use this common
+building generator path.
+
 ## v0.26 — Upper-floor grid snapping and resuggesting edited outlines (development)
 
 - **Perimeter corners now use the displayed map grid:** dragging corners
