@@ -6729,5 +6729,95 @@ Check("Stepped RPG house supports rotations and mirrored L-wing orientation", ()
     }
 });
 
+Check("Stair UP and DOWN arrows oppose each other on the same flight", () =>
+{
+    foreach(double rotation in new[] {0.0,90.0,180.0,270.0,45.0})
+    {
+        var stair=new StaircaseDefinition
+        {
+            LowerFloorIndex=0,Centre=new(2.5,0.7),
+            Length=2.8,Width=1,RotationDegrees=rotation,LandingLength=1
+        };
+        var up=BuildingStoreys.StairTravelArrow(stair,0);
+        var down=BuildingStoreys.StairTravelArrow(stair,1);
+        Assert(up.Start.DistanceTo(down.Tip)<1e-8 &&
+            up.Tip.DistanceTo(down.Start)<1e-8,
+            $"Ascent/descent arrows must oppose, including at {rotation}°.");
+        Assert(up.Start.DistanceTo(up.Tip)>0.1);
+        Assert(Math.Abs(up.Start.DistanceTo(stair.Centre)-
+            up.Tip.DistanceTo(stair.Centre))<1e-8);
+        bool rejected=false;
+        try { BuildingStoreys.StairTravelArrow(stair,2); }
+        catch(ArgumentOutOfRangeException) { rejected=true; }
+        Assert(rejected,"Do not draw a stair on an unrelated level.");
+    }
+});
+
+Check("example6(3) old staircase bay traps approach behind the flight", () =>
+{
+    // Saved original staircase and shallow bay from example6(3).json.
+    // The clear transverse route behind both landings was only
+    // 1.6m - (0.7m + 0.5m) = 0.4m.
+    var originalStair=new StaircaseDefinition
+    {
+        LowerFloorIndex=0,Centre=new(2.5,0.7),
+        Length=2.8,Width=1,LandingLength=1,RotationDegrees=90
+    };
+    double oldCapDepth=1.6;
+    double originalRearClearance=oldCapDepth-
+        new[] {BuildingStoreys.StairFootprint(originalStair)}
+            .Concat(BuildingStoreys.StairLandings(originalStair))
+            .SelectMany(p=>p).Max(p=>p.Y);
+    Assert(Math.Abs(originalRearClearance-0.4)<0.001,
+        "The uploaded stair really is squeezed into a 40cm bypass.");
+});
+
+Check("New L-house staircase ascends inward and leaves a walkable landing bypass", () =>
+{
+    var shape = new List<Point2>
+    {
+        new(0,0),new(9,0),new(9,6),
+        new(11,6),new(11,10),new(0,10)
+    };
+    var empty = new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=shape.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=shape.ToList()}]
+    };
+    foreach(int seed in new[]{1,7,31,77,112})
+    {
+        Assert(SteppedRpgHousePlanner.TryGenerate(empty,seed,
+            out var house,out var reason),$"Seed {seed}: {reason}");
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        var stair=house.Staircases.Single();
+        Assert(stair.LowerFloorIndex==0);
+        var up=BuildingStoreys.StairTravelArrow(stair,0);
+        var down=BuildingStoreys.StairTravelArrow(stair,1);
+        Assert(up.Tip.X>up.Start.X,
+            "Ascending the stair should point toward the interior approach.");
+        Assert(down.Tip.X<down.Start.X,
+            "Descending must point back toward the lower landing.");
+        var hall=house.Rooms.Single(r=>r.Type=="Hallway");
+        var upperHall=house.UpperFloors[0].Rooms.Single(r=>r.Type=="Hallway");
+        var entireStair=new[] {BuildingStoreys.StairFootprint(stair),
+                BuildingStoreys.StairOpeningFootprint(stair)}
+            .Concat(BuildingStoreys.StairLandings(stair)).ToList();
+        Assert(entireStair.All(r=>
+            FloorGeometry.IsWithinPolygon(r,hall.Outline) &&
+            FloorGeometry.IsWithinPolygon(r,upperHall.Outline)));
+        double furthestY=entireStair.SelectMany(r=>r).Max(p=>p.Y);
+        var hallBoundaryBeforeApproach=hall.Outline
+            .Where(p=>p.Y<6-0.0001 && p.Y>furthestY)
+            .Select(p=>p.Y).DefaultIfEmpty(0).Min();
+        Assert(hallBoundaryBeforeApproach-furthestY>=1.1-0.0001,
+            "A full 1.1m path behind the flight must connect both end " +
+            "landings to the approach, not the old 0.4m pinch point.");
+        Assert(house.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(house.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))>97.99);
+        Assert(house.UpperFloors[0].Rooms.Sum(r=>
+            PolygonGeometry.Area(r.Outline))>97.99);
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
