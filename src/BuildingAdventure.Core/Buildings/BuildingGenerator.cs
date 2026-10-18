@@ -129,6 +129,34 @@ public static class BuildingGenerator
                 "No disconnected building was proposed.";
             return false;
         }
+        // Reserve the stair geometry through room subdivision, then
+        // remove the temporary enclosure BEFORE merging narrow passages
+        // into circulation. Doing this in the opposite order can turn
+        // the reserved rectangular hallway into an L before its bay
+        // is merged, breaking whole-building generation.
+        if (reserveStairwells)
+        {
+            // The temporary stair-bay enclosure is not a separate room.
+            // Merge it into an open alcove of the hallway, so this space
+            // is assigned and no spurious dividing wall / door remains.
+            foreach (int index in BuildingStoreys.FloorIndexes(result))
+            {
+                if (!RoomLayoutPlanner.TryMergeStairBayIntoHall(result,
+                        index, out var merged, out reason))
+                    return false;
+                result = merged;
+            }
+        }
+        if (options.Rooms)
+        {
+            foreach (int level in BuildingStoreys.FloorIndexes(result))
+            {
+                RoomLayoutPlanner.ConsolidateGeneratedRooms(result, level,
+                    Array.Empty<Guid>(), out var shaped);
+                result = shaped;
+            }
+        }
+
         int chimneys = 0;
         if (options.Fireplaces &&
             BuildingConnectivity.TryAddChimney(result, out var withChimney, options.Purpose))
@@ -142,19 +170,6 @@ public static class BuildingGenerator
             {
                 BuildingConnectivity.AddWindows(result, level, out var glazed);
                 result = glazed;
-            }
-        }
-        if (reserveStairwells)
-        {
-            // The temporary stair-bay enclosure is not a separate room.
-            // Merge it into an open alcove of the hallway, so this space
-            // is assigned and no spurious dividing wall / door remains.
-            foreach (int index in BuildingStoreys.FloorIndexes(result))
-            {
-                if (!RoomLayoutPlanner.TryMergeStairBayIntoHall(result,
-                        index, out var merged, out reason))
-                    return false;
-                result = merged;
             }
         }
         string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
@@ -643,6 +658,10 @@ public static class BuildingGenerator
         {
             foreach (int index in indices)
             {
+                // A temporary stairwell bay is still required by the
+                // whole-building merger: preserve its rectangular hall.
+                if (BuildingStoreys.GetFloor(proposed, index).Rooms
+                    .Any(r => r.Type == "Stairwell")) continue;
                 var protectedRooms = BuildingStoreys.GetFloor(original, index)
                     .Rooms.Select(r => r.Id).ToArray();
                 RoomLayoutPlanner.ConsolidateGeneratedRooms(
