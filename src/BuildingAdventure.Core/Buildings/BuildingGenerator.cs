@@ -239,6 +239,46 @@ public static class BuildingGenerator
         return BuildingStoreys.Validate(updated, out reason);
     }
 
+    /// <summary>
+    /// Explicit regeneration: keep the hand-drawn perimeter and unchanged
+    /// floors, but replace the selected floors' room/opening drafts. The
+    /// original building is never mutated or committed automatically.
+    /// Stairs/chimneys are retained and remain geometry constraints.
+    /// </summary>
+    public static bool TryRegenerate(BuildingDocument source,
+        IReadOnlyCollection<int> selectedFloors, int seed, GenerationOptions options,
+        out BuildingSuggestion suggestion, out string reason)
+    {
+        var original = BuildingStoreys.Copy(source);
+        suggestion = new BuildingSuggestion(original, seed, [], "");
+        var indices = selectedFloors.Distinct().OrderBy(i => i).ToArray();
+        if (indices.Length == 0 || indices.Any(i => !BuildingStoreys.HasFloor(source, i)))
+        {
+            reason = "Select one or more existing floors to regenerate.";
+            return false;
+        }
+        var cleared = BuildingStoreys.Copy(source);
+        foreach (int index in indices)
+        {
+            var floor = BuildingStoreys.GetFloor(cleared, index);
+            floor.Rooms.Clear();
+            floor.Doors.Clear();
+            floor.Windows.Clear();
+            BuildingStoreys.SetFloor(cleared, index, floor);
+        }
+        if (!BuildingStoreys.Validate(cleared, out reason))
+        {
+            reason = "Cannot regenerate while keeping existing stairs/chimneys: " + reason;
+            return false;
+        }
+        if (!TrySuggest(cleared, indices, seed, options, out var generated, out reason))
+            return false;
+        suggestion = new BuildingSuggestion(generated.Building, seed, indices,
+            "REPLACEMENT DRAFT — selected rooms, doors and windows will be replaced. " +
+            generated.Description);
+        return true;
+    }
+
     public static bool TrySuggest(BuildingDocument source,
         IReadOnlyCollection<int> selectedFloors, int seed,
         out BuildingSuggestion suggestion, out string reason) =>
