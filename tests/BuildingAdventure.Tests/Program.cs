@@ -5417,5 +5417,179 @@ Check("example2.json entrance creates two storage rooms beside door", () =>
     Assert(BuildingStoreys.Validate(turnedAccess,out reason),reason);
 });
 
+Check("example2(1) dining room and bedroom reach hallway without crossing storerooms", () =>
+{
+    // The uploaded v0.31 layout placed two 6.858 x 2.048 m storerooms
+    // between the north rooms and the central hall. Neither had a hall
+    // door; each was the compulsory route to a bedroom/dining room.
+    var document = new BuildingDocument
+    {
+        SchemaVersion = 2, GridFeet = 5,
+        Perimeter =
+        [
+            new(7.62,0), new(12.192,0), new(12.192,3.048),
+            new(16.764,3.048), new(16.764,0), new(21.336,0),
+            new(21.336,3.048), new(21.336,10.668),
+            new(7.62,10.668)
+        ],
+        Rooms =
+        [
+            new RoomDefinition
+            {
+                Name = "Hallway 1", Type = "Hallway",
+                Outline = [new(7.62,5.096),new(21.336,5.096),
+                    new(21.336,7.096),new(7.62,7.096)]
+            },
+            new RoomDefinition
+            {
+                Name = "Living room", Type = "Living room",
+                Outline = [new(7.62,7.096),new(16.12,7.096),
+                    new(16.12,10.668),new(7.62,10.668)]
+            },
+            new RoomDefinition
+            {
+                Name = "Kitchen", Type = "Kitchen",
+                Outline = [new(16.12,7.096),new(21.336,7.096),
+                    new(21.336,10.668),new(16.12,10.668)]
+            },
+            new RoomDefinition
+            {
+                Name = "Dining room", Type = "Dining room",
+                Outline = [new(7.62,0),new(12.192,0),
+                    new(12.192,3.048),new(7.62,3.048)]
+            },
+            new RoomDefinition
+            {
+                Name = "Bedroom", Type = "Bedroom",
+                Outline = [new(16.764,0),new(21.336,0),
+                    new(21.336,3.048),new(16.764,3.048)]
+            },
+            new RoomDefinition
+            {
+                Name = "Storeroom", Type = "Storeroom",
+                Outline = [new(7.62,3.048),new(14.478,3.048),
+                    new(14.478,5.096),new(7.62,5.096)]
+            },
+            new RoomDefinition
+            {
+                Name = "Storeroom 2", Type = "Storeroom",
+                Outline = [new(14.478,3.048),new(21.336,3.048),
+                    new(21.336,5.096),new(14.478,5.096)]
+            }
+        ],
+        UpperFloors =
+        [
+            new StoreyDefinition
+            {
+                Name = "First Floor",
+                Perimeter =
+                [
+                    new(7.62,1.524),new(12.192,1.524),new(12.192,3.048),
+                    new(16.764,3.048),new(16.764,1.524),new(21.336,1.524),
+                    new(21.336,3.048),new(21.336,10.668),
+                    new(7.62,10.668)
+                ]
+            }
+        ],
+        Staircases =
+        [
+            new StaircaseDefinition
+            {
+                LowerFloorIndex = 0,
+                Centre = new Point2(14.478,6.646),
+                Length = 2.8, Width = 0.9,
+                RotationDegrees = 90, LandingLength = 1
+            }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(document, out var reason),reason);
+    Guid hallId = document.Rooms[0].Id;
+    Guid diningId = document.Rooms[3].Id;
+    Guid bedroomId = document.Rooms[4].Id;
+    int routes = RoomLayoutPlanner.OpenDirectAccessPastGeneratedStores(
+        document,0,Array.Empty<Guid>(),out var routed);
+    Assert(routes==2,$"Expected one passage beside each storage room; got {routes}.");
+    Assert(routed.Rooms.Count==document.Rooms.Count,
+        "No extra enclosed passage rooms should be created.");
+    Assert(routed.Rooms.Where(r=>r.Type=="Storeroom").Count()==2);
+    Assert(BuildingStoreys.Validate(routed,out reason),reason);
+    Assert(document.Rooms[0].Outline.Count==4 &&
+        document.Rooms[5].Outline.Max(p=>p.X)==14.478,
+        "Planning must not mutate the input document.");
+    Assert(BuildingConnectivity.ShareWall(
+        routed.Rooms.Single(r=>r.Id==hallId).Outline,
+        routed.Rooms.Single(r=>r.Id==diningId).Outline,1.0));
+    Assert(BuildingConnectivity.ShareWall(
+        routed.Rooms.Single(r=>r.Id==hallId).Outline,
+        routed.Rooms.Single(r=>r.Id==bedroomId).Outline,1.0));
+    Assert(BuildingConnectivity.AddDoors(routed,0,out var opened)>=7);
+    bool HasSharedDoor(RoomDefinition a,RoomDefinition b) =>
+        opened.Doors.Any(d=>
+            Enumerable.Range(0,a.Outline.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                    a.Outline[i],a.Outline[(i+1)%a.Outline.Count])
+                .DistanceTo(d.Centre)<1e-5) &&
+            Enumerable.Range(0,b.Outline.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                    b.Outline[i],b.Outline[(i+1)%b.Outline.Count])
+                .DistanceTo(d.Centre)<1e-5));
+    var hallway = opened.Rooms.Single(r=>r.Id==hallId);
+    Assert(HasSharedDoor(hallway,opened.Rooms.Single(r=>r.Id==diningId)),
+        "Dining room should have its own hall entrance.");
+    Assert(HasSharedDoor(hallway,opened.Rooms.Single(r=>r.Id==bedroomId)),
+        "Bedroom should have its own hall entrance.");
+    foreach(var store in opened.Rooms.Where(r=>r.Type=="Storeroom"))
+    {
+        Assert(HasSharedDoor(hallway,store),
+            "Storeroom should open directly into circulation.");
+        Assert(opened.Doors.Count(d=>
+            Enumerable.Range(0,store.Outline.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                    store.Outline[i],store.Outline[(i+1)%store.Outline.Count])
+                    .DistanceTo(d.Centre)<1e-5))==1,
+            "A normal storeroom must not become a two-door passage.");
+    }
+    Assert(BuildingStoreys.Validate(opened,out reason),reason);
+    Assert(RoomLayoutPlanner.OpenDirectAccessPastGeneratedStores(
+        routed,0,Array.Empty<Guid>(),out _)==0,
+        "Already accessible rooms should not acquire extra hall spurs.");
+    Assert(RoomLayoutPlanner.OpenDirectAccessPastGeneratedStores(
+        document,0,[hallId],out var protectedPlan)==0 &&
+        protectedPlan.Rooms[0].Outline.SequenceEqual(document.Rooms[0].Outline),
+        "The planner must preserve manually authored hallways.");
+});
+
+Check("Storeroom adjoining kitchen and hallway uses one kitchen door", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(8,0),new(8,9),new(0,9)],
+        Rooms =
+        [
+            new RoomDefinition {Name="Hallway",Type="Hallway",
+                Outline=[new(0,0),new(2,0),new(2,9),new(0,9)]},
+            new RoomDefinition {Name="Kitchen",Type="Kitchen",
+                Outline=[new(2,0),new(8,0),new(8,5),new(2,5)]},
+            new RoomDefinition {Name="Storeroom",Type="Storeroom",
+                Outline=[new(2,5),new(8,5),new(8,9),new(2,9)]}
+        ]
+    };
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    BuildingConnectivity.AddDoors(source,0,out var withDoors);
+    var kitchen=withDoors.Rooms.Single(r=>r.Type=="Kitchen");
+    var store=withDoors.Rooms.Single(r=>r.Type=="Storeroom");
+    Assert(withDoors.Doors.Count(d=>
+        PolygonGeometry.ClosestPointOnSegment(d.Centre,
+            new Point2(2,5),new Point2(8,5)).DistanceTo(d.Centre)<1e-5)==1,
+        "Kitchen should provide the store's only entrance.");
+    Assert(withDoors.Doors.Count(d=>
+        Enumerable.Range(0,store.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                store.Outline[i],store.Outline[(i+1)%store.Outline.Count])
+                .DistanceTo(d.Centre)<1e-5))==1,
+        "Don't add a second service entrance.");
+    Assert(BuildingStoreys.Validate(withDoors,out reason),reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
