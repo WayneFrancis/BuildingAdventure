@@ -154,6 +154,11 @@
                                 <ComboBoxItem Content="Dungeon"/>
                                 <ComboBoxItem Content="Mixed use"/>
                             </ComboBox>
+                            <CheckBox x:Name="CompactRpgHouseCheckBox"
+                                      Content="Compact RPG two-storey house (preferred)"
+                                      IsChecked="True" Margin="0,0,0,6"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,8"
+                                       Text="Two-story RPG battle-map style: guest/study near entry, living/dining/kitchen below, three bedrooms above, rear stair with short upper landing. Takes priority over the historical style where it fits."/>
                             <CheckBox x:Name="HallHouseLayoutCheckBox"
                                       Content="Medieval hall-house layout (residences)"
                                       IsChecked="True" Margin="0,0,0,6"/>
