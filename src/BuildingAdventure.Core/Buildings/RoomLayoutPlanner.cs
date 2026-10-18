@@ -177,8 +177,10 @@ public static class RoomLayoutPlanner
             if (floor.Perimeter.Count < 3) break;
             var all = floor.Rooms.SelectMany(r => r.Outline)
                 .Concat(floor.Perimeter).ToList();
-            var xs = all.Select(p => p.X).Distinct().OrderBy(x => x).ToArray();
-            var ys = all.Select(p => p.Y).Distinct().OrderBy(y => y).ToArray();
+            var xs = SplitLongSpans(all.Select(p => p.X).Distinct()
+                .OrderBy(x => x).ToArray());
+            var ys = SplitLongSpans(all.Select(p => p.Y).Distinct()
+                .OrderBy(y => y).ToArray());
             if (xs.Length > 32 || ys.Length > 32) break;
 
             bool[,] empty = new bool[xs.Length - 1, ys.Length - 1];
@@ -250,6 +252,26 @@ public static class RoomLayoutPlanner
             if (!placed) break;
         }
         return added;
+    }
+
+    private static double[] SplitLongSpans(IReadOnlyList<double> cuts)
+    {
+        var result = new List<double>();
+        for (int i = 0; i < cuts.Count; i++)
+        {
+            if (i > 0)
+            {
+                double from = cuts[i - 1], to = cuts[i];
+                // Do not create huge undivided bedrooms inside an otherwise
+                // empty plan. Intermediate cuts are layout guides only;
+                // they never move existing walls or the exterior perimeter.
+                int parts = (int)Math.Ceiling((to - from) / 4.5);
+                for (int part = 1; part < parts; part++)
+                    result.Add(from + (to - from) * part / parts);
+            }
+            result.Add(cuts[i]);
+        }
+        return result.ToArray();
     }
 
     /// <summary>
