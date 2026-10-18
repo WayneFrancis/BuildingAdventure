@@ -848,6 +848,89 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// Finalize an already furnished GENERATED floor. Earlier generation
+    /// stages may have installed a door from a dining room or bedroom into
+    /// its adjacent storeroom, before the final hallway/stair-bay merge.
+    /// The access-spur pass cannot reshape that room while its old door is
+    /// attached. Remove only doors touching NEW generated stores in the
+    /// blocking strip, create independent corridor access, then regenerate
+    /// doors and validate the entire multi-storey building. An unchanged
+    /// copy is returned if no safe improvement can be made.
+    /// </summary>
+    public static int RepairGeneratedStorageAccess(BuildingDocument source,
+        int floorIndex, IReadOnlyCollection<Guid> originalRoomIds,
+        out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        var floor = BuildingStoreys.GetFloor(source, floorIndex);
+        var protectedIds = originalRoomIds.ToHashSet();
+        var hall = floor.Rooms.FirstOrDefault(r =>
+            r.Type == "Hallway" && !protectedIds.Contains(r.Id));
+        if (hall is null) return 0;
+
+        static bool Touches(IReadOnlyList<Point2> outline, Point2 point) =>
+            Enumerable.Range(0, outline.Count).Any(i =>
+                PolygonGeometry.ClosestPointOnSegment(point, outline[i],
+                    outline[(i + 1) % outline.Count])
+                    .DistanceTo(point) < 1e-5);
+
+        var blocking = floor.Rooms.Where(store =>
+            !protectedIds.Contains(store.Id) &&
+            store.Type is ("Storeroom" or "Storage" or "Pantry" or "Buttery" or
+                "Stockroom" or "Linen store") &&
+            BuildingConnectivity.ShareWall(store.Outline, hall.Outline, 1.0) &&
+            floor.Rooms.Any(other =>
+                other.Id != store.Id && other.Id != hall.Id &&
+                other.Type is not ("Storeroom" or "Storage" or "Pantry" or
+                    "Buttery" or "Stockroom" or "Linen store" or "Stairwell") &&
+                BuildingConnectivity.ShareWall(store.Outline, other.Outline, 1.0) &&
+                !BuildingConnectivity.ShareWall(hall.Outline, other.Outline, 0.8)))
+            .ToArray();
+        if (blocking.Length == 0) return 0;
+
+        var detached = BuildingStoreys.Copy(source);
+        var editFloor = BuildingStoreys.GetFloor(detached, floorIndex);
+        // These were added by this draft's own door pass, not by the
+        // user. Doors on the new room's walls are rebuilt once the
+        // partitions have changed.
+        editFloor.Doors.RemoveAll(d => blocking.Any(store =>
+            Touches(store.Outline, d.Centre)));
+        BuildingStoreys.SetFloor(detached, floorIndex, editFloor);
+        if (!BuildingStoreys.Validate(detached, out _)) return 0;
+
+        int routes = OpenDirectAccessPastGeneratedStores(
+            detached, floorIndex, protectedIds, out var rerouted);
+        if (routes == 0) return 0;
+        BuildingConnectivity.AddDoors(rerouted, floorIndex, out var withDoors);
+        if (!BuildingStoreys.Validate(withDoors, out _)) return 0;
+
+        // A geometrically valid document is not enough: every room
+        // formerly isolated behind storage must now have a direct route
+        // to circulation. Refuse partial repairs that remain unusable.
+        var revised = BuildingStoreys.GetFloor(withDoors, floorIndex);
+        var newHall = revised.Rooms.FirstOrDefault(r => r.Id == hall.Id);
+        if (newHall is null) return 0;
+        foreach (var store in blocking)
+        foreach (var room in floor.Rooms.Where(r =>
+            r.Id != store.Id && r.Id != hall.Id &&
+            BuildingConnectivity.ShareWall(store.Outline, r.Outline, 1.0) &&
+            !BuildingConnectivity.ShareWall(hall.Outline, r.Outline, 0.8) &&
+            r.Type is not ("Storeroom" or "Storage" or "Pantry" or
+                "Buttery" or "Stockroom" or "Stairwell")))
+        {
+            var after = revised.Rooms.FirstOrDefault(r => r.Id == room.Id);
+            if (after is null ||
+                !BuildingConnectivity.ShareWall(newHall.Outline, after.Outline, 0.8) ||
+                !revised.Doors.Any(d =>
+                    Touches(newHall.Outline, d.Centre) &&
+                    Touches(after.Outline, d.Centre)))
+                return 0;
+        }
+        updated = withDoors;
+        return routes;
+    }
+
+    /// <summary>
     /// A shallow generated storeroom must not isolate the room behind it
     /// from the corridor. Turn a narrow strip along ONE end of that store
     /// into an open hallway spur, rather than giving the store two doors
