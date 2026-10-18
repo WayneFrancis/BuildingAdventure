@@ -14,12 +14,17 @@ public sealed class GenerationOptions
     public bool Windows { get; set; }
     public bool Stairs { get; set; }
     public bool Fireplaces { get; set; }
+    // Opt-in historical archetype. Older API callers keep the legacy
+    // corridor generator; the desktop editor enables this by default
+    // for residence suggestions. Non-residences are unaffected.
+    public bool HallHouseLayout { get; set; }
     public BuildingUse Purpose { get; set; } = BuildingUse.Residence;
 
     public GenerationOptions Copy() => new()
     {
         Rooms = Rooms, Corridors = Corridors, Doors = Doors,
-        Windows = Windows, Stairs = Stairs, Fireplaces = Fireplaces, Purpose = Purpose
+        Windows = Windows, Stairs = Stairs, Fireplaces = Fireplaces,
+        HallHouseLayout = HallHouseLayout, Purpose = Purpose
     };
 
     public bool Any => Rooms || Corridors || Doors || Windows || Stairs || Fireplaces;
