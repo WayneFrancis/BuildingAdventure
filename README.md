@@ -4,6 +4,51 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.22 — Historically scaled plans and usable hearth/stair layouts (development branch)
+
+- **Imperial perimeter seam fixed:** planned rooms now preserve the exact
+  exterior boundary rather than rounding their last walls to the nearest
+  half-metre. This eliminates the narrow unassigned strips appearing along
+  right/bottom façades of 5ft / 10ft grid buildings.
+- **Medieval-style footprint ranges:** single-storey residence ~7–10m by
+  6–9m; more substantial multi-storey residence ~8.5–11.5m by 8–11m;
+  inn/tavern ~12–18m by 9–13m; shop/workshop ~6.5–10m by 8–12m;
+  mixed-use ~9–15m by 8–12m. Dungeon sizes remain game-oriented rather
+  than derived from a house. These are **design heuristics**, not medieval
+  building codes or claims that every house of a type had those dimensions.
+  The whole-building generator uses the full requested floor count to
+  choose the appropriate profile.
+- **Not all rectangles:** some larger or specialised buildings grow a
+  modest L-shaped rear wing, on exact tabletop cells in imperial mode.
+  Concave footprint filling still has room for improvement; wing areas
+  can remain partly unassigned rather than producing invalid partitions.
+- **Open domestic stairs:** small wall-hugging stair runs (2.8m × 1.0m),
+  with the original 1m landing at both ends, are staged inside a temporary
+  side bay so the room planner doesn't build walls through the flight.
+  Once generated, its enclosing *Stairwell* room is removed, leaving
+  an **open staircase alcove off the hallway**, not a 6m dedicated room.
+- **Fireplace location and size:** heating is placed inside a living,
+  common, cooking or other inhabited room if there is a suitable wall,
+  **never inside a hallway**. The domestic schematic fireplace mass is
+  approx. 1.4m along a wall by 0.7m deep, adjusted to the wall direction.
+  A shared chimney crosses the floors at one world coordinate; the
+  drawing labels a room's hearth *FIREPLACE* and a nonhabitable space's
+  chimney continuation *FLUE*. Since period hearths ranged from open
+  floor fires to large hooded masonry structures, size is a useful
+  planning default, **not a fixed medieval standard**. A fireplace
+  option can decline placement if no safe wall section exists.
+- **Reference examples for these heuristics:**
+  - Newbury Farm, Tonge, Kent: early aisled hall about 9.32 × 5.13m,
+    not necessarily the full building. Kent Archaeological Society:
+    https://www.kentarchaeology.org.uk/journal/123/newbury-farm-tonge-kents-earliest-known-aisled-hall-house
+  - Walderton, Sussex: excavated house plan at least 10 × 6.3m:
+    https://www.wealddown.co.uk/wp-content/uploads/2014/10/Walderton_article_SAC_v120_1982.pdf
+  - Medieval hall-house cross passages and room arrangements:
+    https://www.gutorglyn.net/gutoswales/en/tai-pensaer-cynllun.php
+  - Open hearths, wall fireplaces and chimney history:
+    https://www.medieval.eu/open-hearths-ovens-fireplaces/
+    and https://www.wealddown.co.uk/museum-news/history-of-the-hearth/
+
 ## v0.21 — Tabletop grids, habitable-room glazing, landings and chimney stacks (development branch)
 
 - **RPG map scales:** select metric, **5 ft squares** or **10 ft squares**
