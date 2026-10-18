@@ -889,6 +889,33 @@ public static class BuildingStoreys
             FloorGeometry.IsWithinPolygon(ChimneyFootprint(chimney),
                 GetFloor(building, i).Perimeter)).ToArray();
 
+    /// <summary>
+    /// The same flight is drawn on two floors. On the lower floor the
+    /// arrow indicates the physical ascent; on the upper floor the arrow
+    /// points back down the SAME flight, never in the same direction.
+    /// Stairs use their local long-axis direction to encode ascent.
+    /// Rendering reverses the arrow, not the stored stair rotation.
+    /// </summary>
+    public static (Point2 Start, Point2 Tip) StairTravelArrow(
+        StaircaseDefinition stair, int visibleFloorIndex,
+        double portionOfFlight = 0.23)
+    {
+        if (visibleFloorIndex != stair.LowerFloorIndex &&
+            visibleFloorIndex != stair.LowerFloorIndex + 1)
+            throw new ArgumentOutOfRangeException(nameof(visibleFloorIndex),
+                "The flight does not connect this floor.");
+        double angle = stair.RotationDegrees * Math.PI / 180;
+        double dx = -Math.Sin(angle);
+        double dy = Math.Cos(angle);
+        double distance = stair.Length * portionOfFlight;
+        // Reverse travel direction above the flight.
+        double sign = visibleFloorIndex == stair.LowerFloorIndex ? 1 : -1;
+        return (new Point2(stair.Centre.X - sign * dx * distance,
+                           stair.Centre.Y - sign * dy * distance),
+                new Point2(stair.Centre.X + sign * dx * distance,
+                           stair.Centre.Y + sign * dy * distance));
+    }
+
     public static IReadOnlyList<List<Point2>> StairLandings(StaircaseDefinition stair)
     {
         if (stair.LandingLength <= 0) return [];
