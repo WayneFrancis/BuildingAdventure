@@ -7697,5 +7697,47 @@ Check("example12 side-landing floorplan is accessible and not mirrored upstairs"
         "Regeneration should leave the accepted source untouched.");
 });
 
+Check("Side-landing house rotates and mirrors with independent floor partitions", () =>
+{
+    var ring=new List<Point2>
+    {
+        new(0,0),new(10.5,0),new(10.5,6),
+        new(12.5,6),new(12.5,10),new(0,10)
+    };
+    foreach(int quarterTurn in new[]{0,1,2,3})
+    foreach(bool mirror in new[]{false,true})
+    {
+        Point2 Transform(Point2 p)
+        {
+            double x=mirror?-p.X:p.X,y=p.Y;
+            return quarterTurn switch
+            {
+                1=>new Point2(-y,x),
+                2=>new Point2(-x,-y),
+                3=>new Point2(y,-x),
+                _=>new Point2(x,y)
+            };
+        }
+        var shape=ring.Select(Transform).ToList();
+        var blank=new BuildingDocument
+        {
+            SchemaVersion=2,Perimeter=shape.ToList(),
+            UpperFloors=[new StoreyDefinition{Perimeter=shape.ToList()}]
+        };
+        Assert(SideLandingRpgHousePlanner.TryGenerate(blank,91,
+            out var house,out var reason),
+            $"Side-landing orientation {quarterTurn}, mirror={mirror}: {reason}");
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        Assert(house.Staircases.Count==1);
+        Assert(house.Rooms.Count(r=>r.Type=="Kitchen")==1);
+        Assert(house.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(house))<0.01);
+        Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(
+            BuildingStoreys.GetFloor(house,1)))<0.01);
+        Assert(!house.Rooms.Single(r=>r.Type=="Hallway").Outline.SequenceEqual(
+            house.UpperFloors[0].Rooms.Single(r=>r.Type=="Hallway").Outline));
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
