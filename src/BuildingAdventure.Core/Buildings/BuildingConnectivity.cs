@@ -275,31 +275,66 @@ public static class BuildingConnectivity
             ? 0 : BuildingStoreys.LowestFloorIndex(building);
         var baseFloor = BuildingStoreys.GetFloor(building, ground);
         if (baseFloor.Perimeter.Count < 3) return false;
-        var walls = FloorGeometry.BuildWalls(baseFloor.Perimeter, baseFloor.Rooms)
-            .Where(w => w.Length >= 2.0)
+
+        // Choose a ROOM before a wall. Heating a hallway or a stair alcove
+        // is not a useful medieval domestic plan. A chimney in a partly
+        // inhabited basement-only shell may be placed in open floor area.
+        string[] roomPriority = [
+            "Common room", "Living room", "Kitchen", "Dining room",
+            "Parlour", "Great hall", "Shop floor", "Workshop",
+            "Bedroom", "Study", "Guest room", "Chamber"
+        ];
+        var rooms = baseFloor.Rooms.Where(r => roomPriority.Contains(r.Type,
+                StringComparer.OrdinalIgnoreCase))
+            .OrderBy(r => {
+                int index = Array.FindIndex(roomPriority, t =>
+                    t.Equals(r.Type, StringComparison.OrdinalIgnoreCase));
+                return index < 0 ? int.MaxValue : index;
+            }).ToList();
+        if (rooms.Count == 0 && baseFloor.Rooms.Count == 0)
+            rooms.Add(new RoomDefinition {
+                Name = "Unpartitioned floor", Type = "Unpartitioned",
+                Outline = baseFloor.Perimeter.ToList()
+            });
+        var allWalls = FloorGeometry.BuildWalls(baseFloor.Perimeter, baseFloor.Rooms)
+            .Where(w => w.Length >= 2.1).ToList();
+
+        foreach (var room in rooms)
+        foreach (var wall in allWalls
+            .Where(w => OnOutline(Midpoint(w), room.Outline))
             .OrderByDescending(w => w.IsExterior)
-            .ThenByDescending(w => w.Length);
-        foreach (var wall in walls)
+            .ThenByDescending(w => w.Length))
         {
             var midpoint = Midpoint(wall);
             double dx = wall.B.X - wall.A.X, dy = wall.B.Y - wall.A.Y;
             double len = Math.Sqrt(dx * dx + dy * dy);
-            if (len < 2) continue;
-            // The first iteration tries either side of the wall. The
-            // building validator rejects exterior, room-wall and stair
-            // collisions, as well as windows immediately beside a hearth.
+            if (len < 2.1) continue;
+            // Conservative schematic masonry hearth: about 1.4 m along
+            // the wall and 0.7 m projecting into the room. Medieval hearth
+            // openings ranged from modest to monumental; this is a
+            // domestic default, not a universal historic measurement.
+            bool horizontal = Math.Abs(dx) >= Math.Abs(dy);
+            double w = horizontal ? 1.4 : 0.7;
+            double d = horizontal ? 0.7 : 1.4;
+            double normalDepth = 0.7;
             foreach (int sign in new[] { 1, -1 })
             {
-                var centre = new Point2(midpoint.X - sign * dy / len * 0.46,
-                    midpoint.Y + sign * dx / len * 0.46);
-                if (baseFloor.Rooms.Any(r => r.Type == "Stairwell" &&
+                var centre = new Point2(
+                    midpoint.X - sign * dy / len * (normalDepth / 2 + 0.02),
+                    midpoint.Y + sign * dx / len * (normalDepth / 2 + 0.02));
+                var hearth = new ChimneyDefinition {
+                    Centre = centre, Width = w, Depth = d,
+                    Exterior = wall.IsExterior
+                };
+                if (!FloorGeometry.IsWithinPolygon(
+                    BuildingStoreys.ChimneyFootprint(hearth), room.Outline))
+                    continue;
+                if (baseFloor.Rooms.Any(r =>
+                    r.Type.Equals("Hallway", StringComparison.OrdinalIgnoreCase) &&
                     PolygonGeometry.ContainsPoint(r.Outline, centre)))
                     continue;
                 var candidate = BuildingStoreys.Copy(updated);
-                candidate.Chimneys.Add(new ChimneyDefinition
-                {
-                    Centre = centre, Exterior = wall.IsExterior
-                });
+                candidate.Chimneys.Add(hearth);
                 if (!BuildingStoreys.Validate(candidate, out _)) continue;
                 updated = candidate;
                 return true;
