@@ -1845,7 +1845,7 @@ public sealed class FloorPlanSurface : FrameworkElement
 
         return GeometrySnap.ForMovedVertex(
             target, _dragOriginalPoint, outlines,
-            10 / _pixelsPerMetre, SnapToGrid, 0.5,
+            10 / _pixelsPerMetre, SnapToGrid, GridStepMetres,
             Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
     }
 
@@ -1972,7 +1972,8 @@ public sealed class FloorPlanSurface : FrameworkElement
                         (current.Y - _moveWallMouseStart.Y) * ny;
 
         if (SnapToGrid && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-            amount = Math.Round(amount * 2, MidpointRounding.AwayFromZero) / 2;
+            amount = Math.Round(amount / GridStepMetres,
+                MidpointRounding.AwayFromZero) * GridStepMetres;
 
         var original = DocumentFromSnapshot(_beforeDrag);
         if (InteriorEditing.TryMoveWall(original, wall, amount, out var moved, out var reason))
@@ -2898,11 +2899,13 @@ public sealed class FloorPlanSurface : FrameworkElement
         foreach (var room in _rooms) yield return room.Outline;
     }
 
+    private double GridStepMetres => GridFeet == 0 ? 0.5 : GridFeet * 0.3048;
+
     private Point2 SnapToGridPoint(Point2 point)
     {
         if (!SnapToGrid || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
             return point;
-        double step = GridFeet == 0 ? 0.5 : GridFeet * 0.3048;
+        double step = GridStepMetres;
         return new Point2(
             Math.Round(point.X / step, MidpointRounding.AwayFromZero) * step,
             Math.Round(point.Y / step, MidpointRounding.AwayFromZero) * step);
