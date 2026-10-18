@@ -117,7 +117,7 @@ public static class BuildingGenerator
             if (BuildingStoreys.Validate(directHallHouse, out reason))
             {
                 suggestion = new BuildingSuggestion(directHallHouse, seed, [0],
-                    $"Medieval hall-house layout. Whole building (1 floor), seed {seed}: " +
+                    $"Medieval residence layout. Whole building (1 floor), seed {seed}: " +
                     $"{directHallHouse.Rooms.Count} rooms, {directHallHouse.Doors.Count} doors, " +
                     $"{hearthCount} chimney stack(s)");
                 return true;
@@ -314,8 +314,21 @@ public static class BuildingGenerator
                 return false;
             }
         }
+        // A successful one-storey residential draft must actually have
+        // sleeping accommodation. If the historic alternative cannot
+        // accommodate it, do not quietly return a legacy room arrangement
+        // consisting of nothing but a hall, kitchen and storage.
+        if (floorCount == 1 && options.Purpose == BuildingUse.Residence &&
+            options.HallHouseLayout && options.Rooms &&
+            !result.Rooms.Any(room => room.Type == "Bedroom"))
+        {
+            reason = "No usable bedroom fitted this one-storey residence. " +
+                "Try another seed, a larger footprint, or a different " +
+                "generation style. No incomplete residence was proposed.";
+            return false;
+        }
         string label = (hallHouseBuilt
-                ? "Medieval hall-house layout. "
+                ? "Medieval residence layout. "
                 : options.HallHouseLayout && options.Purpose == BuildingUse.Residence
                     ? "Hall-house layout did not fit; using the traditional corridor layout. "
                     : "") +
@@ -970,6 +983,23 @@ public static class BuildingGenerator
             }
         }
 
+        // This guard also applies to regeneration of an existing
+        // single-storey building. Do not replace an accepted house with a
+        // kitchen/pantry/common-room-only draft lacking a bedroom.
+        if (!options.DeferCirculationValidation &&
+            options.Purpose == BuildingUse.Residence &&
+            options.HallHouseLayout && options.Rooms &&
+            BuildingStoreys.FloorCount(proposed) == 1 &&
+            indices.Contains(0) &&
+            BuildingStoreys.GetFloor(original, 0).Rooms.Count == 0 &&
+            !BuildingStoreys.GetFloor(proposed, 0).Rooms
+                .Any(r => r.Type == "Bedroom"))
+        {
+            reason = "The proposed one-storey residence has no bedroom. " +
+                "Try another seed or a larger footprint.";
+            return false;
+        }
+
         int roomsWithoutDoors = options.Doors ? indices.Sum(i =>
             BuildingConnectivity.CountRoomsWithoutDoors(proposed, i)) : 0;
         var areaSummary = string.Join("; ", indices.Select(i =>
@@ -983,7 +1013,7 @@ public static class BuildingGenerator
         }));
         string floorSummary = string.Join(", ", indices.Select(BuildingStoreys.FloorLabel));
         string description = (hallHouseSuggested
-                ? "Medieval hall house with great hall and screens passage. "
+                ? "Medieval residence with a common hall and screens passage. "
                 : options.HallHouseLayout && options.Purpose == BuildingUse.Residence &&
                   indices.Contains(0) && BuildingStoreys.GetFloor(original, 0).Rooms.Count == 0
                     ? "Hall-house arrangement did not fit; corridor layout retained. "
