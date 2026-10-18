@@ -667,6 +667,22 @@ public static class BuildingGenerator
                 RoomLayoutPlanner.ConsolidateGeneratedRooms(
                     proposed, index, protectedRooms, out var withMergedRooms);
                 proposed = withMergedRooms;
+                // The merged passages may otherwise inflate an L-shaped
+                // footprint's hallway to more than half its usable area.
+                // Only newly generated hallways are eligible for reclamation.
+                int reclaimed = RoomLayoutPlanner.ReclaimOversizedGeneratedHallway(
+                    proposed, index, protectedRooms, options.Purpose, random,
+                    out var withUsefulRooms);
+                proposed = withUsefulRooms;
+                addedRooms += reclaimed;
+                // Rooms reclaimed from an overlarge hall need access doors;
+                // earlier door planning could not see their new partitions.
+                if (reclaimed > 0 && options.Doors)
+                {
+                    addedDoors += BuildingConnectivity.AddDoors(
+                        proposed, index, out var withAccess);
+                    proposed = withAccess;
+                }
             }
         }
 
