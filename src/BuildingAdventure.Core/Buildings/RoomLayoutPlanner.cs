@@ -840,6 +840,165 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// A broad entrance alcove often has a usable pocket on BOTH sides of
+    /// its external door. Preserve a clear passage from that door to the
+    /// corridor, and make the flanking pockets enclosed storage rooms.
+    /// Works with north/south/east/west doors and imperial coordinates.
+    /// Existing user rooms and other storeys are never reshaped.
+    /// </summary>
+    public static int PartitionGeneratedEntranceWing(BuildingDocument source,
+        int floorIndex, IReadOnlyCollection<Guid> originalRoomIds,
+        out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        if (floorIndex != 0) return 0; // only ground floor has external entrance
+        var floor = BuildingStoreys.GetFloor(source, floorIndex);
+        var hall = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway" &&
+            !originalRoomIds.Contains(r.Id));
+        if (hall is null || hall.Outline.Count < 6 ||
+            floor.Doors.Count == 0) return 0;
+
+        const double epsilon = 1e-5;
+        const double accessWidth = 2.0;
+        const double minimumStoreWidth = 2.2;
+        foreach (var entrance in floor.Doors)
+        foreach (int wallIndex in Enumerable.Range(0, floor.Perimeter.Count))
+        {
+            var a = floor.Perimeter[wallIndex];
+            var b = floor.Perimeter[(wallIndex + 1) % floor.Perimeter.Count];
+            bool horizontal = Math.Abs(a.Y - b.Y) < epsilon;
+            bool vertical = Math.Abs(a.X - b.X) < epsilon;
+            if (!horizontal && !vertical) continue;
+            if (PolygonGeometry.ClosestPointOnSegment(entrance.Centre, a, b)
+                    .DistanceTo(entrance.Centre) > epsilon) continue;
+
+            // Long frontage, with the main doorway far enough from each
+            // corner to house a practical storeroom on both sides.
+            double axisLow = horizontal ? Math.Min(a.X, b.X) : Math.Min(a.Y, b.Y);
+            double axisHigh = horizontal ? Math.Max(a.X, b.X) : Math.Max(a.Y, b.Y);
+            double entranceAxis = horizontal ? entrance.Centre.X : entrance.Centre.Y;
+            double wallAxis = horizontal ? a.Y : a.X;
+            double halfAccess = Math.Max(accessWidth, entrance.Width + 0.9) / 2;
+            double leftEdge = entranceAxis - halfAccess;
+            double rightEdge = entranceAxis + halfAccess;
+            if (leftEdge - axisLow < minimumStoreWidth ||
+                axisHigh - rightEdge < minimumStoreWidth) continue;
+
+            Point2 World(double axis, double perpendicular) =>
+                horizontal ? new Point2(axis, perpendicular) :
+                new Point2(perpendicular, axis);
+            List<Point2> Rect(double lowAxis, double highAxis,
+                double lowPerpendicular, double highPerpendicular)
+            {
+                double lo = Math.Min(lowPerpendicular, highPerpendicular);
+                double hi = Math.Max(lowPerpendicular, highPerpendicular);
+                return horizontal
+                    ? Rectangle(lowAxis, lo, highAxis, hi)
+                    : Rectangle(lo, lowAxis, hi, highAxis);
+            }
+
+            // The exterior entrance must actually be on this hall's wall,
+            // not on a room which only happens to share an exterior edge.
+            if (!Enumerable.Range(0, hall.Outline.Count).Any(i =>
+                PolygonGeometry.ClosestPointOnSegment(entrance.Centre,
+                    hall.Outline[i], hall.Outline[(i + 1) % hall.Outline.Count])
+                    .DistanceTo(entrance.Centre) < epsilon))
+                continue;
+
+            double[] extents = hall.Outline
+                .Select(p => horizontal ? p.Y : p.X).ToArray();
+            double minPerp = extents.Min(), maxPerp = extents.Max();
+            double midAxis = (axisLow + axisHigh) / 2;
+            double sign = PolygonGeometry.ContainsPoint(hall.Outline,
+                World(midAxis, wallAxis + 0.05)) ? 1 : -1;
+            if (!PolygonGeometry.ContainsPoint(hall.Outline,
+                    World(midAxis, wallAxis + sign * 0.05)))
+                continue;
+            // The first internal step is the boundary between an oversized
+            // entrance strip and the normal hallway. In example2.json this
+            // is the 1.786m-deep wing above the 2m-wide main corridor.
+            var steps = extents.Select(v => (v - wallAxis) * sign)
+                .Where(d => d >= 1.25 && d <= 3.0)
+                .OrderBy(d => d).ToArray();
+            if (steps.Length == 0) continue;
+            double innerAxis = wallAxis + steps[0] * sign;
+
+            // The whole hall must be representable as a rectangular main
+            // corridor plus THIS entrance strip. More elaborate/hand-shaped
+            // halls are deliberately left untouched.
+            double fullAxisLow = hall.Outline.Min(p =>
+                horizontal ? p.X : p.Y);
+            double fullAxisHigh = hall.Outline.Max(p =>
+                horizontal ? p.X : p.Y);
+            double farAxis = sign > 0 ? maxPerp : minPerp;
+            var mainCorridor = Rect(fullAxisLow, fullAxisHigh, innerAxis, farAxis);
+            var oldWing = Rect(axisLow, axisHigh, wallAxis, innerAxis);
+            if (Math.Abs(farAxis - innerAxis) < 1.8 ||
+                !FloorGeometry.IsWithinPolygon(mainCorridor, hall.Outline) ||
+                !FloorGeometry.IsWithinPolygon(oldWing, hall.Outline) ||
+                Math.Abs(PolygonGeometry.Area(mainCorridor) +
+                    PolygonGeometry.Area(oldWing) -
+                    PolygonGeometry.Area(hall.Outline)) > 0.02)
+                continue;
+
+            var approach = Rect(leftEdge, rightEdge, wallAxis, innerAxis);
+            var leftStorage = Rect(axisLow, leftEdge, wallAxis, innerAxis);
+            var rightStorage = Rect(rightEdge, axisHigh, wallAxis, innerAxis);
+
+            // Keep all existing doors and stairs working; in particular the
+            // user's front door must remain on the new entrance passage.
+            if (floor.Doors.Any(d => d.Id != entrance.Id &&
+                (PolygonGeometry.ContainsPoint(leftStorage, d.Centre) ||
+                 PolygonGeometry.ContainsPoint(rightStorage, d.Centre))))
+                continue;
+            if (source.Staircases.Where(s => s.LowerFloorIndex == floorIndex ||
+                    s.LowerFloorIndex + 1 == floorIndex).Any(stair =>
+                !FloorGeometry.IsWithinPolygon(
+                    BuildingStoreys.StairFootprint(stair), mainCorridor) ||
+                !FloorGeometry.IsWithinPolygon(
+                    BuildingStoreys.StairOpeningFootprint(stair), mainCorridor) ||
+                BuildingStoreys.StairLandings(stair).Any(landing =>
+                    !FloorGeometry.IsWithinPolygon(landing, mainCorridor))))
+                continue;
+
+            // Union two adjacent rectangular circulation pieces using the
+            // existing validated polygon-union algorithm (no guessed vertex
+            // order, self-touching corner, or synthetic extra corridor).
+            var spine = new RoomDefinition
+            {
+                Type = "Hallway", Name = "Corridor spine", Outline = mainCorridor
+            };
+            var entry = new RoomDefinition
+            {
+                Type = "Hallway", Name = "Entrance approach", Outline = approach
+            };
+            var isolated = new BuildingDocument
+            {
+                Perimeter = floor.Perimeter.ToList(),
+                Rooms = [spine, entry]
+            };
+            if (!RoomMerging.TryMergeRooms(isolated, spine.Id, entry.Id,
+                    out var merged, out _)) continue;
+            var trial = BuildingStoreys.Copy(updated);
+            var edited = BuildingStoreys.GetFloor(trial, floorIndex);
+            edited.Rooms.First(r => r.Id == hall.Id).Outline =
+                merged.Rooms.Single().Outline.ToList();
+            string role = "Storage";
+            foreach (var pocket in new[] { leftStorage, rightStorage })
+                edited.Rooms.Add(new RoomDefinition
+                {
+                    Type = role, Name = NextRoomName(role, edited.Rooms),
+                    Outline = pocket
+                });
+            BuildingStoreys.SetFloor(trial, floorIndex, edited);
+            if (!BuildingStoreys.Validate(trial, out _)) continue;
+            updated = trial;
+            return 2;
+        }
+        return 0;
+    }
+
+    /// <summary>
     /// A generated passage may have been merged into a hallway even though it
     /// contains usable accommodation space. Reclaim that space as rooms while
     /// retaining a continuous two-metre circulation spine and every staircase
