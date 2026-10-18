@@ -196,6 +196,7 @@ public partial class MainWindow : Window
             GenerateStairsCheckBox.IsChecked = saved.GenerateStairs;
             GenerateFireplacesCheckBox.IsChecked = saved.GenerateFireplaces;
             HallHouseLayoutCheckBox.IsChecked = saved.HallHouseLayout;
+            CompactRpgHouseCheckBox.IsChecked = saved.CompactRpgHouseLayout;
             GeneratorPurposeBox.SelectedIndex =
                 Math.Clamp(saved.GeneratorPurposeIndex, 0, 4);
             MapModeBox.SelectedIndex = Math.Clamp(saved.MapModeIndex, 0, 2);
@@ -245,6 +246,8 @@ public partial class MainWindow : Window
             GenerateStairs = GenerateStairsCheckBox.IsChecked == true,
             GenerateFireplaces = GenerateFireplacesCheckBox.IsChecked == true,
             HallHouseLayout = HallHouseLayoutCheckBox.IsChecked == true,
+        CompactRpgHouseLayout = CompactRpgHouseCheckBox.IsChecked == true,
+            CompactRpgHouseLayout = CompactRpgHouseCheckBox.IsChecked == true,
             GeneratorPurposeIndex = Math.Max(0, GeneratorPurposeBox.SelectedIndex),
             MapModeIndex = Math.Max(0, MapModeBox.SelectedIndex),
             ReferenceOpacity = AlignmentOpacitySlider.Value
