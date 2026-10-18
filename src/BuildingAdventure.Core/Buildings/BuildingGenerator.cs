@@ -540,6 +540,23 @@ public static class BuildingGenerator
             addedStairs = BuildingConnectivity.AddStairs(
                 proposed, indices, out var withStairs);
             proposed = withStairs;
+            // A requested multi-floor staircase is a connectivity
+            // requirement, not a best-effort decoration. Do not return
+            // a seemingly successful building with inaccessible levels.
+            var checkedSet = indices.ToHashSet();
+            int[] inaccessible = indices.Where(i => checkedSet.Contains(i + 1) &&
+                BuildingStoreys.HasFloor(proposed, i + 1) &&
+                !proposed.Staircases.Any(s => s.LowerFloorIndex == i)).ToArray();
+            if (inaccessible.Length > 0)
+            {
+                reason = "No unobstructed staircase with landings fits between " +
+                    string.Join(", ", inaccessible.Select(i =>
+                        BuildingStoreys.FloorLabel(i) + " and " +
+                        BuildingStoreys.FloorLabel(i + 1))) +
+                    ". Try regenerating both floors, or provide space beside " +
+                    "the hallway for an open stair flight.";
+                return false;
+            }
         }
         // Chimneys before glazing. Otherwise a 1.2m window can overlap
         // the edge of a fireplace even when its centre is far away.
