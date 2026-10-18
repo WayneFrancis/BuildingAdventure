@@ -839,6 +839,167 @@ public static class RoomLayoutPlanner
         }
     }
 
+    /// <summary>
+    /// A generated passage may have been merged into a hallway even though it
+    /// contains usable accommodation space. Reclaim that space as rooms while
+    /// retaining a continuous two-metre circulation spine and every staircase
+    /// (including its landings). Only generated hallways are eligible: never
+    /// resize a user's pre-existing or manually edited room.
+    /// </summary>
+    public static int ReclaimOversizedGeneratedHallway(BuildingDocument source,
+        int floorIndex, IReadOnlyCollection<Guid> originalRoomIds, BuildingUse use,
+        Random random, out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        var floor = BuildingStoreys.GetFloor(source, floorIndex);
+        var hall = floor.Rooms.FirstOrDefault(r => r.Type == "Hallway" &&
+            !originalRoomIds.Contains(r.Id));
+        if (hall is null || hall.Outline.Count < 4) return 0;
+
+        double floorArea = PolygonGeometry.Area(floor.Perimeter);
+        double hallArea = PolygonGeometry.Area(hall.Outline);
+        // Normal 2m corridors, stair alcoves, and intentionally spacious
+        // small rooms do not need to be split into invented partitions.
+        if (hallArea < 28 || hallArea < floorArea * 0.36) return 0;
+
+        const double epsilon = 1e-5;
+        // The reclaim pass deliberately handles orthogonal polygons only.
+        // Skewed or hand-shaped rooms must never be "straightened" by it.
+        for (int i = 0; i < hall.Outline.Count; i++)
+        {
+            var a = hall.Outline[i];
+            var b = hall.Outline[(i + 1) % hall.Outline.Count];
+            if (Math.Abs(a.X - b.X) > epsilon &&
+                Math.Abs(a.Y - b.Y) > epsilon) return 0;
+        }
+
+        double minX = hall.Outline.Min(p => p.X);
+        double maxX = hall.Outline.Max(p => p.X);
+        double minY = hall.Outline.Min(p => p.Y);
+        double maxY = hall.Outline.Max(p => p.Y);
+        var connectedStairs = source.Staircases.Where(s =>
+            s.LowerFloorIndex == floorIndex ||
+            s.LowerFloorIndex + 1 == floorIndex).ToArray();
+
+        foreach (bool horizontal in maxX - minX >= maxY - minY
+            ? new[] { true, false } : new[] { false, true })
+        {
+            double longLength = horizontal ? maxX - minX : maxY - minY;
+            double shortLength = horizontal ? maxY - minY : maxX - minX;
+            if (longLength < 5.0 || shortLength < 3.25) continue;
+
+            // Try to keep a long outside edge of the original hall. In the
+            // common 5-foot stepped footprint this preserves the original
+            // stair corridor and converts its unnecessarily broad L-wing
+            // back into real rooms.
+            double[] bandStarts = horizontal
+                ? [maxY - 2.0, minY]
+                : [maxX - 2.0, minX];
+            foreach (double bandStart in bandStarts.Distinct())
+            {
+                var spine = horizontal
+                    ? Rectangle(minX, bandStart, maxX, bandStart + 2.0)
+                    : Rectangle(bandStart, minY, bandStart + 2.0, maxY);
+                if (!FloorGeometry.IsWithinPolygon(spine, hall.Outline))
+                    continue;
+
+                bool stairsFit = connectedStairs.All(stair =>
+                    FloorGeometry.IsWithinPolygon(
+                        BuildingStoreys.StairFootprint(stair), spine) &&
+                    FloorGeometry.IsWithinPolygon(
+                        BuildingStoreys.StairOpeningFootprint(stair), spine) &&
+                    BuildingStoreys.StairLandings(stair).All(landing =>
+                        FloorGeometry.IsWithinPolygon(landing, spine)));
+                if (!stairsFit) continue;
+
+                // Slice at the EXISTING polygon coordinates, not at an
+                // arbitrary metric grid: imperial edges stay exact and no
+                // sliver is silently dropped.
+                var xs = hall.Outline.Select(p => p.X).Append(minX)
+                    .Append(maxX)
+                    .Append(horizontal ? minX : bandStart)
+                    .Append(horizontal ? maxX : bandStart + 2.0)
+                    .Distinct().OrderBy(v => v).ToArray();
+                var ys = hall.Outline.Select(p => p.Y).Append(minY)
+                    .Append(maxY)
+                    .Append(horizontal ? bandStart : minY)
+                    .Append(horizontal ? bandStart + 2.0 : maxY)
+                    .Distinct().OrderBy(v => v).ToArray();
+
+                var pieces = new List<List<Point2>>();
+                for (int x = 0; x < xs.Length - 1; x++)
+                {
+                    int y = 0;
+                    while (y < ys.Length - 1)
+                    {
+                        bool IsReclaimable(int row)
+                        {
+                            var middle = new Point2((xs[x] + xs[x + 1]) / 2,
+                                (ys[row] + ys[row + 1]) / 2);
+                            return PolygonGeometry.ContainsPoint(hall.Outline, middle) &&
+                                !PolygonGeometry.ContainsPoint(spine, middle);
+                        }
+                        if (!IsReclaimable(y)) { y++; continue; }
+                        int top = y++;
+                        while (y < ys.Length - 1 && IsReclaimable(y)) y++;
+                        double left = xs[x], right = xs[x + 1];
+                        double upper = ys[top], lower = ys[y];
+                        if (right - left < 1.8 || lower - upper < 1.8)
+                        {
+                            pieces.Clear();
+                            break;
+                        }
+                        // A long 2m-deep wing can contain two useful small
+                        // service rooms; one 6m x 2m "Passage" is not useful.
+                        if (right - left > 5.0 && lower - upper < 2.5)
+                        {
+                            double mid = (left + right) / 2;
+                            pieces.Add(Rectangle(left, upper, mid, lower));
+                            pieces.Add(Rectangle(mid, upper, right, lower));
+                        }
+                        else if (lower - upper > 5.0 && right - left < 2.5)
+                        {
+                            double mid = (upper + lower) / 2;
+                            pieces.Add(Rectangle(left, upper, right, mid));
+                            pieces.Add(Rectangle(left, mid, right, lower));
+                        }
+                        else
+                            pieces.Add(Rectangle(left, upper, right, lower));
+                    }
+                    if (pieces.Count == 0) break;
+                }
+                double reclaimed = pieces.Sum(PolygonGeometry.Area);
+                if (pieces.Count == 0 || pieces.Count > 8 ||
+                    reclaimed < 8 || Math.Abs(reclaimed + PolygonGeometry.Area(spine) -
+                        hallArea) > 0.01) continue;
+
+                var trial = BuildingStoreys.Copy(updated);
+                var edited = BuildingStoreys.GetFloor(trial, floorIndex);
+                edited.Rooms.First(r => r.Id == hall.Id).Outline = spine;
+                foreach (var outline in pieces)
+                {
+                    double area = PolygonGeometry.Area(outline);
+                    string type = ChooseRoomTypeForOutline(use, floorIndex,
+                        area, edited.Rooms, outline, random);
+                    // A reclaimed service room should never become another
+                    // circulating passage that can be reabsorbed on rerun.
+                    if (type == "Passage")
+                        type = floorIndex == 0 ? "Storeroom" : "Storage";
+                    edited.Rooms.Add(new RoomDefinition
+                    {
+                        Name = NextRoomName(type, edited.Rooms),
+                        Type = type, Outline = outline
+                    });
+                }
+                BuildingStoreys.SetFloor(trial, floorIndex, edited);
+                if (!BuildingStoreys.Validate(trial, out _)) continue;
+                updated = trial;
+                return pieces.Count;
+            }
+        }
+        return 0;
+    }
+
     public static double UnassignedArea(BuildingDocument floor)
     {
         double total = PolygonGeometry.Area(floor.Perimeter);
