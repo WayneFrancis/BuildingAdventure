@@ -478,7 +478,7 @@ public static class BuildingConnectivity
                 {
                     LowerFloorIndex = lower,
                     Centre = centre,
-                    Length = 3.6, Width = 1.4,
+                    Length = 3.6, Width = 1.4, LandingLength = 1.0,
                     RotationDegrees = angle
                 };
                 if (!BuildingStoreys.TryAddStaircase(updated, stair,
