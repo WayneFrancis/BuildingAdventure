@@ -203,6 +203,23 @@ public static class BuildingGenerator
                 result = glazed;
             }
         }
+        // A successfully validated polygon plan may still be unnavigable:
+        // door-to-store-to-bedroom is not acceptable automatic circulation.
+        if (options.Rooms && options.Doors && options.Corridors)
+        {
+            foreach (int floorIndex in BuildingStoreys.FloorIndexes(result))
+            {
+                var isolated = BuildingConnectivity.RoomsIsolatedByServiceSpaces(
+                    result, floorIndex);
+                if (isolated.Count == 0) continue;
+                reason = $"The draft has inaccessible rooms on " +
+                    $"{BuildingStoreys.FloorLabel(floorIndex)}: " +
+                    string.Join(", ", isolated.Select(r => r.Name)) +
+                    ". Those rooms need a route that does not pass " +
+                    "through a storeroom or another bedroom.";
+                return false;
+            }
+        }
         string label = $"Whole building ({floorCount} floor(s)), seed {seed}: " +
             $"{Enumerable.Range(0, floorCount).Sum(i => BuildingStoreys.GetFloor(result, i).Rooms.Count)} rooms, " +
             $"{result.UpperFloors.Sum(f => f.Doors.Count) + result.Doors.Count} doors, " +
@@ -802,6 +819,30 @@ public static class BuildingGenerator
         }
         if (!BuildingStoreys.Validate(proposed, out reason))
             return false;
+
+        // Selected-floor suggestions must not quietly create rooms that
+        // are reachable only by walking through generated storage.
+        // Leave existing manually authored rooms alone.
+        if (options.Rooms && options.Doors && options.Corridors)
+        {
+            foreach (int index in indices)
+            {
+                var level = BuildingStoreys.GetFloor(proposed, index);
+                if (level.Rooms.Any(r => r.Type == "Stairwell")) continue;
+                var originalIds = BuildingStoreys.GetFloor(original, index)
+                    .Rooms.Select(r => r.Id).ToHashSet();
+                var isolated = BuildingConnectivity.RoomsIsolatedByServiceSpaces(
+                    proposed, index).Where(r => !originalIds.Contains(r.Id))
+                    .ToArray();
+                if (isolated.Length == 0) continue;
+                reason = $"The proposed layout isolates " +
+                    string.Join(", ", isolated.Select(r => r.Name)) +
+                    $" on {BuildingStoreys.FloorLabel(index)}. " +
+                    "These rooms need a doorway to circulation without " +
+                    "walking through a storeroom or private bedroom.";
+                return false;
+            }
+        }
 
         int roomsWithoutDoors = options.Doors ? indices.Sum(i =>
             BuildingConnectivity.CountRoomsWithoutDoors(proposed, i)) : 0;
