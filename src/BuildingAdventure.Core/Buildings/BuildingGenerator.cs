@@ -78,6 +78,7 @@ public static class BuildingGenerator
         // after stacked flights and stair bays are settled, not while
         // individual floors are being staged.
         stageOptions.HallHouseLayout = false;
+        stageOptions.DeferCirculationValidation = true;
         if (reserveStairwells)
         {
             stageOptions.Rooms = false;
@@ -113,6 +114,7 @@ public static class BuildingGenerator
             fill.Fireplaces = false;
             fill.Windows = false;
             fill.HallHouseLayout = false;
+            fill.DeferCirculationValidation = true;
             if (fill.Rooms || fill.Doors || fill.Windows)
             {
                 if (!TrySuggest(result, Enumerable.Range(0, floorCount).ToArray(),
@@ -880,7 +882,8 @@ public static class BuildingGenerator
         // Selected-floor suggestions must not quietly create rooms that
         // are reachable only by walking through generated storage.
         // Leave existing manually authored rooms alone.
-        if (options.Rooms && options.Doors && options.Corridors)
+        if (options.Rooms && options.Doors && options.Corridors &&
+            !options.DeferCirculationValidation)
         {
             foreach (int index in indices)
             {
