@@ -48,6 +48,7 @@ public static class BalancedSteppedRpgHousePlanner
             (permutations[i],permutations[j])=
                 (permutations[j],permutations[i]);
         }
+        var failures = new Dictionary<string,int>();
         foreach(var variation in permutations)
         {
             if(TryVariant(source,variation,out var candidate,out var message))
@@ -56,9 +57,11 @@ public static class BalancedSteppedRpgHousePlanner
                 reason="";
                 return true;
             }
-            if(message!="The step, room dimensions or stair reservation do not fit.")
-                reason=message;
+            failures.TryGetValue(message,out int matches);
+            failures[message]=matches+1;
         }
+        reason=string.Join(" | ",failures.OrderByDescending(p=>p.Value)
+            .Select(p=>p.Value+" variants: "+p.Key));
         return false;
     }
 
