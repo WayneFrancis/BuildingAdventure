@@ -4,6 +4,56 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.40 — RPG house layouts for six-corner L-shaped exteriors (development)
+
+The uploaded `example6(1).json` is a two-storey house whose outer
+perimeter has a 2m-wide step on one side, **88.75m²** on each level.
+The earlier corridor-first generator allocated **68.125m² (77%)** on
+*each floor* to one L-shaped hallway and left only a kitchen downstairs
+and a bedroom upstairs. This was not a useful house, even though the
+polygons and staircase passed geometric validation.
+
+Two complementary fixes have been added:
+
+- **Direct stepped-house archetype:** when both floors have a matching
+  six-corner L-shaped/stepped perimeter, the compact RPG layout option
+  attempts to plan both floors together *before* invoking the legacy
+  corridor generator. It places a narrow stair passage, one usable
+  room alongside the stairs, a kitchen/bedroom in the neighbouring
+  wing, and two rooms beyond the short cross-passage.
+- **Useful RPG rooms:** downstairs, kitchen, living, dining and study.
+  Upstairs, three separately accessible bedrooms and a bathroom.
+  The staircase remains aligned on both floors, with its full opening
+  and two landings clear. Generated building occupancy covers the
+  entire stepped perimeter, including its exterior notch.
+- **Reproducible variation:** the seed changes corridor thickness,
+  accommodation splits and mirrored/rotated configurations where
+  stairs and the actual perimeter permit it.
+- **Existing-stair preservation:** regenerating both selected floors
+  does not move an accepted staircase. If a new blank two-storey
+  L-house lacks stairs, the archetype attempts to position a valid
+  shared flight before adding doors.
+- **Fallback hallway correction:** for other staged layouts that
+  still produce a 6-corner 50%+ L-shaped *interior hallway*, carve
+  out functional rooms around the preserved stair instead of letting
+  its side wing absorb the entire floor.
+- **Generation quality threshold:** an irregular residential
+  suggestion with only one non-hall room and 55%+ hallway area is
+  rejected with a useful explanation rather than being silently
+  presented as a successful floor plan.
+- **Historical layout opt-out:** the new direct RPG archetype follows
+  the existing **Compact RPG two-storey house** checkbox. Uncheck it
+  to use the historical/legacy planning path instead.
+- **Regression coverage:** recreated accepted `example6(1).json`
+  geometry, stair clearance, door access, protected user rooms,
+  whole-perimeter coverage, nine-seed regeneration of both floors,
+  and creation of stairs in otherwise blank L-shaped houses.
+
+This release deliberately targets **simple six-corner stepped outlines**.
+Arbitrarily complex orthogonal footprints, courtyards and polygonal
+wings require a more general constraint-based graph/layout planner;
+they are not claimed to be solved by this archetype.
+
 ## v0.39 — Reclaim awkward stair wings on L-shaped generated halls (development)
 
 The uploaded `example5.json` demonstrates a valid but poor layout:
