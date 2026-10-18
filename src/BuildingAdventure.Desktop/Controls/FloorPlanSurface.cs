@@ -2307,6 +2307,7 @@ public sealed class FloorPlanSurface : FrameworkElement
 
             _selectedDoorId = door.Id;
             _selectedWindowId = null;
+            _selectedChimneyId = null;
             _selectedStairId = null;
             _selectedRoomId = null;
             _selectedVertex = -1;
@@ -2451,6 +2452,7 @@ public sealed class FloorPlanSurface : FrameworkElement
             if (!onLine && !(selected && (endA || endB))) continue;
 
             _selectedWindowId = window.Id;
+            _selectedChimneyId = null;
             _selectedDoorId = null;
             _selectedRoomId = null;
             _selectedStairId = null;
@@ -2900,6 +2902,7 @@ public sealed class FloorPlanSurface : FrameworkElement
 
     private void ClearSelection()
     {
+        _selectedChimneyId = null;
         _selectedRoomId = null;
         _selectedDoorId = null;
         _selectedWindowId = null;
