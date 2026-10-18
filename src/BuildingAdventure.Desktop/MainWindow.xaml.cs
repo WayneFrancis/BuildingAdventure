@@ -725,7 +725,14 @@ public partial class MainWindow : Window
 
     private void SuggestWholeBuilding_Click(object sender, RoutedEventArgs e)
     {
-        int count = Math.Clamp(WholeBuildingFloorsBox.SelectedIndex + 1, 1, 4);
+        // Never silently turn a missing/invalid selection into one floor.
+        int count = WholeBuildingFloorsBox.SelectedIndex + 1;
+        if (count is < 1 or > 4)
+        {
+            _hint = "Choose 1, 2, 3 or 4 floors before suggesting a whole building.";
+            Refresh();
+            return;
+        }
         int seed = Random.Shared.Next(1, int.MaxValue);
         if (!BuildingGenerator.TrySuggestWholeBuilding(count, seed,
             SelectedGeneratorOptions(), out var proposal, out var reason))
@@ -846,6 +853,17 @@ public partial class MainWindow : Window
         var before = CurrentDocument();
         string fingerprint = CurrentJson();
         bool changedBase = _suggestionSource != fingerprint;
+        if (_pendingWholeBuilding &&
+            (BuildingStoreys.FloorCount(_pendingSuggestion.Building) !=
+                _pendingSuggestion.FloorIndexes.Count ||
+             !_pendingSuggestion.FloorIndexes.SequenceEqual(
+                BuildingStoreys.FloorIndexes(_pendingSuggestion.Building))))
+        {
+            _hint = "This draft does not contain all its requested floors. " +
+                "Discard the preview and generate another building.";
+            Refresh();
+            return;
+        }
         if (_pendingWholeBuilding || changedBase)
         {
             string explanation = _pendingWholeBuilding
@@ -866,13 +884,9 @@ public partial class MainWindow : Window
         }
 
         bool acceptedWholeBuilding = _pendingWholeBuilding;
-        int requestedFloorCount = _pendingSuggestion.FloorIndexes.Count;
         _history.RecordBefore(before, _activeFloorIndex);
         _building = BuildingStoreys.Copy(_pendingSuggestion.Building);
         int acceptedFloorCount = BuildingStoreys.FloorCount(_building);
-        if (acceptedWholeBuilding && acceptedFloorCount != requestedFloorCount)
-            throw new InvalidOperationException(
-                $"The accepted building has {acceptedFloorCount} floors, expected {requestedFloorCount}.");
         _activeFloorIndex = Math.Clamp(_activeFloorIndex,
             BuildingStoreys.LowestFloorIndex(_building),
             BuildingStoreys.HighestFloorIndex(_building));
@@ -1299,6 +1313,12 @@ public partial class MainWindow : Window
 
     private void NavigateFloor(int change)
     {
+        if (_pendingWholeBuilding)
+        {
+            // Page Up/Page Down navigate draft storeys as well as real floors.
+            CycleProposedFloor(change);
+            return;
+        }
         if (EditorSurface.HasPendingStep)
         {
             _hint = "Finish or cancel the current drawing before switching floors.";
