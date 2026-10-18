@@ -4,6 +4,39 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.26 — Upper-floor grid snapping and resuggesting edited outlines (development)
+
+- **Perimeter corners now use the displayed map grid:** dragging corners
+  and moving walls formerly snapped in fixed 0.5m increments even on a
+  5/10-foot tabletop map. They now use 0.5m, 1.524m, or 3.048m
+  consistently with the selected mode. A newly inserted corner on a
+  straight wall also snaps along that wall. Shift still bypasses snapping.
+  Explicit corner-to-corner and wall snapping remain higher priority
+  when near existing geometry.
+- **Reserve stairs before room subdivision:** when two adjacent checked
+  existing floors are requested with rooms/corridors/stairs, first
+  attempt corridors on both floors and reserve their connecting flight
+  before assigning new rooms. The old rooms-first order often used up
+  every suitable landing space, then rejected the entire suggestion.
+- **Offset perimeters:** an upper storey may have a different footprint.
+  The staircase search additionally tries the intersection of its hall
+  extents with the lower hall, validating the complete flight/landings
+  against the actual geometry on both levels.
+- **Step-shaped floorplans:** if a rectangular full-width corridor
+  cannot fit a notched perimeter, find shorter axis-aligned hall spans
+  between actual exterior vertices. Room candidates are then planned
+  around that accessible hall rather than declaring the whole floor
+  unusable.
+- **No silent failures:** Suggest and Regenerate now display the exact
+  reason when a proposed layout cannot be made, both in a dialog and
+  in the generator panel. If a requested floor has substantial
+  unallocated space but receives no rooms, that is explicitly
+  reported instead of returning a misleading hallway-only draft.
+- Added regressions for 5/10-foot corner move precision, regenerating
+  two checked storeys after shrinking the upper perimeter, reserving
+  stairs before room filling, and partial corridors inside notched
+  upper-floor outlines.
+
 ## v0.25 — LShape2 uploaded example, 2.5-foot hall strip and checked-floor stair access (development)
 
 The supplied `LShape2.json` (5-foot grid, two floors) exposed a
