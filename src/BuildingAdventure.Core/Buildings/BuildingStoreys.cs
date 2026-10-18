@@ -104,7 +104,8 @@ public static class BuildingStoreys
         WallThickness = source.WallThickness.Copy(),
         UpperFloors = source.UpperFloors.Select(f => f.Copy()).ToList(),
         BasementFloors = source.BasementFloors.Select(f => f.Copy()).ToList(),
-        Staircases = source.Staircases.Select(s => s.Copy()).ToList()
+        Staircases = source.Staircases.Select(s => s.Copy()).ToList(),
+        Chimneys = source.Chimneys.Select(ch => ch.Copy()).ToList()
     };
 
     /// <summary>
@@ -514,7 +515,7 @@ public static class BuildingStoreys
             return false;
         }
         if (building.UpperFloors is null || building.BasementFloors is null ||
-            building.Staircases is null)
+            building.Staircases is null || building.Chimneys is null)
         {
             reason = "Floor or staircase collections are missing.";
             return false;
@@ -681,6 +682,55 @@ public static class BuildingStoreys
                 return false;
             }
         }
+        var chimneyIds = new HashSet<Guid>();
+        foreach (var chimney in building.Chimneys)
+        {
+            if (chimney is null || chimney.Id == Guid.Empty ||
+                !chimneyIds.Add(chimney.Id) ||
+                !double.IsFinite(chimney.Centre.X) ||
+                !double.IsFinite(chimney.Centre.Y) ||
+                !double.IsFinite(chimney.Width) ||
+                !double.IsFinite(chimney.Depth) ||
+                chimney.Width < 0.4 || chimney.Width > 2 ||
+                chimney.Depth < 0.4 || chimney.Depth > 2)
+            {
+                reason = "A chimney has invalid dimensions or identifier.";
+                return false;
+            }
+            var footprint = ChimneyFootprint(chimney);
+            var served = ChimneyFloors(building, chimney);
+            if (served.Count == 0)
+            {
+                reason = "The chimney is outside every floor of the building.";
+                return false;
+            }
+            foreach (int index in served)
+            {
+                var level = GetFloor(building, index);
+                if (FloorGeometry.BuildWalls(level.Perimeter, level.Rooms)
+                    .Any(w => !w.IsExterior &&
+                        WallCrossesFootprintInterior(w, footprint)))
+                {
+                    reason = $"The chimney crosses an interior wall on {FloorLabel(index)}.";
+                    return false;
+                }
+                if (building.Staircases.Any(s =>
+                    (s.LowerFloorIndex == index ||
+                     s.LowerFloorIndex + 1 == index) &&
+                    (ConvexPolygonsOverlap(footprint, StairFootprint(s)) ||
+                     StairLandings(s).Any(l => ConvexPolygonsOverlap(footprint, l)))))
+                {
+                    reason = $"The chimney blocks a stair or landing on {FloorLabel(index)}.";
+                    return false;
+                }
+                if (level.Doors.Any(d => d.Centre.DistanceTo(chimney.Centre) < 1.1) ||
+                    level.Windows.Any(w => w.Centre.DistanceTo(chimney.Centre) < 1.2))
+                {
+                    reason = $"A door or window is too close to the fireplace on {FloorLabel(index)}.";
+                    return false;
+                }
+            }
+        }
         return true;
     }
 
@@ -704,6 +754,25 @@ public static class BuildingStoreys
     }
 
     /// <summary>Rectangular clear floor areas beyond both ends of a flight.</summary>
+    public static List<Point2> ChimneyFootprint(ChimneyDefinition chimney)
+    {
+        double a = chimney.Centre.X - chimney.Width / 2;
+        double b = chimney.Centre.Y - chimney.Depth / 2;
+        return
+        [
+            new Point2(a, b),
+            new Point2(a + chimney.Width, b),
+            new Point2(a + chimney.Width, b + chimney.Depth),
+            new Point2(a, b + chimney.Depth)
+        ];
+    }
+
+    public static IReadOnlyList<int> ChimneyFloors(
+        BuildingDocument building, ChimneyDefinition chimney) =>
+        FloorIndexes(building).Where(i =>
+            FloorGeometry.IsWithinPolygon(ChimneyFootprint(chimney),
+                GetFloor(building, i).Perimeter)).ToArray();
+
     public static IReadOnlyList<List<Point2>> StairLandings(StaircaseDefinition stair)
     {
         if (stair.LandingLength <= 0) return [];
