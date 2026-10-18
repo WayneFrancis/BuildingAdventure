@@ -13,15 +13,16 @@ public sealed class GenerationOptions
     public bool Doors { get; set; } = true;
     public bool Windows { get; set; }
     public bool Stairs { get; set; }
+    public bool Fireplaces { get; set; }
     public BuildingUse Purpose { get; set; } = BuildingUse.Residence;
 
     public GenerationOptions Copy() => new()
     {
         Rooms = Rooms, Corridors = Corridors, Doors = Doors,
-        Windows = Windows, Stairs = Stairs, Purpose = Purpose
+        Windows = Windows, Stairs = Stairs, Fireplaces = Fireplaces, Purpose = Purpose
     };
 
-    public bool Any => Rooms || Corridors || Doors || Windows || Stairs;
+    public bool Any => Rooms || Corridors || Doors || Windows || Stairs || Fireplaces;
 }
 
 /// <summary>
@@ -245,6 +246,54 @@ public static class BuildingConnectivity
             }
         }
         return count;
+    }
+
+    /// <summary>
+    /// Try a shared masonry fireplace stack at a ground-floor wall.
+    /// Prefer an outside wall but also allow internal positions if geometry
+    /// permits. Its fixed plan position carries up and down every floor
+    /// whose perimeter covers the entire hearth footprint.
+    /// </summary>
+    public static bool TryAddChimney(BuildingDocument building,
+        out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(building);
+        if (updated.Chimneys.Count > 0) return false;
+        int ground = BuildingStoreys.HasFloor(building, 0)
+            ? 0 : BuildingStoreys.LowestFloorIndex(building);
+        var baseFloor = BuildingStoreys.GetFloor(building, ground);
+        if (baseFloor.Perimeter.Count < 3) return false;
+        var walls = FloorGeometry.BuildWalls(baseFloor.Perimeter, baseFloor.Rooms)
+            .Where(w => w.Length >= 2.0)
+            .OrderByDescending(w => w.IsExterior)
+            .ThenByDescending(w => w.Length);
+        foreach (var wall in walls)
+        {
+            var midpoint = Midpoint(wall);
+            double dx = wall.B.X - wall.A.X, dy = wall.B.Y - wall.A.Y;
+            double len = Math.Sqrt(dx * dx + dy * dy);
+            if (len < 2) continue;
+            // The first iteration tries either side of the wall. The
+            // building validator rejects exterior, room-wall and stair
+            // collisions, as well as windows immediately beside a hearth.
+            foreach (int sign in new[] { 1, -1 })
+            {
+                var centre = new Point2(midpoint.X - sign * dy / len * 0.46,
+                    midpoint.Y + sign * dx / len * 0.46);
+                if (baseFloor.Rooms.Any(r => r.Type == "Stairwell" &&
+                    PolygonGeometry.ContainsPoint(r.Outline, centre)))
+                    continue;
+                var candidate = BuildingStoreys.Copy(updated);
+                candidate.Chimneys.Add(new ChimneyDefinition
+                {
+                    Centre = centre, Exterior = wall.IsExterior
+                });
+                if (!BuildingStoreys.Validate(candidate, out _)) continue;
+                updated = candidate;
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
