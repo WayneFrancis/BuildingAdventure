@@ -881,7 +881,13 @@ public sealed class FloorPlanSurface : FrameworkElement
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(180, 171, 89, 65)),
                 new Pen(Brushes.SaddleBrown, 2), BuildGeometry(footprint, true));
             Point centre = ToScreen(chimney.Centre);
-            DrawText(dc, "FIREPLACE / FLUE",
+            bool hearthRoom = _rooms.Any(r =>
+                new[] { "Common room", "Living room", "Kitchen", "Dining room",
+                        "Parlour", "Great hall", "Shop floor", "Workshop",
+                        "Bedroom", "Study", "Guest room", "Chamber" }
+                    .Contains(r.Type, StringComparer.OrdinalIgnoreCase) &&
+                PolygonGeometry.ContainsPoint(r.Outline, chimney.Centre));
+            DrawText(dc, hearthRoom ? "FIREPLACE" : "FLUE",
                 new Point(centre.X + 7, centre.Y - 14), 10, Brushes.Maroon);
         }
 
