@@ -268,18 +268,27 @@ public partial class MainWindow : Window
         if (_loading || EditorSurface is null || CornersText is null) return;
         var outline = EditorSurface.GetOutline();
         CornersText.Text = $"{outline.Count} corners";
-        AreaText.Text = outline.Count >= 3 ? $"Area: {PolygonGeometry.Area(outline):N2} m²" : "Area: —";
+        bool imperial = _building.GridFeet is 5 or 10;
+        double areaFactor = imperial ? 1 / (0.3048 * 0.3048) : 1;
+        double lengthFactor = imperial ? 1 / 0.3048 : 1;
+        string areaUnit = imperial ? "ft²" : "m²";
+        string lengthUnit = imperial ? "ft" : "m";
+        AreaText.Text = outline.Count >= 3
+            ? $"Area: {PolygonGeometry.Area(outline) * areaFactor:N2} {areaUnit}"
+            : "Area: —";
         double slabArea = outline.Count < 3 ? 0
             : PolygonGeometry.Area(outline) -
               BuildingStoreys.GetOpenings(_building.Staircases, _activeFloorIndex)
                   .Sum(o => PolygonGeometry.Area(o.Outline));
         SlabAreaText.Text = outline.Count < 3 ? "Slab area: —"
-            : $"Slab area excluding voids: {slabArea:N2} m²";
-        LengthText.Text = outline.Count >= 3 ? $"Exterior walls: {PolygonGeometry.Perimeter(outline):N2} m" : "Exterior walls: —";
+            : $"Slab area excluding voids: {slabArea * areaFactor:N2} {areaUnit}";
+        LengthText.Text = outline.Count >= 3
+            ? $"Exterior walls: {PolygonGeometry.Perimeter(outline) * lengthFactor:N2} {lengthUnit}"
+            : "Exterior walls: —";
         RoomsText.Text = $"{EditorSurface.GetRooms().Count} rooms, " +
             $"{EditorSurface.GetDoors().Count} doors, {EditorSurface.GetWindows().Count} windows";
         UnassignedAreaText.Text = outline.Count >= 3
-            ? $"Unassigned usable floor: {EditorSurface.UnassignedAreaMetres:N2} m²"
+            ? $"Unassigned usable floor: {EditorSurface.UnassignedAreaMetres * areaFactor:N2} {areaUnit}"
             : "Unassigned usable floor: —";
         DeleteRoomButton.IsEnabled = EditorSurface.SelectedRoom is not null;
         DeleteDoorButton.IsEnabled = EditorSurface.HasSelectedDoor;
