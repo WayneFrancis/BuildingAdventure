@@ -18,13 +18,17 @@ public sealed class GenerationOptions
     // corridor generator; the desktop editor enables this by default
     // for residence suggestions. Non-residences are unaffected.
     public bool HallHouseLayout { get; set; }
+    // Internal multi-step generation: circulation cannot be judged until
+    // reserved stair bays are merged and the final layout is in place.
+    public bool DeferCirculationValidation { get; set; }
     public BuildingUse Purpose { get; set; } = BuildingUse.Residence;
 
     public GenerationOptions Copy() => new()
     {
         Rooms = Rooms, Corridors = Corridors, Doors = Doors,
         Windows = Windows, Stairs = Stairs, Fireplaces = Fireplaces,
-        HallHouseLayout = HallHouseLayout, Purpose = Purpose
+        HallHouseLayout = HallHouseLayout,
+        DeferCirculationValidation = DeferCirculationValidation, Purpose = Purpose
     };
 
     public bool Any => Rooms || Corridors || Doors || Windows || Stairs || Fireplaces;
