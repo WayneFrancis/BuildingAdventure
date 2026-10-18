@@ -71,7 +71,7 @@ public static class BuildingGenerator
             options.Purpose == BuildingUse.Residence &&
             options.Rooms && options.Corridors && options.Doors &&
             MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
-                blank, out var directHallHouse, out _))
+                blank, seed, out var directHallHouse, out _))
         {
             int hearthCount = 0;
             if (options.Fireplaces &&
@@ -242,7 +242,7 @@ public static class BuildingGenerator
             options.Rooms && options.Corridors && options.Doors)
         {
             if (MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
-                result, out var medieval, out hallHouseFitReason))
+                result, seed, out var medieval, out hallHouseFitReason))
             {
                 result = medieval;
                 hallHouseBuilt = true;
@@ -857,7 +857,7 @@ public static class BuildingGenerator
                 !BuildingStoreys.GetFloor(proposed, 0).Rooms
                     .Any(r => r.Type == "Stairwell") &&
                 MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
-                    proposed, out var medieval, out _))
+                    proposed, seed, out var medieval, out _))
             {
                 proposed = medieval;
                 hallHouseSuggested = true;
