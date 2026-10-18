@@ -161,14 +161,14 @@ public static class BuildingGenerator
         // Optional rear-side wing; its low end does not overlap the
         // central corridor. Modest residences mostly remain rectangular.
         bool wing = (use != BuildingUse.Residence || floors > 1) &&
-            random.Next(4) == 0 && width >= 7 * cell && depth >= 5 * cell;
+            random.Next(4) == 0 && width >= 3 * cell && depth >= 3 * cell;
         if (!wing)
             return [new(0, 0), new(width, 0), new(width, depth), new(0, depth)];
 
         double wingWidth = gridFeet == 10 ? cell :
             Math.Max(cell, Math.Round(2.0 / cell) * cell);
         double wingStart = Math.Round(depth * 0.6 / cell) * cell;
-        wingStart = Math.Clamp(wingStart, 2 * cell, depth - 2 * cell);
+        wingStart = Math.Clamp(wingStart, cell, depth - cell);
         return
         [
             new(0, 0), new(width, 0),
