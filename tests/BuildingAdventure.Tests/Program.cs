@@ -4278,5 +4278,170 @@ Check("Inn hearths are broader than cottage hearths without heating empty hallwa
         "Do not add a decorative fireplace to a corridor when no living room exists.");
 });
 
+Check("Generated upper-storey doors never open directly into empty air", () =>
+{
+    var ground = new BuildingDocument
+    {
+        Perimeter = [new(0,0), new(12,0), new(12,10), new(0,10)],
+        Rooms =
+        [
+            new RoomDefinition { Name = "Hall", Type = "Hallway",
+                Outline = [new(0,0),new(2,0),new(2,10),new(0,10)] },
+            new RoomDefinition { Name = "Living room", Type = "Living room",
+                Outline = [new(2,0),new(7,0),new(7,4),new(2,4)] },
+            new RoomDefinition { Name = "Kitchen", Type = "Kitchen",
+                Outline = [new(7,0),new(12,0),new(12,6),new(7,6)] },
+            new RoomDefinition { Name = "Dining room", Type = "Dining room",
+                Outline = [new(2,4),new(7,4),new(7,10),new(2,10)] },
+            new RoomDefinition { Name = "Storeroom", Type = "Storeroom",
+                Outline = [new(7,6),new(12,6),new(12,10),new(7,10)] }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(ground, out var reason), reason);
+    Assert(BuildingStoreys.TryAddFloor(ground, out var two, out reason), reason);
+    var upstairs = BuildingStoreys.GetFloor(two, 1);
+    upstairs.Rooms =
+    [
+        new RoomDefinition { Name = "Upper hallway", Type = "Hallway",
+            Outline = [new(0,0),new(2,0),new(2,10),new(0,10)] },
+        new RoomDefinition { Name = "Bedroom", Type = "Bedroom",
+            Outline = [new(2,0),new(7,0),new(7,10),new(2,10)] },
+        new RoomDefinition { Name = "Bedroom 2", Type = "Bedroom",
+            Outline = [new(7,0),new(12,0),new(12,10),new(7,10)] }
+    ];
+    BuildingStoreys.SetFloor(two, 1, upstairs);
+    Assert(BuildingStoreys.Validate(two, out reason), reason);
+    Assert(BuildingConnectivity.AddDoors(two, 0, out var withGround) >= 4);
+    Assert(BuildingConnectivity.AddDoors(withGround, 1, out var complete) >= 2);
+    var gf = BuildingStoreys.GetFloor(complete, 0);
+    var upper = BuildingStoreys.GetFloor(complete, 1);
+    bool OnWall(Point2 point, IReadOnlyList<Point2> points) =>
+        Enumerable.Range(0, points.Count).Any(i =>
+            PolygonGeometry.ClosestPointOnSegment(
+                point, points[i], points[(i + 1) % points.Count])
+                .DistanceTo(point) < 1e-5);
+    var outer = FloorGeometry.BuildWalls(upper.Perimeter, upper.Rooms)
+        .Where(w => w.IsExterior).ToList();
+    Assert(!upper.Doors.Any(d => outer.Any(w =>
+        PolygonGeometry.ClosestPointOnSegment(d.Centre, w.A, w.B)
+            .DistanceTo(d.Centre) < 1e-5)),
+        "Upper-level rooms must not get a door opening off the exterior perimeter.");
+    foreach (var room in upper.Rooms.Where(r => r.Type != "Hallway"))
+        Assert(upper.Doors.Any(d => OnWall(d.Centre, room.Outline) &&
+            upper.Rooms.Any(other => other.Id != room.Id &&
+                OnWall(d.Centre, other.Outline))),
+            "Every generated bedroom must have an internal route.");
+    var hall = gf.Rooms.Single(r => r.Type == "Hallway");
+    var living = gf.Rooms.Single(r => r.Type == "Living room");
+    Assert(gf.Doors.Any(d => OnWall(d.Centre, hall.Outline) &&
+        OnWall(d.Centre, living.Outline)),
+        "The living room needs hall access even with an outside entrance.");
+    var kitchen = gf.Rooms.Single(r => r.Type == "Kitchen");
+    foreach (var type in new[] { "Living room", "Dining room", "Storeroom" })
+    {
+        var partner = gf.Rooms.Single(r => r.Type == type);
+        Assert(gf.Doors.Any(d => OnWall(d.Centre, kitchen.Outline) &&
+            OnWall(d.Centre, partner.Outline)),
+            "A kitchen should connect to its adjoining " + type);
+    }
+    Assert(BuildingStoreys.Validate(complete, out reason), reason);
+});
+
+Check("Regenerate checked floors changes a detached draft without erasing a drawn perimeter", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(12,0),new(12,8),new(0,8)],
+        Rooms = [new RoomDefinition { Name = "Manual room", Type = "Workshop",
+            Outline = [new(0,0),new(6,0),new(6,4),new(0,4)] }]
+    };
+    Assert(BuildingStoreys.TryAddFloor(source, out var two, out var reason), reason);
+    var original = BuildingStoreys.Copy(two);
+    var options = new GenerationOptions
+    { Rooms = true, Corridors = true, Doors = true, Windows = true };
+    foreach (int seed in new[] { 73, 145 })
+    {
+        Assert(BuildingGenerator.TryRegenerate(two, [0], seed, options,
+            out var proposal, out reason), reason);
+        Assert(proposal.Building.Rooms.Count > 1);
+        Assert(proposal.Building.Rooms.All(r => r.Name != "Manual room"));
+        Assert(proposal.Building.Perimeter.SequenceEqual(two.Perimeter));
+        Assert(BuildingStoreys.GetFloor(proposal.Building, 1).Perimeter
+            .SequenceEqual(BuildingStoreys.GetFloor(two, 1).Perimeter));
+        Assert(BuildingStoreys.Validate(proposal.Building, out reason), reason);
+    }
+    Assert(two.Rooms.Single().Name == "Manual room");
+    Assert(BuildingStoreys.GetFloor(two, 0).Perimeter.SequenceEqual(original.Perimeter));
+});
+
+Check("Orthogonal L-wing and precise perimeter cells are filled without room seams", () =>
+{
+    var shape = new List<Point2> {new(0,0),new(10,0),new(10,6),
+        new(14,6),new(14,10),new(0,10)};
+    var building = new BuildingDocument
+    {
+        Perimeter = shape,
+        Rooms = [new RoomDefinition { Name = "Hall", Type = "Hallway",
+            Outline = [new(0,0),new(2,0),new(2,10),new(0,10)] }]
+    };
+    int added = RoomLayoutPlanner.FillUnassignedRegions(building, 0,
+        BuildingUse.Residence, new Random(12), out var filled);
+    Assert(added >= 2, "The main room strip and L-wing should both be usable.");
+    Assert(RoomLayoutPlanner.UnassignedArea(filled) < 0.01,
+        "Full-size orthogonal remainder must not remain empty.");
+    Assert(BuildingStoreys.Validate(filled, out var reason), reason);
+
+    var footPlan = new BuildingDocument
+    {
+        GridFeet = 5,
+        Perimeter = [new(0,0),new(12.192,0),
+            new(12.192,9.144),new(0,9.144)],
+        Rooms = [new RoomDefinition { Name = "Hall", Type = "Hallway",
+            Outline = [new(0,0),new(2,0),new(2,9.144),new(0,9.144)] }]
+    };
+    Assert(RoomLayoutPlanner.FillUnassignedRegions(footPlan, 0,
+        BuildingUse.Residence, new Random(12), out var filledFeet) >= 1);
+    Assert(RoomLayoutPlanner.UnassignedArea(filledFeet) < 0.01);
+    Assert(BuildingStoreys.Validate(filledFeet, out reason), reason);
+});
+
+Check("A shared kitchen-living hearth serves two rooms but not the upstairs bedroom", () =>
+{
+    var building = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(12,0),new(12,10),new(0,10)],
+        Rooms =
+        [
+            new RoomDefinition { Name = "Living room", Type = "Living room",
+                Outline = [new(0,0),new(7,0),new(7,10),new(0,10)] },
+            new RoomDefinition { Name = "Kitchen", Type = "Kitchen",
+                Outline = [new(7,0),new(12,0),new(12,10),new(7,10)] }
+        ]
+    };
+    Assert(BuildingStoreys.TryAddFloor(building, out var two, out var reason), reason);
+    var upper = BuildingStoreys.GetFloor(two, 1);
+    upper.Rooms =
+    [
+        new RoomDefinition { Name = "Bedroom", Type = "Bedroom",
+            Outline = [new(0,0),new(7,0),new(7,10),new(0,10)] },
+        new RoomDefinition { Name = "Bedroom 2", Type = "Bedroom",
+            Outline = [new(7,0),new(12,0),new(12,10),new(7,10)] }
+    ];
+    BuildingStoreys.SetFloor(two, 1, upper);
+    Assert(BuildingConnectivity.TryAddChimney(two, out var heated),
+        "Shared hearth should fit where bedroom partitions follow ground floor walls.");
+    var stack = heated.Chimneys.Single();
+    Assert(stack.HearthRoomIds.Count == 2, "Two ground-floor hearth faces need one flue.");
+    Assert(stack.OtherHearthCentre.HasValue);
+    Assert(stack.HearthFloorIndex == 0);
+    Assert(heated.UpperFloors[0].Rooms.All(r => !stack.HearthRoomIds.Contains(r.Id)));
+    Assert(Math.Abs(stack.Centre.X - 7) < 0.9,
+        "The flue must follow the upstairs bedroom partition, not its centre.");
+    var restored = BuildingDocumentJson.Deserialize(
+        BuildingDocumentJson.Serialize(heated));
+    Assert(restored.Chimneys.Single().HearthRoomIds.Count == 2);
+    Assert(BuildingStoreys.Validate(restored, out reason), reason);
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
