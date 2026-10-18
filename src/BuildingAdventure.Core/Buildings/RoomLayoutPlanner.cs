@@ -888,12 +888,33 @@ public static class RoomLayoutPlanner
                         r.Outline, store.Outline, 1.0)))
                     continue;
 
-                var host = floor.Rooms.FirstOrDefault(r =>
+                double sx0 = store.Outline.Min(p => p.X);
+                double sx1 = store.Outline.Max(p => p.X);
+                double sy0 = store.Outline.Min(p => p.Y);
+                double sy1 = store.Outline.Max(p => p.Y);
+                bool horizontal = sx1 - sx0 >= sy1 - sy0;
+                var centreOnLongSide = horizontal
+                    ? new Point2((sx0 + sx1) / 2, sy1 + 0.02)
+                    : new Point2(sx1 + 0.02, (sy0 + sy1) / 2);
+                bool hallAtHigh = PolygonGeometry.ContainsPoint(
+                    hall.Outline, centreOnLongSide);
+                // Choose the room on the OPPOSITE long side of the
+                // storage band, not a previously expanded L room which
+                // now happens to share the store's short end wall.
+                var host = floor.Rooms.Where(r =>
                     !original.Contains(r.Id) &&
                     r.Type is ("Bedroom" or "Dining room" or
                         "Study" or "Living room" or "Office") &&
                     BuildingConnectivity.ShareWall(
-                        r.Outline, store.Outline, 1.0));
+                        r.Outline, store.Outline, 1.0))
+                    .OrderByDescending(r => horizontal
+                        ? (hallAtHigh
+                            ? Math.Abs(r.Outline.Max(p => p.Y) - sy0) < 1e-5
+                            : Math.Abs(r.Outline.Min(p => p.Y) - sy1) < 1e-5)
+                        : (hallAtHigh
+                            ? Math.Abs(r.Outline.Max(p => p.X) - sx0) < 1e-5
+                            : Math.Abs(r.Outline.Min(p => p.X) - sx1) < 1e-5))
+                    .FirstOrDefault();
                 if (host is null) continue;
 
                 // Only generated store doors may be removed. Other doors
