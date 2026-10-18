@@ -4,6 +4,40 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.41 — Physically accessible L-house stairs and opposite up/down arrows (development)
+
+The accepted `example6(3).json` makes two stair problems visible:
+
+- The renderer drew the arrow from the stored rotation on **both**
+  floors, so **UP** and **DOWN** pointed the same way. The new
+  floor-aware direction helper draws ascent along the stored axis on
+  the lower floor and descent along its **reverse** upstairs.
+  Stair rotation, saved JSON and user-authored placement are unchanged.
+- The previous stair was centred at (2.5m, 0.7m), along an outer wall.
+  Its 2.8m flight and two 1m landings were inside the valid room
+  geometry, but the surrounding 1.6m-deep stair bay had **only 0.4m
+  of rear access** past the flight. Merely checking that both landings
+  fit inside a hall was insufficient to make either landing reachable.
+- **New stepped-house stairs:** the default planner now allows wider
+  end landing pockets, places the new flight farther from the outer
+  wall, orients ascent inward toward the house, and reserves at least
+  **1.1m continuous clear bypass** behind the entire flight and both
+  landings, connecting their ends to the hallway on each storey.
+  Room areas, all stair landings and exterior fit are revalidated.
+- **Preserving existing stairs:** two-floor regeneration continues
+  to respect an existing stair's ID, position and rotation. The
+  stepped planner enlarges the surrounding access area where it can;
+  it never silently moves or reverses a hand-placed or previously
+  accepted staircase.
+- **Tests:** five rotations of up/down arrows, exact 0.4m pinch in
+  the uploaded example, newly generated rotated stair geometry,
+  the full 1.1m bypass, and existing-stair regeneration.
+
+To use the improved newly positioned stair, start with a blank
+two-storey footprint **without an existing flight**, or intentionally
+delete the old staircase and regenerate both floors. Simply running
+Regenerate on an accepted old flight does not move it.
+
 ## v0.40 — RPG house layouts for six-corner L-shaped exteriors (development)
 
 The uploaded `example6(1).json` is a two-storey house whose outer
