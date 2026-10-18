@@ -24,6 +24,33 @@ public static class BuildingGenerator
     ];
 
     /// <summary>
+    /// Compare the actual room shapes/roles, not random object IDs, doors
+    /// or windows. The editor uses this to prevent a "Regenerate" action
+    /// from offering the same architectural arrangement again.
+    /// </summary>
+    public static bool SameRoomLayout(BuildingDocument first,
+        BuildingDocument second, IEnumerable<int> floorIndexes)
+    {
+        static string Signature(RoomDefinition room) =>
+            room.Type + "|" + string.Join(";", room.Outline
+                .Select(p => FormattableString.Invariant(
+                    $"{p.X:F4},{p.Y:F4}"))
+                .OrderBy(p => p, StringComparer.Ordinal));
+        foreach (int floorIndex in floorIndexes.Distinct())
+        {
+            if (!BuildingStoreys.HasFloor(first, floorIndex) ||
+                !BuildingStoreys.HasFloor(second, floorIndex))
+                return false;
+            var before = BuildingStoreys.GetFloor(first, floorIndex).Rooms
+                .Select(Signature).OrderBy(s => s, StringComparer.Ordinal);
+            var after = BuildingStoreys.GetFloor(second, floorIndex).Rooms
+                .Select(Signature).OrderBy(s => s, StringComparer.Ordinal);
+            if (!before.SequenceEqual(after)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Suggest a completely new draft building with one to four floors.
     /// This never overwrites the active building until explicitly accepted.
     /// </summary>
