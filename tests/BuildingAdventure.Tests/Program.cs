@@ -6872,5 +6872,170 @@ Check("Accepted example6(3) old staircase retains its position with widened uppe
         "The two arrows should be opposite even on saved old stairs.");
 });
 
+Check("example7 side-stair utility and upstairs bathroom move down like example8", () =>
+{
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var perimeter=new List<Point2>
+    {
+        new(0,0),new(9,0),new(9,6.5),new(11,6.5),
+        new(11,11),new(0,11)
+    };
+    List<Point2> Hall() =>
+    [
+        new(4.5,0),new(6.5,0),new(6.5,11),new(0,11),
+        new(0,6),new(1.6,6),new(1.6,9.7),new(4.5,9.7)
+    ];
+    var kitchen=new RoomDefinition
+    {
+        Name="Kitchen",Type="Kitchen",Outline=
+        [
+            new(6.5,0),new(9,0),new(9,6.5),
+            new(11,6.5),new(11,11),new(6.5,11)
+        ]
+    };
+    var plan=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=perimeter.ToList(),
+        Rooms=
+        [
+            new RoomDefinition{Name="Hallway 1",Type="Hallway",Outline=Hall()},
+            new RoomDefinition{Name="Living room",Type="Living room",
+                Outline=R(0,0,4.5,6)},
+            kitchen,
+            new RoomDefinition{Name="Utility",Type="Utility",
+                Outline=R(1.6,6,4.5,9.7)}
+        ],
+        Doors=
+        [
+            new DoorDefinition{Centre=new(5.5,0),Width=0.9},
+            new DoorDefinition{Centre=new(4.5,3),Width=0.9},
+            new DoorDefinition{Centre=new(6.5,5.5),Width=0.9},
+            new DoorDefinition{Centre=new(4.5,7.85),Width=0.9}
+        ],
+        Windows=[new WindowDefinition{Centre=new(0,3),Width=1.2}],
+        UpperFloors=
+        [
+            new StoreyDefinition
+            {
+                Name="First Floor",Perimeter=perimeter.ToList(),
+                Rooms=
+                [
+                    new RoomDefinition{Name="Hallway 1",Type="Hallway",
+                        Outline=Hall()},
+                    new RoomDefinition{Name="Bedroom",Type="Bedroom",
+                        Outline=R(0,0,4.5,6)},
+                    new RoomDefinition{Name="Study",Type="Study",
+                        Outline=R(6.5,6.5,11,11)},
+                    new RoomDefinition{Name="Bedroom 2",Type="Bedroom",
+                        Outline=R(6.5,0,9,6.5)},
+                    new RoomDefinition{Name="Bathroom",Type="Bathroom",
+                        Outline=R(1.6,6,4.5,9.7)}
+                ],
+                Doors=
+                [
+                    new DoorDefinition{Centre=new(4.5,3),Width=0.9},
+                    new DoorDefinition{Centre=new(6.5,8.75),Width=0.9},
+                    new DoorDefinition{Centre=new(6.5,3.25),Width=0.9},
+                    new DoorDefinition{Centre=new(4.5,7.85),Width=0.9}
+                ],
+                Windows=
+                [
+                    new WindowDefinition{Centre=new(0,3),Width=1.2},
+                    new WindowDefinition{Centre=new(11,8.75),Width=1.2},
+                    new WindowDefinition{Centre=new(7.75,0),Width=1.2}
+                ]
+            }
+        ],
+        Staircases=
+        [
+            new StaircaseDefinition
+            {
+                LowerFloorIndex=0,Centre=new(0.7,8.5),Length=2.8,
+                Width=1,RotationDegrees=0,LandingLength=1
+            }
+        ],
+        Chimneys=
+        [
+            new ChimneyDefinition
+            {
+                Centre=new Point2(8.63,3.25),Width=0.7,
+                Depth=1.4,Exterior=true,HearthFloorIndex=0,
+                HearthRoomIds=[kitchen.Id]
+            }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(plan,out var reason),reason);
+    var stairId=plan.Staircases[0].Id;
+    var fireplaceId=plan.Chimneys[0].Id;
+    var entranceId=plan.Doors[0].Id;
+    var kitchenId=kitchen.Id;
+    Assert(Math.Abs(PolygonGeometry.Area(plan.Rooms[0].Outline)-33.77)<0.01);
+    Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(plan))<0.01,
+        "Example7 ground floor is mathematically fully assigned.");
+
+    Assert(SideStairApproachPlanner.TryRebalance(plan,0,
+        Array.Empty<Guid>(),out var lower),
+        "Utility room must shift south as in example8, leaving access to the foot.");
+    Assert(SideStairApproachPlanner.TryRebalance(lower,1,
+        Array.Empty<Guid>(),out var repaired),
+        "First-floor bathroom must shift south too for upper stair access.");
+    Assert(BuildingStoreys.Validate(repaired,out reason),reason);
+    Assert(repaired.Staircases.Single().Id==stairId &&
+        repaired.Chimneys.Single().Id==fireplaceId,
+        "Do not move the staircase, fireplace or chimney stack.");
+    Assert(repaired.Rooms.Any(r=>r.Id==kitchenId &&
+        r.Type=="Kitchen") &&
+        repaired.Doors.Any(d=>d.Id==entranceId),
+        "Kitchen and front door are protected from moving.");
+    foreach(int index in new[]{0,1})
+    {
+        var floor=BuildingStoreys.GetFloor(repaired,index);
+        var hall=floor.Rooms.Single(r=>r.Type=="Hallway");
+        var room=floor.Rooms.Single(r=>r.Type==
+            (index==0?"Utility":"Bathroom"));
+        Assert(PolygonGeometry.Area(hall.Outline)<29,
+            "The overwide stair-side corridor should shrink by >4m².");
+        Assert(PolygonGeometry.Area(room.Outline)>16,
+            "The utility/bathroom gets the freed space at the bottom.");
+        Assert(room.Outline.Min(p=>p.Y)>=7.79 &&
+            room.Outline.Max(p=>p.Y)>=10.99,
+            "Move service room below the 1.8m cross-passage.");
+        Assert(Math.Abs(floor.Rooms.Sum(r=>
+            PolygonGeometry.Area(r.Outline))-108)<0.01,
+            "No remaining unassigned strip or stolen room area.");
+        var foot=repaired.Staircases.Single();
+        Assert(FloorGeometry.IsWithinPolygon(
+            BuildingStoreys.StairFootprint(foot),hall.Outline));
+        Assert(BuildingStoreys.StairLandings(foot).All(l=>
+            FloorGeometry.IsWithinPolygon(l,hall.Outline)),
+            "Both stair landings stay in the circulation polygon.");
+        bool On(Point2 p,IReadOnlyList<Point2> outline)=>
+            Enumerable.Range(0,outline.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(p,
+                    outline[i],outline[(i+1)%outline.Count])
+                    .DistanceTo(p)<1e-5);
+        foreach(var r in floor.Rooms.Where(r=>r.Id!=hall.Id))
+        {
+            Assert(floor.Doors.Any(d=>On(d.Centre,r.Outline) &&
+                On(d.Centre,hall.Outline)),
+                r.Name+" requires direct entry from the new hall.");
+        }
+        var access = index==1
+            ? floor.Rooms.Single(r=>r.Type=="Study")
+            : floor.Rooms.Single(r=>r.Type=="Kitchen");
+        Assert(access.Id!=room.Id);
+    }
+    Assert(plan.Rooms[0].Outline.Count==8 &&
+        Math.Abs(PolygonGeometry.Area(plan.Rooms[0].Outline)-33.77)<0.01,
+        "The source JSON layout cannot be mutated by suggestions.");
+    Assert(!SideStairApproachPlanner.TryRebalance(plan,0,
+        [plan.Rooms[0].Id],out _),
+        "Never change an accepted/hand-drawn hallway without regeneration.");
+    Assert(!SideStairApproachPlanner.TryRebalance(repaired,0,
+        Array.Empty<Guid>(),out _),
+        "Reapplying this pass must be idempotent.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
