@@ -7338,6 +7338,17 @@ Check("Regenerate example10 accepted L-house through balanced room-first archety
         }],
         Staircases=[oldStair]
     };
+    // The accepted map has a fireplace in the old Living room at
+    // (8.25, 0.37). The balanced plan puts its Kitchen there.
+    // Preserve the masonry and reconnect its hearth face to the
+    // new Kitchen room rather than leaving an unassigned fireplace.
+    var originalHearth=new ChimneyDefinition
+    {
+        Centre=new Point2(8.25,0.37),Width=1.4,Depth=0.7,
+        Exterior=true,HearthFloorIndex=0,
+        HearthRoomIds=[original.Rooms[0].Id]
+    };
+    original.Chimneys.Add(originalHearth);
     // Regeneration must delete the old draft's rooms, so it can plan
     // both levels independently around the SAME accepted stair.
     var options=new GenerationOptions
@@ -7355,6 +7366,13 @@ Check("Regenerate example10 accepted L-house through balanced room-first archety
     Assert(proposed.Rooms.Count(r=>r.Type=="Kitchen")==1);
     Assert(proposed.Rooms.Count(r=>r.Type=="Living room")==1);
     Assert(proposed.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+    var newlyAssignedKitchen=proposed.Rooms.Single(r=>r.Type=="Kitchen");
+    Assert(proposed.Chimneys.Single().Id==originalHearth.Id &&
+        proposed.Chimneys.Single().HearthRoomIds.SequenceEqual(
+            new[]{newlyAssignedKitchen.Id}),
+        "Keep the fireplace and connect it to the newly positioned Kitchen.");
+    Assert(original.Chimneys.Single().HearthRoomIds.Single()==original.Rooms[0].Id,
+        "Regeneration must preserve the source fireplace's old room link.");
     Assert(original.Rooms.Count==2 &&
         !original.Rooms.Any(r=>r.Type=="Kitchen"),
         "Regeneration must never mutate the accepted document.");
