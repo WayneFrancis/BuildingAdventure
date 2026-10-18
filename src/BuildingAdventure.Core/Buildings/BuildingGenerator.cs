@@ -354,10 +354,32 @@ public static class BuildingGenerator
         // floor layouts. Reuse any existing hallways and retain the normal
         // room pass below for all other features.
         bool hasAdjacentFloors = indices.Any(i => indices.Contains(i + 1));
+        string stairPlanningReason = "";
         if (options.Stairs && options.Rooms && options.Corridors &&
             hasAdjacentFloors &&
             indices.All(i => BuildingStoreys.GetFloor(proposed, i).Perimeter.Count >= 3))
         {
+            // Two empty levels MUST be laid out together, not given
+            // independently centred hallways. On a smaller upper floor,
+            // separately valid hallways often miss one another and cannot
+            // support a single common staircase and both landings.
+            foreach (int lower in indices.Where(i => indices.Contains(i + 1)))
+            {
+                if (BuildingStoreys.GetFloor(proposed, lower).Rooms.Count != 0 ||
+                    BuildingStoreys.GetFloor(proposed, lower + 1).Rooms.Count != 0 ||
+                    proposed.Staircases.Any(s => s.LowerFloorIndex == lower))
+                    continue;
+                if (BuildingConnectivity.TryAddAlignedHallwaysAndStairs(
+                    proposed, lower, out var aligned, out var detail))
+                {
+                    proposed = aligned;
+                    addedCorridors += 2;
+                    addedStairs++;
+                }
+                else
+                    stairPlanningReason = detail;
+            }
+
             foreach (int index in indices)
             {
                 var floor = BuildingStoreys.GetFloor(proposed, index);
@@ -590,9 +612,10 @@ public static class BuildingGenerator
                 reason = "No unobstructed staircase with landings fits between " +
                     string.Join(", ", inaccessible.Select(i =>
                         BuildingStoreys.FloorLabel(i) + " and " +
-                        BuildingStoreys.FloorLabel(i + 1))) +
-                    ". Try regenerating both floors, or provide space beside " +
-                    "the hallway for an open stair flight.";
+                        BuildingStoreys.FloorLabel(i + 1))) + ". " +
+                    (string.IsNullOrEmpty(stairPlanningReason)
+                        ? "Try a wider common area or adjust an existing hallway."
+                        : stairPlanningReason);
                 return false;
             }
         }
