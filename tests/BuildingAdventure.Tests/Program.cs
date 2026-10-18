@@ -4135,7 +4135,7 @@ Check("One fireplace chimney stacks through all covering floors including baseme
     // phantom fireplace even though the other levels retain theirs.
     var basement = BuildingStoreys.GetFloor(loaded, -1);
     basement.Perimeter =
-        [new(2,0), new(10,0), new(10,8), new(2,8)];
+        [new(0,0), new(1,0), new(1,1), new(0,1)];
     BuildingStoreys.SetFloor(loaded, -1, basement);
     Assert(BuildingStoreys.ChimneyFloors(loaded, loaded.Chimneys.Single())
         .SequenceEqual([0, 1]));
