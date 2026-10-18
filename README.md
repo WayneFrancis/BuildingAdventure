@@ -4,6 +4,60 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.34 — A historical hall-house layout, not a central corridor (development)
+
+The editor now offers **Medieval hall-house layout (residences)** under
+Generator / Suggestions, **enabled by default** for new users and saved
+with other generator settings. Uncheck it to retain the legacy central
+corridor algorithm. Non-residential uses continue with their existing
+layouts. Generating a proposal never overwrites the accepted plan.
+
+The new architecture is a complete alternative floor partition rather
+than another correction to storeroom placement:
+
+- **Great hall:** a substantial common living and dining space instead
+  of a full-length 2m modern corridor.
+- **Screens passage:** a short cross-passage at the service end with
+  the building's exterior entrance and a direct connection to the hall.
+- **Service end:** a kitchen and separately enclosed pantry, with
+  independent access from the passage or neighbouring kitchen.
+  The pantry normally receives just one door.
+- **High/private end:** a parlour where sufficient floor area remains;
+  on compact houses or those with stair landings occupying that end,
+  the great hall extends into this area instead.
+- **Multi-storey preservation:** the existing stair reservations and
+  landings are validated *before* accepting a hall-house replacement.
+  Upper-floor rooms and their footprints are not changed. If the
+  historical partition would cross a staircase or fail any door/shape
+  check, retain the legacy plan and **say so in the suggestion**.
+- **Irregular plans:** the orthogonal room zoning uses exact exterior
+  corner coordinates (including 5ft/10ft-grid outlines) to build valid
+  nonrectangular rooms around stepped/notched wings. Angled outlines
+  fall back to legacy generation.
+- **Direct small houses:** single-storey historic residences can be
+  laid out directly from the perimeter without first constructing a
+  modern corridor. The existing checked-floor and whole-building
+  workflows remain available.
+- **Editing support:** the room editor recognises Great hall, Parlour,
+  Pantry and Buttery as editable types. Chimney placement prefers the
+  Great hall where the historical archetype is present.
+- **Tests:** rectangular and transposed footprints, the stepped
+  `example2(2).json` outline and staircase landing positions,
+  full-area coverage, service doors, preview immutability, legacy
+  opt-out, and at least one valid two-storey hall-house suggestion.
+
+This is an **English-style hall-house archetype**, not a claim that all
+medieval buildings followed one universal plan. Historical guides and
+examples informing the service/private-end layout:
+[Looking at Buildings: The Medieval House](https://lookingatbuildings.org.uk/types/domestic/the-medieval-house.html),
+[Historic England: The Hermitage, Heston](https://historicengland.org.uk/research/results/reports/7160/THEHERMITAGE17UPPERSUTTONLANELBHOUNSLOW-ALATE-MEDIEVALTIMBER-FRAMEDHALLHOUSEATHESTON),
+[Early Dunster Project: Cross Passage House](https://sanhs.org/early-dunster-project/).
+
+**Scope:** v0.34 changes the newly generated *ground-floor* architecture.
+First-floor sleeping chambers still use the existing upper-floor
+subdivision method. Distinct inn, merchant townhouse, workshop and
+fortified-manor templates are future architectural variants.
+
 ## v0.33 — Final-stage circulation and misplaced storage corrections (development)
 
 The uploaded `example2(2).json` showed that v0.32's corridor fix was
