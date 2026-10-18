@@ -90,6 +90,41 @@ public static class BuildingGenerator
                 "to establish its initial floor layout.";
             return false;
         }
+        // Simple six-corner stepped homes should be built as complete
+        // RPG plans too. A rectangle-only template cannot fill their L
+        // wings, and corridor-first planning could waste 77% of the floor.
+        if (floorCount == 2 && options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors && options.Stairs &&
+            BuildingStoreys.TryAddFloor(blank,out var steppedBasis,out _) &&
+            SteppedRpgHousePlanner.TryGenerate(steppedBasis,seed,
+                out var stepped,out _))
+        {
+            int chimneyCount=0;
+            if(options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(stepped,
+                    out var heated,options.Purpose))
+            {
+                stepped=heated;
+                chimneyCount=1;
+            }
+            if(options.Windows)
+            {
+                foreach(int level in new[]{0,1})
+                {
+                    BuildingConnectivity.AddWindows(stepped,level,out var glazed);
+                    stepped=glazed;
+                }
+            }
+            if(BuildingStoreys.Validate(stepped,out reason))
+            {
+                suggestion=new BuildingSuggestion(stepped,seed,[0,1],
+                    $"Stepped two-storey RPG house. Seed {seed}: " +
+                    $"3 bedrooms upstairs, short stair passage, " +
+                    $"{chimneyCount} chimney stack(s)");
+                return true;
+            }
+        }
+
         // Prefer a genuine two-storey RPG plan over the old whole-width
         // corridor-first arrangement. The planner owns both sets of rooms
         // and the connecting stair in one transaction, so the door network
@@ -579,6 +614,42 @@ public static class BuildingGenerator
         {
             reason = "A selected floor no longer exists.";
             return false;
+        }
+
+        // Select-floor and Regenerate should plan both halves of an
+        // L-shaped residence together. The old corridor-first planner
+        // routinely allocated 57–77% to an L-shaped hallway. If the
+        // compact stepped archetype safely fits, use it before staging.
+        if (options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors && options.Stairs &&
+            indices.Length==2 && indices[0]==0 && indices[1]==1 &&
+            BuildingStoreys.FloorCount(source)==2 &&
+            SteppedRpgHousePlanner.TryGenerate(source,seed,
+                out var stepped,out _))
+        {
+            int chimneyCount=0;
+            if(options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(stepped,
+                    out var heated,options.Purpose))
+            {
+                stepped=heated;
+                chimneyCount=1;
+            }
+            if(options.Windows)
+            {
+                foreach(int index in indices)
+                {
+                    BuildingConnectivity.AddWindows(stepped,index,out var glazed);
+                    stepped=glazed;
+                }
+            }
+            if(BuildingStoreys.Validate(stepped,out reason))
+            {
+                suggestion=new BuildingSuggestion(stepped,seed,indices,
+                    $"Stepped two-storey RPG house. Seed {seed}: " +
+                    $"3 upper bedrooms, stair landing, {chimneyCount} chimney(s)");
+                return true;
+            }
         }
 
         // The user may be generating a blank matched pair of floors or
