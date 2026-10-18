@@ -18,7 +18,24 @@ public static class MedievalHallHousePlanner
 {
     private const double Epsilon = 1e-6;
 
+    private readonly record struct HallVariant(
+        bool AlongX, bool Reverse, bool PrivateEnd,
+        double ServiceFraction, double ScreenWidth,
+        double SideSplit, double PrivateFraction, string ServiceRoom);
+
+    // Legacy callers keep the established deterministic arrangement.
+    // Generated suggestions pass a seed to vary the building's actual
+    // architecture, not merely its GUIDs, names or window positions.
     public static bool TryReplaceGeneratedGroundFloor(BuildingDocument building,
+        int seed, out BuildingDocument updated, out string reason) =>
+        TryReplaceGeneratedGroundFloorCore(building, seed, out updated, out reason);
+
+    public static bool TryReplaceGeneratedGroundFloor(BuildingDocument building,
+        out BuildingDocument updated, out string reason) =>
+        TryReplaceGeneratedGroundFloorCore(building, null, out updated, out reason);
+
+    private static bool TryReplaceGeneratedGroundFloorCore(BuildingDocument building,
+        int? seed,
         out BuildingDocument updated, out string reason)
     {
         updated = BuildingStoreys.Copy(building);
@@ -44,14 +61,47 @@ public static class MedievalHallHousePlanner
         double minY = ground.Perimeter.Min(p => p.Y);
         double maxY = ground.Perimeter.Max(p => p.Y);
         bool longX = maxX - minX >= maxY - minY;
-        foreach (bool alongX in new[] { longX, !longX })
-        foreach (bool reverse in new[] { false, true })
-        foreach (bool privateEnd in new[] { true, false })
-        foreach (double serviceFraction in new[] { 0.26, 0.20, 0.31 })
+        var variants = new List<HallVariant>();
+        if (seed.HasValue)
         {
-            if (TryPlan(building, alongX, reverse, privateEnd,
-                    serviceFraction,
-                    out var candidate, out var detail))
+            // Major and minor room allocations genuinely vary between
+            // rerolls. Orientation and which end contains service rooms
+            // are included in the selection, rather than always choosing
+            // the first valid variant from a fixed list.
+            foreach (bool alongX in new[] { longX, !longX })
+            foreach (bool reverse in new[] { false, true })
+            foreach (bool privateEnd in new[] { true, false })
+            foreach (double serviceFraction in new[] { 0.20, 0.26, 0.31 })
+            foreach (double screenWidth in new[] { 1.35, 1.55 })
+            foreach (double sideSplit in new[] { 0.40, 0.50, 0.60 })
+            foreach (double privateFraction in new[] { 0.20, 0.26 })
+            foreach (string serviceRoom in new[] { "Pantry", "Buttery" })
+                variants.Add(new(alongX, reverse, privateEnd,
+                    serviceFraction, screenWidth, sideSplit,
+                    privateFraction, serviceRoom));
+
+            var random = new Random(seed.Value);
+            for (int i = variants.Count - 1; i > 0; i--)
+            {
+                int other = random.Next(i + 1);
+                (variants[i], variants[other]) = (variants[other], variants[i]);
+            }
+        }
+        else
+        {
+            // Preserve the geometry expected by older direct callers,
+            // project files and tests without a supplied generation seed.
+            foreach (bool alongX in new[] { longX, !longX })
+            foreach (bool reverse in new[] { false, true })
+            foreach (bool privateEnd in new[] { true, false })
+            foreach (double serviceFraction in new[] { 0.26, 0.20, 0.31 })
+                variants.Add(new(alongX, reverse, privateEnd,
+                    serviceFraction, 1.45, 0.5, 0.23, "Pantry"));
+        }
+
+        foreach (var variant in variants)
+        {
+            if (TryPlan(building, variant, out var candidate, out var detail))
             {
                 updated = candidate;
                 reason = "";
@@ -62,14 +112,17 @@ public static class MedievalHallHousePlanner
         return false;
     }
 
-    private static bool TryPlan(BuildingDocument building, bool alongX,
-        bool reverse, bool privateEnd, double serviceFraction,
+    private static bool TryPlan(BuildingDocument building, HallVariant variant,
         out BuildingDocument result,
         out string reason)
     {
         result = BuildingStoreys.Copy(building);
         reason = "";
         var floor = BuildingStoreys.GetFloor(building, 0);
+        bool alongX = variant.AlongX;
+        bool reverse = variant.Reverse;
+        bool privateEnd = variant.PrivateEnd;
+        double serviceFraction = variant.ServiceFraction;
         double uLow = floor.Perimeter.Min(p => alongX ? p.X : p.Y);
         double uHigh = floor.Perimeter.Max(p => alongX ? p.X : p.Y);
         double vLow = floor.Perimeter.Min(p => alongX ? p.Y : p.X);
@@ -90,8 +143,9 @@ public static class MedievalHallHousePlanner
         // the great hall instead of intersecting the screens wall.
         double service = Math.Max(2.2,
             Math.Min(length * serviceFraction, length - 5.6));
-        double screens = 1.45;
-        double parlour = privateEnd ? Math.Max(2.3, length * 0.23) : 0;
+        double screens = variant.ScreenWidth;
+        double parlour = privateEnd
+            ? Math.Max(2.3, length * variant.PrivateFraction) : 0;
         if (length - service - screens - parlour < 3.3)
         {
             reason = "Insufficient depth for a useful great hall.";
@@ -103,7 +157,7 @@ public static class MedievalHallHousePlanner
         double uPrivate = reverse
             ? uLow + parlour
             : uHigh - parlour;
-        double vSplit = (vLow + vHigh) / 2;
+        double vSplit = vLow + depth * variant.SideSplit;
         var us = floor.Perimeter.Select(p => alongX ? p.X : p.Y)
             .Append(uLow).Append(uHigh).Append(uService)
             .Append(uScreen).Append(uPrivate)
@@ -130,7 +184,7 @@ public static class MedievalHallHousePlanner
             double naturalU = reverse ? uHigh - (a + b) / 2 :
                 (a + b) / 2 - uLow;
             string type = naturalU < service - Epsilon
-                ? (c + d) / 2 < vSplit ? "Kitchen" : "Pantry"
+                ? (c + d) / 2 < vSplit ? "Kitchen" : variant.ServiceRoom
                 : naturalU < service + screens - Epsilon
                     ? "Hallway"
                     : privateEnd && naturalU > length - parlour + Epsilon
@@ -150,8 +204,8 @@ public static class MedievalHallHousePlanner
         }
 
         var rooms = new List<RoomDefinition>();
-        foreach (string type in new[] { "Hallway", "Kitchen", "Pantry",
-                     "Great hall", "Parlour" })
+        foreach (string type in new[] { "Hallway", "Kitchen",
+                     variant.ServiceRoom, "Great hall", "Parlour" })
         {
             if (!cells.TryGetValue(type, out var region) ||
                 !TryUnionCells(region, out var outline))
@@ -166,7 +220,7 @@ public static class MedievalHallHousePlanner
                 "Great hall" => 20,
                 "Hallway" => 5,
                 "Kitchen" => 5,
-                "Pantry" => 4,
+                "Pantry" or "Buttery" => 4,
                 _ => 7
             };
             if (area < minimum)
@@ -197,7 +251,8 @@ public static class MedievalHallHousePlanner
         var screen = accessible.Rooms.Single(r => r.Type == "Hallway");
         var hall = accessible.Rooms.Single(r => r.Type == "Great hall");
         var kitchen = accessible.Rooms.Single(r => r.Type == "Kitchen");
-        var pantry = accessible.Rooms.Single(r => r.Type == "Pantry");
+        var pantry = accessible.Rooms.Single(r =>
+            r.Type == variant.ServiceRoom);
         if (!HasDoor(accessible, screen, hall) ||
             !HasDoor(accessible, screen, kitchen) ||
             !(HasDoor(accessible, screen, pantry) ||
