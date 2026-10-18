@@ -93,7 +93,8 @@ public static class BuildingGenerator
         // Simple six-corner stepped homes should be built as complete
         // RPG plans too. A rectangle-only template cannot fill their L
         // wings, and corridor-first planning could waste 77% of the floor.
-        if (floorCount == 2 && options.Purpose == BuildingUse.Residence &&
+        if (floorCount == 2 && options.CompactRpgHouseLayout &&
+            options.Purpose == BuildingUse.Residence &&
             options.Rooms && options.Corridors && options.Doors && options.Stairs &&
             BuildingStoreys.TryAddFloor(blank,out var steppedBasis,out _) &&
             SteppedRpgHousePlanner.TryGenerate(steppedBasis,seed,
@@ -620,7 +621,8 @@ public static class BuildingGenerator
         // L-shaped residence together. The old corridor-first planner
         // routinely allocated 57–77% to an L-shaped hallway. If the
         // compact stepped archetype safely fits, use it before staging.
-        if (options.Purpose == BuildingUse.Residence &&
+        if (options.CompactRpgHouseLayout &&
+            options.Purpose == BuildingUse.Residence &&
             options.Rooms && options.Corridors && options.Doors && options.Stairs &&
             indices.Length==2 && indices[0]==0 && indices[1]==1 &&
             BuildingStoreys.FloorCount(source)==2 &&
