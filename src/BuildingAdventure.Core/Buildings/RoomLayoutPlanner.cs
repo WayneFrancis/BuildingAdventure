@@ -160,6 +160,99 @@ public static class RoomLayoutPlanner
     }
 
     /// <summary>
+    /// Fill orthogonal pockets on irregular or hand-drawn outlines using
+    /// the actual vertices of exterior walls and existing partitions. This
+    /// is a second pass after hallway-frontage planning; it preserves every
+    /// existing room and never crosses a staircase/landing. It deliberately
+    /// leaves tiny unusable slivers unassigned rather than drawing fake rooms.
+    /// </summary>
+    public static int FillUnassignedRegions(BuildingDocument source,
+        int floorIndex, BuildingUse use, Random random, out BuildingDocument updated)
+    {
+        updated = BuildingStoreys.Copy(source);
+        int added = 0;
+        for (int iteration = 0; iteration < 16; iteration++)
+        {
+            var floor = BuildingStoreys.GetFloor(updated, floorIndex);
+            if (floor.Perimeter.Count < 3) break;
+            var all = floor.Rooms.SelectMany(r => r.Outline)
+                .Concat(floor.Perimeter).ToList();
+            var xs = all.Select(p => p.X).Distinct().OrderBy(x => x).ToArray();
+            var ys = all.Select(p => p.Y).Distinct().OrderBy(y => y).ToArray();
+            if (xs.Length > 32 || ys.Length > 32) break;
+
+            bool[,] empty = new bool[xs.Length - 1, ys.Length - 1];
+            for (int x = 0; x < xs.Length - 1; x++)
+            for (int y = 0; y < ys.Length - 1; y++)
+            {
+                var middle = new Point2((xs[x] + xs[x+1]) / 2,
+                    (ys[y] + ys[y+1]) / 2);
+                empty[x, y] = PolygonGeometry.ContainsPoint(floor.Perimeter, middle) &&
+                    !floor.Rooms.Any(r => PolygonGeometry.ContainsPoint(r.Outline, middle));
+            }
+
+            var proposals = new List<(double Area, List<Point2> Outline)>();
+            for (int y = 0; y < ys.Length - 1; y++)
+            for (int x = 0; x < xs.Length - 1; x++)
+            {
+                if (!empty[x, y]) continue;
+                for (int right = x + 1; right < xs.Length; right++)
+                {
+                    if (!empty[right - 1, y]) break;
+                    for (int bottom = y + 1; bottom < ys.Length; bottom++)
+                    {
+                        bool full = true;
+                        for (int col = x; col < right && full; col++)
+                            if (!empty[col, bottom - 1]) full = false;
+                        if (!full) break;
+                        double width = xs[right] - xs[x];
+                        double height = ys[bottom] - ys[y];
+                        double area = width * height;
+                        if (width < 1.25 || height < 1.25 ||
+                            area < 3 || area > 65) continue;
+                        var shape = Rectangle(xs[x], ys[y], xs[right], ys[bottom]);
+                        if (floor.Rooms.Count > 0 &&
+                            !floor.Rooms.Any(r => BuildingConnectivity.ShareWall(
+                                r.Outline, shape, 0.9)))
+                            continue;
+                        if (updated.Staircases.Any(s =>
+                            (s.LowerFloorIndex == floorIndex ||
+                             s.LowerFloorIndex + 1 == floorIndex) &&
+                            (PolygonGeometry.ContainsPoint(shape, s.Centre) ||
+                             BuildingStoreys.StairLandings(s).Any(l =>
+                                PolygonGeometry.ContainsPoint(shape,
+                                    new Point2(l.Average(p => p.X), l.Average(p => p.Y)))))))
+                            continue;
+                        proposals.Add((area, shape));
+                    }
+                }
+            }
+            bool placed = false;
+            foreach (var proposal in proposals.OrderByDescending(p => p.Area)
+                .Take(150))
+            {
+                var trial = BuildingStoreys.Copy(updated);
+                var editable = BuildingStoreys.GetFloor(trial, floorIndex);
+                string type = ChooseRoomType(use, floorIndex, proposal.Area,
+                    editable.Rooms, random);
+                editable.Rooms.Add(new RoomDefinition
+                {
+                    Type = type, Name = NextRoomName(type, editable.Rooms),
+                    Outline = proposal.Outline
+                });
+                BuildingStoreys.SetFloor(trial, floorIndex, editable);
+                if (!BuildingStoreys.Validate(trial, out _)) continue;
+                updated = trial;
+                added++;
+                placed = true;
+                break;
+            }
+            if (!placed) break;
+        }
+        return added;
+    }
+
+    /// <summary>
     /// Choose useful rooms in architectural priority order, not in a random
     /// order which may omit the kitchen or create multiple living rooms.
     /// Repeatable accommodation roles (bedrooms, guest rooms and cells) may
