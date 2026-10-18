@@ -5739,7 +5739,7 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
             failures.Add(seed+": "+rejected);
             continue;
         }
-        if (!suggestion.Building.Rooms.Any(r=>r.Type=="Great hall"))
+        if (!suggestion.Building.Rooms.Any(r=>r.Type=="Common room"))
         {
             failures.Add(seed+": "+suggestion.Description);
             continue;
@@ -5760,7 +5760,7 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
         string.Join(" | ",failures));
 });
 
-Check("Hall-house blueprint replaces centre corridor with great hall and screens passage", () =>
+Check("Modest single-storey hall house has common room bedrooms and screens passage", () =>
 {
     var source = new BuildingDocument
     {
@@ -5769,16 +5769,21 @@ Check("Hall-house blueprint replaces centre corridor with great hall and screens
     Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
         source,out var planned,out var reason),reason);
     Assert(BuildingStoreys.Validate(planned,out reason),reason);
-    Assert(planned.Rooms.Any(r=>r.Type=="Great hall"));
+    Assert(planned.Rooms.Any(r=>r.Type=="Common room"));
+    Assert(!planned.Rooms.Any(r=>r.Type=="Great hall"),
+        "A small domestic residence should not have a manor's great hall.");
+    Assert(planned.Rooms.Count(r=>r.Type=="Bedroom")>=1,
+        "A one-storey residence must provide sleeping accommodation.");
     Assert(planned.Rooms.Any(r=>r.Type=="Kitchen"));
     Assert(planned.Rooms.Any(r=>r.Type=="Pantry"));
-    Assert(planned.Rooms.Any(r=>r.Type=="Parlour"));
+    Assert(!planned.Rooms.Any(r=>r.Type=="Parlour"),
+        "A single-storey cottage needs bedrooms rather than an unnecessary parlour.");
     var passage=planned.Rooms.Single(r=>r.Type=="Hallway");
     Assert(passage.Name=="Screens passage");
     Assert(PolygonGeometry.Area(passage.Outline)<20,
         "A screens passage must not cover the centre of the building.");
-    Assert(PolygonGeometry.Area(planned.Rooms.Single(r=>r.Type=="Great hall")
-        .Outline)>20,"The communal hall should be a real room.");
+    Assert(PolygonGeometry.Area(planned.Rooms.Single(r=>r.Type=="Common room")
+        .Outline)>=10,"The communal room should be a usable living space.");
     Assert(Math.Abs(planned.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))-108)<0.001,
         "The hall house should account for every part of the footprint.");
     var pantry=planned.Rooms.Single(r=>r.Type=="Pantry");
@@ -5801,7 +5806,8 @@ Check("Hall house supports transposed long-axis orientation", () =>
     };
     Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
         source,out var planned,out var reason),reason);
-    Assert(planned.Rooms.Single(r=>r.Type=="Great hall").Outline.Count>=4);
+    Assert(planned.Rooms.Single(r=>r.Type=="Common room").Outline.Count>=4);
+    Assert(planned.Rooms.Any(r=>r.Type=="Bedroom"));
     Assert(planned.Rooms.Single(r=>r.Type=="Hallway").Name=="Screens passage");
     Assert(BuildingStoreys.Validate(planned,out reason),reason);
 });
@@ -5835,7 +5841,9 @@ Check("Hall-house generator respects stepped uploaded shape and both stair landi
     Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
         source,out var hallHouse,out reason),reason);
     Assert(BuildingStoreys.Validate(hallHouse,out reason),reason);
-    Assert(hallHouse.Rooms.Any(r=>r.Type=="Great hall"));
+    Assert(hallHouse.Rooms.Any(r=>r.Type=="Common room"));
+    Assert(!hallHouse.Rooms.Any(r=>r.Type=="Great hall"),
+        "Modest two-floor residence should have a common room rather than a great hall.");
     Assert(!hallHouse.Rooms.Any(r=>r.Type=="Storeroom"),
         "Do not generate two storerooms barricading the dining and bedchamber.");
     Assert(hallHouse.Staircases.Count==1 &&
@@ -5860,8 +5868,9 @@ Check("Residence generation exposes historical style with safe legacy opt-out", 
         "; footprint=" + string.Join(";",footprint.Select(p=>$"({p.X},{p.Y})")));
     Assert(BuildingGenerator.TrySuggestWholeBuilding(
         1,12,options,out var historic,out var reason),reason);
-    Assert(historic.Building.Rooms.Any(r=>r.Type=="Great hall"),
-        "The enabled editor setting should actually switch layout engines.");
+    Assert(historic.Building.Rooms.Any(r=>r.Type=="Common room") &&
+        historic.Building.Rooms.Any(r=>r.Type=="Bedroom"),
+        "The enabled historical generator should create a common room AND a bedroom.");
     Assert(historic.Building.Rooms.Any(r=>r.Name=="Screens passage"));
     Assert(historic.Description.Contains("Medieval hall-house layout."));
     Assert(BuildingStoreys.Validate(historic.Building,out reason),reason);
@@ -5899,7 +5908,7 @@ Check("Two-storey residence offers historical hall-house layout with safe stair 
             continue;
         }
         var generated=proposed.Building;
-        if (!generated.Rooms.Any(r=>r.Type=="Great hall"))
+        if (!generated.Rooms.Any(r=>r.Type=="Common room"))
         {
             attempted.Add(seed+": "+proposed.Description);
             continue;
@@ -6007,8 +6016,107 @@ Check("Regenerate accepted medieval house rerolls room geometry across seeds", (
     Assert(distinct.Count>=3,
         $"A user should see at least three different rerolls; found {distinct.Count}. "+
         string.Join(" | ",failures));
-    Assert(accepted.Rooms.Any(r=>r.Type=="Great hall"),
-        "No accepted building may be mutated during regeneration.");
+    Assert(accepted.Rooms.Any(r=>r.Type=="Common room") &&
+        accepted.Rooms.Any(r=>r.Type=="Bedroom"),
+        "No accepted cottage rooms may be mutated during regeneration.");
+});
+
+Check("Small one-storey houses always include a usable private bedchamber", () =>
+{
+    var opts=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,HallHouseLayout=true,
+        Rooms=true,Corridors=true,Doors=true,Windows=true,Stairs=false
+    };
+    var failures=new List<string>();
+    foreach(var (width,depth) in new[] {(8.0,6.0),(9.0,7.0),(12.0,9.0)})
+    {
+        var blank=new BuildingDocument
+        {
+            Perimeter=[new(0,0),new(width,0),
+                new(width,depth),new(0,depth)]
+        };
+        int successes=0;
+        for(int seed=1;seed<=15;seed++)
+        {
+            if(!MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+                blank,seed,out var generated,out var reason))
+            {
+                failures.Add($"{width}x{depth} seed {seed}: {reason}");
+                continue;
+            }
+            successes++;
+            Assert(BuildingStoreys.Validate(generated,out reason),reason);
+            var sleeping=generated.Rooms.Where(r=>r.Type=="Bedroom").ToArray();
+            Assert(sleeping.Length>=1 && sleeping.Length<=2,
+                $"No bedroom in {width}x{depth} residence seed {seed}.");
+            Assert(generated.Rooms.Any(r=>r.Type=="Common room") &&
+                !generated.Rooms.Any(r=>r.Type=="Great hall"),
+                "A modest house should contain a common living space, not a great hall.");
+            Assert(!generated.Rooms.Any(r=>r.Type=="Parlour"),
+                "Bedrooms take precedence over a private parlour on one storey.");
+            Assert(sleeping.All(r=>PolygonGeometry.Area(r.Outline)>=8),
+                "Bedrooms must have enough floor space.");
+            var common=generated.Rooms.Single(r=>r.Type=="Common room");
+            bool BordersDoor(RoomDefinition r)=>generated.Doors.Any(d=>
+                Enumerable.Range(0,r.Outline.Count).Any(i=>
+                    PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                        r.Outline[i],r.Outline[(i+1)%r.Outline.Count])
+                        .DistanceTo(d.Centre)<1e-5) &&
+                Enumerable.Range(0,common.Outline.Count).Any(i=>
+                    PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                        common.Outline[i],common.Outline[(i+1)%common.Outline.Count])
+                        .DistanceTo(d.Centre)<1e-5));
+            Assert(sleeping.All(BordersDoor),
+                "Every bedroom must be accessible without crossing a pantry or kitchen.");
+        }
+        Assert(successes>=3,
+            $"Too few valid bedroom-containing plans for {width}x{depth}: "+
+            string.Join(" | ",failures));
+    }
+});
+
+Check("Large manor footprint retains a real great hall distinct from common cottage room", () =>
+{
+    var source=new BuildingDocument
+    {
+        Perimeter=[new(0,0),new(19,0),new(19,12),new(0,12)]
+    };
+    bool found=false;
+    for(int seed=1;seed<=20;seed++)
+    {
+        if(!MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+            source,seed,out var proposal,out _))
+            continue;
+        found=true;
+        Assert(proposal.Rooms.Any(r=>r.Type=="Great hall") &&
+            !proposal.Rooms.Any(r=>r.Type=="Common room"),
+            "Great hall should be reserved for large manor-style residences.");
+        Assert(proposal.Rooms.Any(r=>r.Type=="Bedroom"),
+            "Even a large one-storey residence requires sleeping space.");
+        Assert(BuildingStoreys.Validate(proposal,out var reason),reason);
+        break;
+    }
+    Assert(found,"A manor-scale building should have a valid large hall.");
+});
+
+Check("Single-storey regeneration retains bedrooms for accepted cottage", () =>
+{
+    var opts=new GenerationOptions
+    {
+        Rooms=true,Corridors=true,Doors=true,Windows=true,
+        Purpose=BuildingUse.Residence,HallHouseLayout=true
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(
+        1,101,opts,out var original,out var reason),reason);
+    Assert(original.Building.Rooms.Any(r=>r.Type=="Bedroom"));
+    Assert(BuildingGenerator.TryRegenerate(
+        original.Building,[0],120,opts,out var another,out reason),reason);
+    Assert(another.Building.Rooms.Any(r=>r.Type=="Bedroom"));
+    Assert(another.Building.Rooms.Any(r=>r.Type=="Common room"));
+    Assert(!BuildingGenerator.SameRoomLayout(
+        original.Building,another.Building,[0]));
+    Assert(BuildingStoreys.Validate(another.Building,out reason),reason);
 });
 
 Console.WriteLine($"{passed} passed; {failed} failed.");
