@@ -4620,5 +4620,102 @@ Check("Complete opening span, not just centre, must clear kitchen fireplace", ()
     Assert(BuildingStoreys.Validate(building, out reason), reason);
 });
 
+Check("LShape2 uploaded two-floor 5ft plan has no unassigned 0.762m corridor strip", () =>
+{
+    // Reconstructed directly from the supplied LShape2.json wall geometry.
+    // The exterior steps inward at (13.716,4.572) before meeting the hall
+    // at y=5.334, leaving 7.62 x 0.762 metres unassigned on EACH floor.
+    List<Point2> Rect(double l, double t, double r, double b) =>
+        [new(l,t),new(r,t),new(r,b),new(l,b)];
+    RoomDefinition Room(string name, string type, double l, double t,
+        double r, double b) => new()
+        { Name = name, Type = type, Outline = Rect(l,t,r,b) };
+    var outline = new List<Point2> {new(7.62,0),new(13.716,0),
+        new(13.716,4.572),new(21.336,4.572),
+        new(21.336,10.668),new(7.62,10.668)};
+    var ground = new BuildingDocument
+    {
+        GridFeet = 5, Perimeter = outline.ToList(),
+        Rooms =
+        [
+            Room("Hallway 1","Hallway",7.62,5.334,21.336,7.334),
+            Room("Living room","Living room",7.62,7.334,16.12,10.668),
+            Room("Kitchen","Kitchen",16.12,7.334,21.336,10.668),
+            Room("Dining room","Dining room",7.62,0,13.716,5.334)
+        ],
+        Doors =
+        [
+            new DoorDefinition { Centre = new Point2(21.336,6.334), Width=0.9 },
+            new DoorDefinition { Centre = new Point2(11.87,7.334), Width=0.9 },
+            new DoorDefinition { Centre = new Point2(18.728,7.334), Width=0.9 },
+            new DoorDefinition { Centre = new Point2(10.668,5.334), Width=0.9 },
+            new DoorDefinition { Centre = new Point2(16.12,9.001), Width=0.8 }
+        ],
+        Windows =
+        [
+            new WindowDefinition { Centre=new Point2(11.87,10.668),Width=1.2 },
+            new WindowDefinition { Centre=new Point2(10.668,0),Width=1.2 }
+        ]
+    };
+    ground.Chimneys.Add(new ChimneyDefinition
+    {
+        Centre=new Point2(18.728,10.298),Width=1.4,Depth=0.7,
+        HearthFloorIndex=0,HearthRoomIds=[ground.Rooms[2].Id]
+    });
+    Assert(BuildingStoreys.TryAddFloor(ground, out var original, out var reason),reason);
+    var upper = BuildingStoreys.GetFloor(original,1);
+    upper.Rooms =
+    [
+        Room("Hallway 1","Hallway",7.62,5.334,21.336,7.334),
+        Room("Bedroom","Bedroom",7.62,0,13.716,5.334),
+        Room("Study","Study",7.62,7.334,16.12,10.668),
+        Room("Bedroom 2","Bedroom",16.12,7.334,21.336,10.668)
+    ];
+    upper.Doors =
+    [
+        new DoorDefinition {Centre=new Point2(10.668,5.334), Width=0.9},
+        new DoorDefinition {Centre=new Point2(11.87,7.334), Width=0.9},
+        new DoorDefinition {Centre=new Point2(18.728,7.334), Width=0.9}
+    ];
+    upper.Windows =
+    [
+        new WindowDefinition {Centre=new Point2(10.668,0),Width=1.2},
+        new WindowDefinition {Centre=new Point2(11.87,10.668),Width=1.2},
+        new WindowDefinition {Centre=new Point2(21.336,9.001),Width=1.2}
+    ];
+    BuildingStoreys.SetFloor(original,1,upper);
+    Assert(BuildingStoreys.Validate(original,out reason),reason);
+    double gap = RoomLayoutPlanner.UnassignedArea(BuildingStoreys.GetFloor(original,0));
+    Assert(Math.Abs(gap-5.80644)<0.001, $"Expected uploaded 5.806m² gap, got {gap}.");
+    Assert(RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(original,0,
+        out var fixedGround)==1,"The narrow wing strip should join ground-floor circulation.");
+    Assert(RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(fixedGround,1,
+        out var fixedBoth)==1,"The upstairs should recover the same 0.762m strip.");
+    foreach(int level in new[]{0,1})
+    {
+        var floor=BuildingStoreys.GetFloor(fixedBoth,level);
+        Assert(RoomLayoutPlanner.UnassignedArea(floor)<0.001,
+            "Every metre of the uploaded L-shaped floor is now accounted for.");
+        Assert(floor.Rooms.Single(r=>r.Type=="Hallway").Outline.Count==6,
+            "The hallway should acquire a stepped L-wing edge.");
+    }
+    Assert(BuildingConnectivity.AddStairs(fixedBoth,[0,1],out var withStairs)==1,
+        "Furnished L-shaped hallways must allow a slim wall-side staircase.");
+    Assert(withStairs.Staircases.Single().LandingLength>=1.0);
+    Assert(BuildingStoreys.Validate(withStairs,out reason),reason);
+    var options = new GenerationOptions
+    {
+        Rooms=true,Corridors=true,Stairs=true,Doors=false,
+        Windows=false,Fireplaces=false,Purpose=BuildingUse.Residence
+    };
+    Assert(BuildingGenerator.TrySuggest(original,[0,1],1762,options,
+        out var suggested,out reason),reason);
+    Assert(suggested.Building.Staircases.Count==1);
+    Assert(RoomLayoutPlanner.UnassignedArea(
+        BuildingStoreys.GetFloor(suggested.Building,0))<0.001);
+    Assert(RoomLayoutPlanner.UnassignedArea(
+        BuildingStoreys.GetFloor(suggested.Building,1))<0.001);
+    Assert(BuildingStoreys.Validate(suggested.Building,out reason),reason);
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
