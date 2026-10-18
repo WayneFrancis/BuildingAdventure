@@ -123,9 +123,15 @@ public static class SideStairApproachPlanner
             double maxFlightU=reserved.SelectMany(p=>p).Max(U);
             double minFlightV=reserved.SelectMany(p=>p).Min(V);
             double maxFlightV=reserved.SelectMany(p=>p).Max(V);
-            if (minFlightU<Epsilon/(-1) ||
-                maxFlightU>roomLeft+0.1 ||
-                minFlightV<roomTop || maxFlightV>depth-0.15)
+            // LandingLength adds a full landing beyond each end of
+            // the treads. The existing upper landing in example7 ends
+            // at v=10.9 of an 11m exterior. That is VALID: the
+            // platform itself must fit, but it need not leave another
+            // 15cm after the landing against the exterior wall.
+            if (minFlightU < -Epsilon ||
+                maxFlightU > roomLeft+0.1 ||
+                minFlightV < roomTop-Epsilon ||
+                maxFlightV > depth+Epsilon)
                 continue;
 
             // Put the service room BEHIND the cross passage (as in
