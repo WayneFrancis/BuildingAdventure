@@ -5722,5 +5722,111 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
         "Do not rewrite hand-authored existing hallways.");
 });
 
+Check("Hall-house blueprint replaces centre corridor with great hall and screens passage", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(12,0),new(12,9),new(0,9)]
+    };
+    Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+        source,out var planned,out var reason),reason);
+    Assert(BuildingStoreys.Validate(planned,out reason),reason);
+    Assert(planned.Rooms.Any(r=>r.Type=="Great hall"));
+    Assert(planned.Rooms.Any(r=>r.Type=="Kitchen"));
+    Assert(planned.Rooms.Any(r=>r.Type=="Pantry"));
+    Assert(planned.Rooms.Any(r=>r.Type=="Parlour"));
+    var passage=planned.Rooms.Single(r=>r.Type=="Hallway");
+    Assert(passage.Name=="Screens passage");
+    Assert(PolygonGeometry.Area(passage.Outline)<20,
+        "A screens passage must not cover the centre of the building.");
+    Assert(PolygonGeometry.Area(planned.Rooms.Single(r=>r.Type=="Great hall")
+        .Outline)>20,"The communal hall should be a real room.");
+    Assert(Math.Abs(planned.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))-108)<0.001,
+        "The hall house should account for every part of the footprint.");
+    var pantry=planned.Rooms.Single(r=>r.Type=="Pantry");
+    Assert(planned.Doors.Count(d=>
+        Enumerable.Range(0,pantry.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                pantry.Outline[i],pantry.Outline[(i+1)%pantry.Outline.Count])
+                .DistanceTo(d.Centre)<1e-5))==1,
+        "A pantry should have one intentional entrance.");
+    Assert(planned.Doors.Count>=5);
+    Assert(source.Rooms.Count==0,
+        "A proposal must never rewrite its caller's building.");
+});
+
+Check("Hall house supports transposed long-axis orientation", () =>
+{
+    var source = new BuildingDocument
+    {
+        Perimeter=[new(0,0),new(9,0),new(9,12),new(0,12)]
+    };
+    Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+        source,out var planned,out var reason),reason);
+    Assert(planned.Rooms.Single(r=>r.Type=="Great hall").Outline.Count>=4);
+    Assert(planned.Rooms.Single(r=>r.Type=="Hallway").Name=="Screens passage");
+    Assert(BuildingStoreys.Validate(planned,out reason),reason);
+});
+
+Check("Hall-house generator respects stepped uploaded shape and both stair landings", () =>
+{
+    var source = new BuildingDocument
+    {
+        SchemaVersion=2,GridFeet=5,
+        Perimeter=[
+            new(7.62,0),new(12.192,0),new(12.192,3.048),
+            new(16.764,3.048),new(16.764,0),new(21.336,0),
+            new(21.336,3.048),new(21.336,10.668),new(7.62,10.668)
+        ],
+        UpperFloors=[new StoreyDefinition
+        {
+            Perimeter=[
+                new(7.62,1.524),new(12.192,1.524),new(12.192,3.048),
+                new(16.764,3.048),new(16.764,1.524),
+                new(21.336,1.524),new(21.336,3.048),
+                new(21.336,10.668),new(7.62,10.668)
+            ]
+        }],
+        Staircases=[new StaircaseDefinition
+        {
+            LowerFloorIndex=0,Centre=new(14.478,6.646),
+            Length=2.8,Width=0.9,LandingLength=1,RotationDegrees=90
+        }]
+    };
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+        source,out var hallHouse,out reason),reason);
+    Assert(BuildingStoreys.Validate(hallHouse,out reason),reason);
+    Assert(hallHouse.Rooms.Any(r=>r.Type=="Great hall"));
+    Assert(!hallHouse.Rooms.Any(r=>r.Type=="Storeroom"),
+        "Do not generate two storerooms barricading the dining and bedchamber.");
+    Assert(hallHouse.Staircases.Count==1 &&
+        hallHouse.Staircases[0].Centre.Equals(source.Staircases[0].Centre));
+    Assert(hallHouse.UpperFloors[0].Perimeter.SequenceEqual(source.UpperFloors[0].Perimeter));
+    Assert(source.Rooms.Count==0);
+});
+
+Check("Residence generation exposes historical style with safe legacy opt-out", () =>
+{
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Windows=true,Stairs=false,HallHouseLayout=true
+    };
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(
+        1,12,options,out var historic,out var reason),reason);
+    Assert(historic.Building.Rooms.Any(r=>r.Type=="Great hall"),
+        "The enabled editor setting should actually switch layout engines.");
+    Assert(historic.Building.Rooms.Any(r=>r.Name=="Screens passage"));
+    Assert(historic.Description.Contains("Medieval hall-house layout."));
+    Assert(BuildingStoreys.Validate(historic.Building,out reason),reason);
+
+    options.HallHouseLayout=false;
+    Assert(BuildingGenerator.TrySuggestWholeBuilding(
+        1,12,options,out var legacy,out reason),reason);
+    Assert(!legacy.Building.Rooms.Any(r=>r.Type=="Great hall"),
+        "Unchecking the historical generator must retain the legacy plan.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
