@@ -52,6 +52,11 @@ public static class BuildingGenerator
             reason = "Generation options are required.";
             return false;
         }
+        // Choose dimensions for the REQUESTED total storeys now. The
+        // staging generator initially sees only ground floor and would
+        // otherwise size a three-storey home as a single-room cottage.
+        blank.Perimeter = MedievalFootprint(options.Purpose, floorCount,
+            gridFeet, new Random(seed));
         if (!options.Rooms && !options.Corridors)
         {
             reason = "A new whole-building draft needs Rooms or Corridors enabled " +
