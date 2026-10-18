@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private WindowState _previousWindowState = WindowState.Normal;
     private BuildingSuggestion? _pendingSuggestion;
     private string _suggestionSource = "";
+    private string _generatorStatus = "";
     private bool _pendingWholeBuilding;
     private readonly List<SavedSuggestionEntry> _suggestionMemory = SuggestionMemory.Load();
     private bool _loadingDoorVisibility;
@@ -329,7 +330,9 @@ public partial class MainWindow : Window
         AcceptSuggestedRoomButton.IsEnabled = _pendingSuggestion is not null &&
             !_pendingWholeBuilding && EditorSurface.SelectedSuggestedRoomId.HasValue;
         SuggestionInfoText.Text = _pendingSuggestion is null
-            ? "No pending suggestion. Complete existing floors, or draft a new whole building."
+            ? (string.IsNullOrEmpty(_generatorStatus)
+                ? "No pending suggestion. Complete existing floors, or draft a new whole building."
+                : _generatorStatus)
             : _pendingWholeBuilding
                 ? $"NEW BUILDING PREVIEW: {BuildingStoreys.FloorCount(_pendingSuggestion.Building)} " +
                   $"floor(s) generated. The editor still contains {BuildingStoreys.FloorCount(_building)} " +
@@ -596,6 +599,7 @@ public partial class MainWindow : Window
     {
         _pendingSuggestion = null;
         _suggestionSource = "";
+        _generatorStatus = "";
         _pendingWholeBuilding = false;
         EditorSurface?.SetSuggestionPreview(null);
         if (WholeBuildingPreviewPanel is not null) WholeBuildingPreviewPanel.Visibility = Visibility.Collapsed;
@@ -640,6 +644,7 @@ public partial class MainWindow : Window
     private void BeginSuggestion(BuildingSuggestion proposal, bool whole)
     {
         _pendingSuggestion = proposal.Copy();
+        _generatorStatus = "";
         _suggestionSource = CurrentJson();
         _pendingWholeBuilding = whole;
         if (!whole)
@@ -681,6 +686,15 @@ public partial class MainWindow : Window
         return options;
     }
 
+    private void ShowGeneratorFailure(string reason)
+    {
+        _generatorStatus = "No new suggestion: " + reason;
+        _hint = _generatorStatus;
+        Refresh();
+        MessageBox.Show(this, reason, "Cannot generate the selected floors",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
     private void Suggest_Click(object sender, RoutedEventArgs e)
     {
         int[] floors = CheckedGeneratorFloors();
@@ -688,8 +702,7 @@ public partial class MainWindow : Window
         if (!BuildingGenerator.TrySuggest(CurrentDocument(), floors, seed,
             OptionsForCheckedFloorGeneration(floors), out var proposal, out var reason))
         {
-            _hint = reason;
-            Refresh();
+            ShowGeneratorFailure(reason);
             return;
         }
         BeginSuggestion(proposal, whole: false);
@@ -703,8 +716,7 @@ public partial class MainWindow : Window
                 OptionsForCheckedFloorGeneration(floors),
                 out var proposal, out var reason))
         {
-            _hint = reason;
-            Refresh();
+            ShowGeneratorFailure(reason);
             return;
         }
         BeginSuggestion(proposal, whole: false);
