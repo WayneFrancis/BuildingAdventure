@@ -728,6 +728,21 @@ public static class BuildingStoreys
                         reason = "The fireplace face must remain inside its assigned room.";
                         return false;
                     }
+                    if (hearthFloor.Doors.Any(d =>
+                            d.Centre.DistanceTo(faceChimney.Centre) < 1.1) ||
+                        hearthFloor.Windows.Any(w =>
+                            w.Centre.DistanceTo(faceChimney.Centre) < 1.2) ||
+                        building.Staircases.Any(s =>
+                            (s.LowerFloorIndex == chimney.HearthFloorIndex ||
+                             s.LowerFloorIndex + 1 == chimney.HearthFloorIndex) &&
+                            (ConvexPolygonsOverlap(ChimneyFootprint(faceChimney),
+                                StairFootprint(s)) ||
+                             StairLandings(s).Any(l =>
+                                ConvexPolygonsOverlap(ChimneyFootprint(faceChimney), l)))))
+                    {
+                        reason = "A hearth face blocks a doorway, window or stair landing.";
+                        return false;
+                    }
                 }
             }
             var footprint = ChimneyFootprint(chimney);
