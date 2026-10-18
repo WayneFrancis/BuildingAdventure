@@ -5872,7 +5872,7 @@ Check("Residence generation exposes historical style with safe legacy opt-out", 
         historic.Building.Rooms.Any(r=>r.Type=="Bedroom"),
         "The enabled historical generator should create a common room AND a bedroom.");
     Assert(historic.Building.Rooms.Any(r=>r.Name=="Screens passage"));
-    Assert(historic.Description.Contains("Medieval hall-house layout."));
+    Assert(historic.Description.Contains("Medieval residence layout."));
     Assert(BuildingStoreys.Validate(historic.Building,out reason),reason);
 
     options.HallHouseLayout=false;
