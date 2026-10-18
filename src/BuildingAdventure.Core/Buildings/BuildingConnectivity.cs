@@ -125,6 +125,7 @@ public static class BuildingConnectivity
         out BuildingDocument updated)
     {
         updated = BuildingStoreys.Copy(building);
+        var working = updated;
         int count = 0;
         var floor = BuildingStoreys.GetFloor(updated, floorIndex);
         var walls = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
@@ -190,6 +191,7 @@ public static class BuildingConnectivity
                 if (!linked) TryPlaceDoor(wallCandidates, 0.8);
             }
         }
+        updated = working;
         return count;
 
         bool HasConnectedInteriorDoor(RoomDefinition room) =>
@@ -208,12 +210,12 @@ public static class BuildingConnectivity
                     wall.A.Y + (wall.B.Y - wall.A.Y) * t);
                 if (floor.Doors.Any(d => d.Centre.DistanceTo(centre) < 0.5))
                     continue;
-                var trial = BuildingStoreys.Copy(updated);
+                var trial = BuildingStoreys.Copy(working);
                 var edited = BuildingStoreys.GetFloor(trial, floorIndex);
                 edited.Doors.Add(new DoorDefinition { Centre = centre, Width = width });
                 BuildingStoreys.SetFloor(trial, floorIndex, edited);
                 if (!BuildingStoreys.Validate(trial, out _)) continue;
-                updated = trial;
+                working = trial;
                 floor = edited;
                 count++;
                 return true;
