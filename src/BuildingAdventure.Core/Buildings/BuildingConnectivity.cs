@@ -330,7 +330,7 @@ public static class BuildingConnectivity
     public static bool RoomUsuallyNeedsWindow(RoomDefinition room) =>
         !new[] { "Hallway", "Corridor", "Stairwell", "Storeroom",
                  "Storage", "Cellar", "Closet", "Cupboard", "Pantry",
-                 "Utility", "Boiler room", "Vault", "Dungeon", "Toilet" }
+                 "Utility", "Boiler room", "Vault", "Dungeon", "Toilet", "Buttery" }
             .Contains(room.Type, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
