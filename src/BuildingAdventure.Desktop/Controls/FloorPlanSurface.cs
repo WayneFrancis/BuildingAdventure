@@ -881,14 +881,33 @@ public sealed class FloorPlanSurface : FrameworkElement
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(180, 171, 89, 65)),
                 new Pen(Brushes.SaddleBrown, 2), BuildGeometry(footprint, true));
             Point centre = ToScreen(chimney.Centre);
-            bool hearthRoom = _rooms.Any(r =>
-                new[] { "Common room", "Living room", "Kitchen", "Dining room",
-                        "Parlour", "Great hall", "Shop floor", "Workshop",
-                        "Bedroom", "Study", "Guest room", "Chamber" }
-                    .Contains(r.Type, StringComparer.OrdinalIgnoreCase) &&
-                PolygonGeometry.ContainsPoint(r.Outline, chimney.Centre));
-            DrawText(dc, hearthRoom ? "FIREPLACE" : "FLUE",
+            bool linkedHearth = chimney.HearthFloorIndex == _stairFloorIndex &&
+                chimney.HearthRoomIds.Any(id => _rooms.Any(r => r.Id == id));
+            // Legacy maps did not store the room-to-hearth association.
+            bool legacyHearth = chimney.HearthRoomIds.Count == 0 &&
+                _stairFloorIndex == 0 && _rooms.Any(r =>
+                    new[] { "Common room", "Living room", "Kitchen", "Dining room",
+                            "Parlour", "Great hall", "Shop floor", "Workshop",
+                            "Bedroom", "Study", "Guest room", "Chamber" }
+                        .Contains(r.Type, StringComparer.OrdinalIgnoreCase) &&
+                    PolygonGeometry.ContainsPoint(r.Outline, chimney.Centre));
+            bool hearthHere = linkedHearth || legacyHearth;
+            DrawText(dc, hearthHere ? "FIREPLACE" : "FLUE",
                 new Point(centre.X + 7, centre.Y - 14), 10, Brushes.Maroon);
+
+            // A shared wall has two fireplace faces, but only one vertical
+            // flue. The other face is never drawn on an upstairs bedroom.
+            if (linkedHearth && chimney.OtherHearthCentre.HasValue)
+            {
+                var other = chimney.Copy();
+                other.Centre = chimney.OtherHearthCentre.Value;
+                dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(115, 185, 83, 48)),
+                    new Pen(Brushes.Firebrick, 2),
+                    BuildGeometry(BuildingStoreys.ChimneyFootprint(other), true));
+                Point otherAt = ToScreen(other.Centre);
+                DrawText(dc, "KITCHEN / SHARED HEARTH",
+                    new Point(otherAt.X + 6, otherAt.Y + 12), 9, Brushes.Maroon);
+            }
         }
 
         if ((_draggingStair || _rotatingStair) && _dragPreviewStair is not null)
