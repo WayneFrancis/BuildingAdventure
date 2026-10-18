@@ -6614,5 +6614,56 @@ Check("example6(1) stepped two-storey footprint reclaims 77-percent L-shaped hal
         "Do not repartition a hallway more than once.");
 });
 
+Check("Regenerate stepped example6 house without another 77-percent hallway", () =>
+{
+    List<Point2> outer =
+        [new(0,0),new(8.5,0),new(8.5,5.5),
+         new(10.5,5.5),new(10.5,9.5),new(0,9.5)];
+    var source = new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=outer.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=outer.ToList()}],
+        Staircases=[new StaircaseDefinition
+        {
+            LowerFloorIndex=0,Centre=new(2.5,0.7),
+            Length=2.8,Width=1,RotationDegrees=90,LandingLength=1
+        }]
+    };
+    var options = new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Stairs=true,HallHouseLayout=true,
+        CompactRpgHouseLayout=true,Windows=false,Fireplaces=false
+    };
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    var attempts=new List<string>();
+    int valid=0;
+    foreach(int seed in new[]{7,12,17,23,37,43,61,77,101})
+    {
+        if (!BuildingGenerator.TryRegenerate(source,[0,1],seed,options,
+            out var generated,out reason))
+        {
+            attempts.Add(seed+": "+reason);
+            continue;
+        }
+        valid++;
+        Assert(BuildingStoreys.Validate(generated.Building,out reason),reason);
+        for(int index=0;index<=1;index++)
+        {
+            var floor=BuildingStoreys.GetFloor(generated.Building,index);
+            double ratio=floor.Rooms.Where(r=>r.Type=="Hallway")
+                .Sum(r=>PolygonGeometry.Area(r.Outline))/
+                PolygonGeometry.Area(floor.Perimeter);
+            Assert(ratio<0.55 || floor.Rooms.Count>2,
+                "The full regenerate pipeline may not present another "+
+                "hall-plus-one-room floor as a finished house.");
+        }
+        Assert(generated.Building.Staircases.Single().Id==source.Staircases.Single().Id,
+            "Regeneration preserves the original staircase.");
+    }
+    Assert(valid>0,"No valid regeneration could be found across seeds: "+
+        string.Join(" | ",attempts));
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
