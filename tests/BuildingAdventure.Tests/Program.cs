@@ -5959,6 +5959,14 @@ Check("Regeneration seeds produce different historical room geometries and room 
         "Different seeds should alter room roles or whether private rooms exist, "+
         "not just shift the exact same bedroom walls.");
     Assert(blank.Rooms.Count==0);
+    Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+        blank,101,out var reproducibleA,out var reproducibleReason),
+        reproducibleReason);
+    Assert(MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+        blank,101,out var reproducibleB,out reproducibleReason),
+        reproducibleReason);
+    Assert(BuildingGenerator.SameRoomLayout(reproducibleA,reproducibleB,[0]),
+        "The same seed and perimeter must reproduce identical architecture.");
     var changed=BuildingStoreys.Copy(results[0]);
     changed.Rooms[0].Id=Guid.NewGuid();
     changed.Doors.Clear();
