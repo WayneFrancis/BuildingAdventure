@@ -120,7 +120,7 @@ public static class BuildingGenerator
         }
         int chimneys = 0;
         if (options.Fireplaces &&
-            BuildingConnectivity.TryAddChimney(result, out var withChimney))
+            BuildingConnectivity.TryAddChimney(result, out var withChimney, options.Purpose))
         {
             result = withChimney;
             chimneys = 1;
@@ -469,7 +469,7 @@ public static class BuildingGenerator
         }
 
         if (options.Fireplaces &&
-            BuildingConnectivity.TryAddChimney(proposed, out var withFireplace))
+            BuildingConnectivity.TryAddChimney(proposed, out var withFireplace, options.Purpose))
         {
             proposed = withFireplace;
             addedChimneys++;
