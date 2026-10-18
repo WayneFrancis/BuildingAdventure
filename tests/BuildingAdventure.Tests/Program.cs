@@ -5008,5 +5008,109 @@ Check("L.json blank unequal storeys generate no 6-foot-wide bedrooms", () =>
         Assert(BuildingStoreys.Validate(draft.Building,out reason),reason);
     }
 });
+Check("Consolidate two generated passages into a single hallway", () =>
+{
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var hall=new RoomDefinition
+    {
+        Type="Hallway",Name="Hallway 1",Outline=R(0,6,12,8)
+    };
+    var source=new BuildingDocument
+    {
+        Perimeter=R(0,0,12,10),
+        Rooms=[
+            hall,
+            new RoomDefinition
+            {
+                Type="Passage",Name="Passage",Outline=R(0,4,6,6)
+            },
+            new RoomDefinition
+            {
+                Type="Passage",Name="Passage 2",Outline=R(6,4,12,6)
+            }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    Assert(RoomLayoutPlanner.ConsolidateGeneratedRooms(
+        source,0,[hall.Id],out var repaired)==2);
+    Assert(repaired.Rooms.Count==1);
+    Assert(repaired.Rooms.Single().Type=="Hallway");
+    Assert(Math.Abs(PolygonGeometry.Area(repaired.Rooms[0].Outline)-48)<1e-6);
+    Assert(BuildingStoreys.Validate(repaired,out reason),reason);
+    Assert(source.Rooms.Count==3);
+});
+
+Check("Generated small side room merges into a realistic six-corner L-shaped bedroom", () =>
+{
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var hall=new RoomDefinition {Type="Hallway",Name="Hallway 1",
+        Outline=R(0,7,12,9)};
+    var bedroom=new RoomDefinition {Type="Bedroom",Name="Bedroom",
+        Outline=R(0,0,6,4)};
+    var fragment=new RoomDefinition {Type="Storeroom",Name="Storeroom",
+        Outline=R(6,2,9,4)};
+    var source=new BuildingDocument
+    {
+        Perimeter=R(0,0,12,10),Rooms=[hall,bedroom,fragment]
+    };
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    Assert(RoomLayoutPlanner.ConsolidateGeneratedRooms(
+        source,0,[hall.Id],out var connected)==1);
+    Assert(connected.Rooms.Count==2);
+    var l=connected.Rooms.Single(r=>r.Id==bedroom.Id);
+    Assert(l.Type=="Bedroom");
+    Assert(l.Outline.Count>=6,
+        "The combined room should retain the L-shaped re-entrant corner.");
+    Assert(Math.Abs(PolygonGeometry.Area(l.Outline)-30)<1e-6);
+    Assert(PolygonGeometry.ContainsPoint(l.Outline,new Point2(8,3)));
+    Assert(!PolygonGeometry.ContainsPoint(l.Outline,new Point2(8,1)));
+    Assert(BuildingStoreys.Validate(connected,out reason),reason);
+});
+
+Check("Generated consolidation never changes existing hand-drawn L rooms", () =>
+{
+    var hall=new RoomDefinition {Type="Hallway",Name="Hallway 1",
+        Outline=[new(0,7),new(12,7),new(12,9),new(0,9)]};
+    var handmade=new RoomDefinition {Type="Other",Name="Room A",
+        Outline=[new(0,0),new(6,0),new(6,2),new(9,2),new(9,4),new(0,4)]};
+    var disposable=new RoomDefinition {Type="Passage",Name="Passage",
+        Outline=[new(9,2),new(11,2),new(11,4),new(9,4)]};
+    var source=new BuildingDocument {Perimeter=[
+        new(0,0),new(12,0),new(12,10),new(0,10)],
+        Rooms=[hall,handmade,disposable]};
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    RoomLayoutPlanner.ConsolidateGeneratedRooms(source,0,
+        [hall.Id,handmade.Id],out var draft);
+    var kept=draft.Rooms.Single(r=>r.Id==handmade.Id);
+    Assert(kept.Outline.SequenceEqual(handmade.Outline));
+    Assert(kept.Name=="Room A");
+    Assert(BuildingStoreys.Validate(draft,out reason),reason);
+});
+
+Check("Delete chimney removes the entire shared fireplace stack across floors", () =>
+{
+    var ground=new BuildingDocument
+    {
+        Perimeter=[new(0,0),new(12,0),new(12,10),new(0,10)]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground,out var two,out var reason),reason);
+    var flue=new ChimneyDefinition
+    {
+        Centre=new Point2(6,0.5),Width=1.4,Depth=0.7
+    };
+    two.Chimneys.Add(flue);
+    Assert(BuildingStoreys.Validate(two,out reason),reason);
+    Assert(BuildingStoreys.TryRemoveChimney(two,flue.Id,
+        out var removed,out reason),reason);
+    Assert(removed.Chimneys.Count==0);
+    Assert(two.Chimneys.Count==1,
+        "Deletion must not modify original document.");
+    Assert(!BuildingStoreys.TryRemoveChimney(removed,flue.Id,
+        out _,out reason));
+    Assert(reason.Contains("does not exist"));
+    Assert(BuildingStoreys.Validate(removed,out reason),reason);
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
