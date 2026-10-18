@@ -4892,5 +4892,121 @@ Check("Two blank offset storeys fit an aligned stair corridor before other rooms
     }
     Assert(BuildingStoreys.Validate(staged, out reason), reason);
 });
+
+Check("L.json ground-floor shallow 25-foot wing is circulation, never a bedroom", () =>
+{
+    // Exact 5-foot-grid geometry of the uploaded L.json, excluding the
+    // implausible room the old residual pass added at y=3.048..4.834.
+    List<Point2> Box(double l, double t, double r, double b) =>
+        [new(l,t),new(r,t),new(r,b),new(l,b)];
+    var perimeter = new List<Point2>
+    {
+        new(6.096,0), new(10.668,0), new(10.668,3.048),
+        new(18.288,3.048), new(18.288,10.668), new(6.096,10.668)
+    };
+    var hall = new RoomDefinition
+    {
+        Name="Hallway 1", Type="Hallway",
+        Outline=Box(6.096,4.834,18.288,6.834)
+    };
+    var source = new BuildingDocument
+    {
+        GridFeet=5, Perimeter=perimeter,
+        Rooms=
+        [
+            hall,
+            new RoomDefinition {Name="Living room",Type="Living room",
+                Outline=Box(6.096,6.834,13.596,10.668)},
+            new RoomDefinition {Name="Kitchen",Type="Kitchen",
+                Outline=Box(13.596,6.834,18.288,10.668)},
+            new RoomDefinition {Name="Dining room",Type="Dining room",
+                Outline=Box(6.096,0,10.668,4.834)}
+        ]
+    };
+    Assert(BuildingStoreys.Validate(source,out var reason),reason);
+    var stripe = Box(10.668,3.048,18.288,4.834);
+    Equal(PolygonGeometry.Area(stripe), 7.62 * 1.786);
+    string label = RoomLayoutPlanner.ChooseRoomTypeForOutline(
+        BuildingUse.Residence,0,PolygonGeometry.Area(stripe),
+        source.Rooms,stripe,new Random(12));
+    Assert(label=="Passage",$"Expected circulation, not {label}.");
+
+    int count=RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(
+        source,0,out var connected);
+    Assert(count==1,"A long shallow L-wing should merge into its hallway.");
+    Assert(connected.Rooms.Count==4,
+        "The slim wing is circulation, not a fifth bedroom.");
+    Assert(PolygonGeometry.ContainsPoint(
+        connected.Rooms.Single(r=>r.Type=="Hallway").Outline,
+        new Point2(15,4.0)));
+    Assert(RoomLayoutPlanner.UnassignedArea(connected)<0.001,
+        "The hallway must now account for the entire narrow strip.");
+    Assert(BuildingStoreys.Validate(connected,out reason),reason);
+    Equal(RoomLayoutPlanner.UnassignedArea(source),7.62*1.786);
+});
+
+Check("Bedroom names require room width, not just floor area", () =>
+{
+    List<Point2> Box(double w,double h) =>
+        [new(0,0),new(w,0),new(w,h),new(0,h)];
+    var rooms = new List<RoomDefinition>();
+    string wide=RoomLayoutPlanner.ChooseRoomTypeForOutline(
+        BuildingUse.Residence,1,12,rooms,Box(3,4),new Random(12));
+    Assert(wide=="Bedroom",$"3x4m should qualify as a bedroom: {wide}");
+    string shallow=RoomLayoutPlanner.ChooseRoomTypeForOutline(
+        BuildingUse.Residence,1,12,rooms,Box(2.4,5),new Random(12));
+    Assert(shallow!="Bedroom" && shallow!="Guest room",
+        "A 2.4m-wide room should not become sleeping accommodation.");
+    string passage=RoomLayoutPlanner.ChooseRoomTypeForOutline(
+        BuildingUse.Residence,1,14,rooms,Box(1.8,7.7),new Random(12));
+    Assert(passage=="Passage");
+});
+
+Check("L.json blank unequal storeys generate no 6-foot-wide bedrooms", () =>
+{
+    var ground = new BuildingDocument
+    {
+        GridFeet=5, Perimeter=[
+            new(6.096,0),new(10.668,0),new(10.668,3.048),
+            new(18.288,3.048),new(18.288,10.668),new(6.096,10.668)]
+    };
+    Assert(BuildingStoreys.TryAddFloor(ground,out var original,
+        out var reason),reason);
+    var upper=BuildingStoreys.GetFloor(original,1);
+    upper.Perimeter=[
+        new(6.096,0),new(10.668,0),new(10.668,4.572),
+        new(18.288,4.572),new(18.288,10.668),new(6.096,10.668)];
+    BuildingStoreys.SetFloor(original,1,upper);
+    Assert(BuildingStoreys.Validate(original,out reason),reason);
+    var options = new GenerationOptions
+    {
+        Rooms=true,Corridors=true,Doors=true,Stairs=true,
+        Windows=false,Fireplaces=false,Purpose=BuildingUse.Residence
+    };
+    foreach(int seed in new[]{12,310,1211})
+    {
+        Assert(BuildingGenerator.TrySuggest(original,[0,1],seed,options,
+            out var draft,out reason),reason);
+        foreach(int floorIndex in new[]{0,1})
+        {
+            var floor=BuildingStoreys.GetFloor(draft.Building,floorIndex);
+            foreach(var room in floor.Rooms.Where(r=>
+                r.Type is "Bedroom" or "Guest room" or "Suite"))
+            {
+                double w=room.Outline.Max(p=>p.X)-room.Outline.Min(p=>p.X);
+                double h=room.Outline.Max(p=>p.Y)-room.Outline.Min(p=>p.Y);
+                Assert(Math.Min(w,h)>=2.5-1e-5,
+                    $"Seed {seed} floor {floorIndex}: {room.Name} is {w} x {h} metres.");
+            }
+        }
+        var gf=BuildingStoreys.GetFloor(draft.Building,0);
+        Assert(!gf.Rooms.Any(r=>r.Type=="Bedroom" &&
+            PolygonGeometry.ContainsPoint(r.Outline,new Point2(15,4))));
+        Assert(gf.Rooms.Any(r=>r.Type=="Hallway" &&
+            PolygonGeometry.ContainsPoint(r.Outline,new Point2(15,4))),
+            "The old 1.786m-deep bedroom strip should belong to hallway circulation.");
+        Assert(BuildingStoreys.Validate(draft.Building,out reason),reason);
+    }
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
