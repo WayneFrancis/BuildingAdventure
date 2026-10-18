@@ -427,9 +427,9 @@ public static class BuildingGenerator
                     return false;
 
                 var nextFloor = BuildingStoreys.GetFloor(proposed, index);
-                string type = RoomLayoutPlanner.ChooseRoomType(
+                string type = RoomLayoutPlanner.ChooseRoomTypeForOutline(
                     options.Purpose, index, width * height / 4.0,
-                    nextFloor.Rooms, random);
+                    nextFloor.Rooms, shape, random);
                 nextFloor.Rooms.Add(new RoomDefinition
                 {
                     Name = RoomLayoutPlanner.NextRoomName(type, nextFloor.Rooms),
