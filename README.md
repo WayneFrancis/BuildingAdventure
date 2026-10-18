@@ -40,7 +40,10 @@ stepped/corridor approaches:
 - **Respect the building:** existing staircase centre, rotation and ID
   are preserved on regeneration. With no existing flight, the planner
   creates one within the shared stair space. A **1.1m minimum
-  unobstructed route behind the upper stair** is required.
+  unobstructed route behind the upper stair** is required. Existing
+  chimney masonry also stays in place; if its previously linked room
+  is replaced, a valid hearth face is relinked to the new enclosing
+  room (the Kitchen in `example10(1).json`) instead of being orphaned.
 - **Variation:** seeds can change hallway width and the upstairs
   bedroom/bathroom partition independently from the downstairs
   kitchen/pantry division; all four rotations and their mirrors
