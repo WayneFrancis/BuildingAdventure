@@ -4251,5 +4251,32 @@ Check("Generated hearth in a furnished residence is not placed inside its hallwa
     Assert(BuildingStoreys.Validate(draft.Building, out reason), reason);
 });
 
+Check("Inn hearths are broader than cottage hearths without heating empty hallways", () =>
+{
+    var floor = new BuildingDocument
+    {
+        Perimeter = [new(0,0),new(12,0),new(12,9),new(0,9)]
+    };
+    Assert(BuildingConnectivity.TryAddChimney(floor, out var cottage));
+    Assert(BuildingConnectivity.TryAddChimney(floor, out var inn, BuildingUse.Inn));
+    var cottageHearth = cottage.Chimneys.Single();
+    var innHearth = inn.Chimneys.Single();
+    Assert(Math.Max(innHearth.Width, innHearth.Depth) >= 2.4 - 1e-6);
+    Assert(Math.Max(cottageHearth.Width, cottageHearth.Depth) <= 1.4 + 1e-6);
+    Assert(BuildingStoreys.Validate(inn, out var reason), reason);
+
+    var hallwayOnly = new BuildingDocument
+    {
+        Perimeter = floor.Perimeter.ToList(),
+        Rooms = [new RoomDefinition
+        {
+            Name = "Hallway", Type = "Hallway",
+            Outline = floor.Perimeter.ToList()
+        }]
+    };
+    Assert(!BuildingConnectivity.TryAddChimney(hallwayOnly, out _),
+        "Do not add a decorative fireplace to a corridor when no living room exists.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
