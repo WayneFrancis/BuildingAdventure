@@ -555,8 +555,13 @@ public static class BuildingGenerator
             // whole building must keep rectangular halls intact: the
             // reserved-stair-bay planner requires those rectangles before
             // it can locate and stack flights.
-            if (options.Rooms)
+            if (options.Rooms && !BuildingStoreys.GetFloor(proposed, index)
+                .Rooms.Any(r => r.Type == "Stairwell"))
             {
+                // Reserved stairwell rooms are temporary until the
+                // whole-building finisher merges them into the hallway.
+                // Widening that hall first makes its outline concave and
+                // invalidates the rectangular stair-bay merge contract.
                 absorbedHallStrips += RoomLayoutPlanner.AbsorbNarrowPerimeterGapsIntoHall(
                     proposed, index, out var withConnectedHall);
                 proposed = withConnectedHall;
