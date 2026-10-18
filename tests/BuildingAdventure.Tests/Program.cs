@@ -5720,6 +5720,44 @@ Check("Final-generation repair fixes example2(2) even after doors were already a
         source,0,[idHall],out var protectedPlan)==0 &&
         protectedPlan.Doors.Count==source.Doors.Count,
         "Do not rewrite hand-authored existing hallways.");
+
+    // The real user invokes Regenerate on an already accepted two-storey
+    // JSON file, rather than starting from a blank footprint. Verify the
+    // new architectural choice is effective in that workflow too.
+    var opts = new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Windows=false,Stairs=false,HallHouseLayout=true
+    };
+    bool regenerated=false;
+    var failures = new List<string>();
+    foreach(int seed in new[]{7,12,23,37})
+    {
+        if (!BuildingGenerator.TryRegenerate(source,[0],seed,opts,
+            out var suggestion,out var rejected))
+        {
+            failures.Add(seed+": "+rejected);
+            continue;
+        }
+        if (!suggestion.Building.Rooms.Any(r=>r.Type=="Great hall"))
+        {
+            failures.Add(seed+": "+suggestion.Description);
+            continue;
+        }
+        regenerated=true;
+        Assert(suggestion.Building.Staircases.Single().Centre.Equals(
+            source.Staircases.Single().Centre));
+        Assert(suggestion.Building.UpperFloors[0].Rooms.Count ==
+            source.UpperFloors[0].Rooms.Count,
+            "Regenerating the ground floor must not edit upstairs.");
+        Assert(BuildingStoreys.Validate(suggestion.Building,out reason),reason);
+        Assert(BuildingConnectivity.RoomsIsolatedByServiceSpaces(
+            suggestion.Building,0).Count==0);
+        break;
+    }
+    Assert(regenerated,
+        "Regenerate must be able to replace the uploaded corridor plan: "+
+        string.Join(" | ",failures));
 });
 
 Check("Hall-house blueprint replaces centre corridor with great hall and screens passage", () =>
