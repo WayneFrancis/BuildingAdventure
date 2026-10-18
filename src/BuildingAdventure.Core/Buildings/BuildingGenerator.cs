@@ -63,6 +63,40 @@ public static class BuildingGenerator
                 "to establish its initial floor layout.";
             return false;
         }
+        // A single-storey hall house can be planned directly from its
+        // exterior footprint. Building and then deleting a modern corridor
+        // is unnecessary and may fail the temporary door-access checks
+        // even though the historic topology itself fits perfectly.
+        if (floorCount == 1 && options.HallHouseLayout &&
+            options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors &&
+            MedievalHallHousePlanner.TryReplaceGeneratedGroundFloor(
+                blank, out var directHallHouse, out _))
+        {
+            int hearthCount = 0;
+            if (options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(directHallHouse,
+                    out var heated, options.Purpose))
+            {
+                directHallHouse = heated;
+                hearthCount = 1;
+            }
+            if (options.Windows)
+            {
+                BuildingConnectivity.AddWindows(directHallHouse, 0,
+                    out var withWindows);
+                directHallHouse = withWindows;
+            }
+            if (BuildingStoreys.Validate(directHallHouse, out reason))
+            {
+                suggestion = new BuildingSuggestion(directHallHouse, seed, [0],
+                    $"Medieval hall-house layout. Whole building (1 floor), seed {seed}: " +
+                    $"{directHallHouse.Rooms.Count} rooms, {directHallHouse.Doors.Count} doors, " +
+                    $"{hearthCount} chimney stack(s)");
+                return true;
+            }
+        }
+
         // On a new multi-floor building, place a hallway on every level
         // first, reserve aligned stairwell rooms off that hallway, and only
         // then fill the remaining frontage. Placing stairs last had forced
