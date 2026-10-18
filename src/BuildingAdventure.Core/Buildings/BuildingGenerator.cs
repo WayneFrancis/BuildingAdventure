@@ -98,8 +98,10 @@ public static class BuildingGenerator
             options.Purpose==BuildingUse.Residence &&
             options.Rooms && options.Corridors && options.Doors && options.Stairs &&
             BuildingStoreys.TryAddFloor(blank,out var balancedBasis,out _) &&
-            BalancedSteppedRpgHousePlanner.TryGenerate(balancedBasis,seed,
-                out var balanced,out _))
+            (SideLandingRpgHousePlanner.TryGenerate(balancedBasis,seed,
+                out var balanced,out _) ||
+             BalancedSteppedRpgHousePlanner.TryGenerate(balancedBasis,seed,
+                out balanced,out _)))
         {
             int hearths=0;
             if(options.Fireplaces &&
@@ -120,9 +122,9 @@ public static class BuildingGenerator
             if(BuildingStoreys.Validate(balanced,out reason))
             {
                 suggestion=new BuildingSuggestion(balanced,seed,[0,1],
-                    $"Balanced L-shaped RPG house. Seed {seed}: "+
-                    "kitchen and full-width dining downstairs, "+
-                    $"three proportionate upstairs bedrooms, {hearths} hearth(s)");
+                    $"{(balanced.Rooms.Any(r=>r.Name==\"Short entry passage\") ? "Side-landing" : "Balanced")} L-shaped RPG house. Seed {seed}: "+
+                    "staircase in the ground living area, "+
+                    $"independent upstairs room zoning, {hearths} hearth(s)");
                 return true;
             }
         }
@@ -677,8 +679,10 @@ public static class BuildingGenerator
             options.Rooms && options.Corridors && options.Doors && options.Stairs &&
             indices.Length==2 && indices[0]==0 && indices[1]==1 &&
             BuildingStoreys.FloorCount(source)==2 &&
-            BalancedSteppedRpgHousePlanner.TryGenerate(source,seed,
-                out var balanced,out _))
+            (SideLandingRpgHousePlanner.TryGenerate(source,seed,
+                out var balanced,out _) ||
+             BalancedSteppedRpgHousePlanner.TryGenerate(source,seed,
+                out balanced,out _)))
         {
             int hearths=0;
             if(options.Fireplaces &&
@@ -699,8 +703,8 @@ public static class BuildingGenerator
             if(BuildingStoreys.Validate(balanced,out reason))
             {
                 suggestion=new BuildingSuggestion(balanced,seed,indices,
-                    $"Balanced L-shaped RPG house. Seed {seed}: "+
-                    "kitchen, dining, different upstairs plan, "+
+                    $"{(balanced.Rooms.Any(r=>r.Name==\"Short entry passage\") ? "Side-landing" : "Balanced")} L-shaped RPG house. Seed {seed}: "+
+                    "kitchen, dining, independent upstairs partitions, "+
                     $"three proportionate bedrooms, {hearths} new hearth(s)");
                 return true;
             }
