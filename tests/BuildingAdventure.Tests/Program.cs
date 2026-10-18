@@ -7554,5 +7554,148 @@ Check("example11 regenerates without duplicated living rooms or thin rooms", () 
         "Regeneration must not mutate the source example11 document.");
 });
 
+Check("example12 side-landing floorplan is accessible and not mirrored upstairs", () =>
+{
+    List<Point2> outer =
+    [
+        new(0,0),new(10.5,0),new(10.5,6),
+        new(12.5,6),new(12.5,10),new(0,10)
+    ];
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var flight=new StaircaseDefinition
+    {
+        LowerFloorIndex=0,Centre=new(2.8,1.1),
+        Length=2.8,Width=0.9,RotationDegrees=270,LandingLength=1
+    };
+    var example = new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=outer.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=outer.ToList()}],
+        Staircases=[flight.Copy()]
+    };
+    Assert(BuildingStoreys.Validate(example,out var reason),reason);
+    var distinct = new List<BuildingDocument>();
+    for(int seed=1;seed<=5;seed++)
+    {
+        Assert(SideLandingRpgHousePlanner.TryGenerate(example,seed,
+            out var house,out reason),
+            "Side-landing generation on example12 seed "+seed+": "+reason);
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        Assert(house.Staircases.Single().Id==flight.Id &&
+            house.Staircases.Single().Centre.DistanceTo(flight.Centre)<1e-7);
+        var lower=BuildingStoreys.GetFloor(house,0);
+        var upper=BuildingStoreys.GetFloor(house,1);
+        Assert(lower.Rooms.Count(r=>r.Type=="Hallway")==1);
+        Assert(lower.Rooms.Count(r=>r.Type=="Living room")==1);
+        Assert(lower.Rooms.Count(r=>r.Type=="Kitchen")==1);
+        Assert(lower.Rooms.Any(r=>r.Type=="Study") &&
+            lower.Rooms.Any(r=>r.Type=="Dining room"));
+        Assert(upper.Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(upper.Rooms.Any(r=>r.Type=="Bathroom") &&
+            upper.Rooms.Any(r=>r.Type=="Sitting room"));
+        var lowerHall=lower.Rooms.Single(r=>r.Type=="Hallway");
+        var upperHall=upper.Rooms.Single(r=>r.Type=="Hallway");
+        Assert(PolygonGeometry.Area(lowerHall.Outline)<14,
+            "Downstairs circulation should no longer occupy 37 square metres.");
+        Assert(!lowerHall.Outline.SequenceEqual(upperHall.Outline),
+            "The upstairs hall must be independent, not a clone of downstairs.");
+        Assert(PolygonGeometry.Area(upperHall.Outline)<25);
+        Assert(!lower.Rooms.Where(r=>r.Type!="Hallway")
+            .Any(r=>upper.Rooms.Any(u=>r.Outline.SequenceEqual(u.Outline))),
+            "Do not mirror ground-floor room boundaries upstairs.");
+        var stairReservations=new[]{BuildingStoreys.StairFootprint(flight),
+            BuildingStoreys.StairOpeningFootprint(flight)}
+            .Concat(BuildingStoreys.StairLandings(flight)).ToArray();
+        var living=lower.Rooms.Single(r=>r.Type=="Living room");
+        var sitting=upper.Rooms.Single(r=>r.Type=="Sitting room");
+        Assert(stairReservations.All(p=>
+            FloorGeometry.IsWithinPolygon(p,living.Outline) &&
+            FloorGeometry.IsWithinPolygon(p,sitting.Outline)),
+            "Put the ground flight inside the living room and the upper flight inside sitting.");
+        var bedroomAreas=upper.Rooms.Where(r=>r.Type=="Bedroom")
+            .Select(r=>PolygonGeometry.Area(r.Outline)).ToArray();
+        Assert(bedroomAreas.Max()/bedroomAreas.Min()<1.75);
+        Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(lower))<0.01 &&
+            Math.Abs(RoomLayoutPlanner.UnassignedArea(upper))<0.01);
+        static bool On(Point2 p,IReadOnlyList<Point2> ring)=>
+            Enumerable.Range(0,ring.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(
+                    p,ring[i],ring[(i+1)%ring.Count]).DistanceTo(p)<1e-5);
+        foreach(int index in new[]{0,1})
+        {
+            var floor=BuildingStoreys.GetFloor(house,index);
+            var hall=floor.Rooms.Single(r=>r.Type=="Hallway");
+            foreach(var room in floor.Rooms.Where(r=>r.Id!=hall.Id))
+            {
+                bool access=floor.Doors.Any(d=>On(d.Centre,room.Outline) &&
+                    On(d.Centre,hall.Outline));
+                bool pantry=room.Type=="Pantry" &&
+                    floor.Doors.Any(d=>On(d.Centre,room.Outline) &&
+                        floor.Rooms.Any(r=>r.Type=="Kitchen" &&
+                            On(d.Centre,r.Outline)));
+                Assert(access||pantry,
+                    room.Name+" must have independent access.");
+            }
+        }
+        if(!distinct.Any(other=>BuildingGenerator.SameRoomLayout(other,house,[0,1])))
+            distinct.Add(house);
+    }
+    Assert(distinct.Count>=2,"Seed should vary independent upstairs bedrooms.");
+
+    // Regenerate the accepted example12-shaped hallway layout: the old
+    // 37m² stair passage was erroneously duplicated on both storeys.
+    var existing=BuildingStoreys.Copy(example);
+    List<Point2> oldHall =
+    [
+        new(0,0),new(5.6,0),new(5.6,6),new(12.5,6),
+        new(12.5,7.4),new(0,7.4),new(0,6),new(4.2,6),
+        new(4.2,2.65),new(0,2.65)
+    ];
+    RoomDefinition Room(string name,string type,List<Point2> outline)=>
+        new(){Name=name,Type=type,Outline=outline.ToList()};
+    var oldKitchen=Room("Kitchen","Kitchen",R(5.6,0,10.5,6));
+    existing.Rooms =
+    [
+        Room("Stair passage","Hallway",oldHall),
+        Room("Living room","Living room",R(0,2.65,4.2,6)),
+        oldKitchen,
+        Room("Dining room","Dining room",R(0,7.4,5.6,10)),
+        Room("Study","Study",R(5.6,7.4,12.5,10))
+    ];
+    existing.UpperFloors[0].Rooms =
+    [
+        Room("Upper landing","Hallway",oldHall),
+        Room("Master Bedroom","Bedroom",R(0,2.65,4.2,6)),
+        Room("Bedroom","Bedroom",R(5.6,0,10.5,6)),
+        Room("Bedroom 2","Bedroom",R(0,7.4,5.6,10)),
+        Room("Bathroom","Bathroom",R(5.6,7.4,12.5,10))
+    ];
+    var hearth=new ChimneyDefinition
+    {
+        Centre=new Point2(10.13,3),Width=0.7,Depth=1.4,
+        HearthFloorIndex=0,Exterior=true,HearthRoomIds=[oldKitchen.Id]
+    };
+    existing.Chimneys.Add(hearth);
+    Assert(BuildingStoreys.Validate(existing,out reason),reason);
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,CompactRpgHouseLayout=true,
+        Rooms=true,Corridors=true,Doors=true,Stairs=true
+    };
+    Assert(BuildingGenerator.TryRegenerate(existing,[0,1],43,options,
+        out var suggestion,out reason),"example12 regeneration: "+reason);
+    Assert(suggestion.Description.Contains("Side-landing"),
+        "Regeneration must choose the new independent upper layout.");
+    Assert(suggestion.Building.Chimneys.Single().Id==hearth.Id &&
+        suggestion.Building.Chimneys.Single().HearthRoomIds.SequenceEqual(
+            new[]{suggestion.Building.Rooms.Single(r=>r.Type=="Kitchen").Id}),
+        "Retain example12 kitchen chimney link.");
+    Assert(suggestion.Building.Staircases.Single().Id==flight.Id,
+        "Do not silently move user-approved existing staircases.");
+    Assert(existing.Rooms.Single(r=>r.Type=="Hallway").Name=="Stair passage",
+        "Regeneration should leave the accepted source untouched.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
