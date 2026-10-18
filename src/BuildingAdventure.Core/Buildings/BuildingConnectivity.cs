@@ -355,6 +355,7 @@ public static class BuildingConnectivity
         updated = BuildingStoreys.Copy(source);
         flights = 0;
         reason = "";
+        string lastError = "No side bay with sufficient clear space.";
         var levels = BuildingStoreys.FloorIndexes(source);
         if (levels.Count < 2)
         {
@@ -448,7 +449,8 @@ public static class BuildingConnectivity
                     Outline = outline.ToList()
                 });
                 BuildingStoreys.SetFloor(candidate, index, floor);
-                if (BuildingStoreys.Validate(candidate, out _)) continue;
+                if (BuildingStoreys.Validate(candidate, out var invalid)) continue;
+                lastError = invalid;
                 roomsFit = false;
                 break;
             }
@@ -466,8 +468,11 @@ public static class BuildingConnectivity
                     RotationDegrees = vertical ? 0 : 90
                 };
                 if (!BuildingStoreys.TryAddStaircase(candidate, stair,
-                        out var placed, out _))
+                        out var placed, out var invalid))
+                {
+                    lastError = invalid;
                     break;
+                }
                 candidate = placed;
                 added++;
             }
@@ -476,8 +481,7 @@ public static class BuildingConnectivity
             flights = added;
             return true;
         }
-        reason = "No valid stairwell could fit beside a corridor on every floor. " +
-            "The generator did not put stairs in the main hallway.";
+        reason = "No valid stair bay could fit beside the corridor: " + lastError;
         return false;
     }
 
