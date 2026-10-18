@@ -154,6 +154,16 @@ public static class BuildingGenerator
                 RoomLayoutPlanner.ConsolidateGeneratedRooms(result, level,
                     Array.Empty<Guid>(), out var shaped);
                 result = shaped;
+                // A wide entry wing should first become two storage rooms
+                // while preserving a clear approach to the outside door.
+                int entryStores = RoomLayoutPlanner.PartitionGeneratedEntranceWing(
+                    result, level, Array.Empty<Guid>(), out var withStores);
+                result = withStores;
+                if (entryStores > 0 && options.Doors)
+                {
+                    BuildingConnectivity.AddDoors(result, level, out var withStoreDoors);
+                    result = withStoreDoors;
+                }
                 // The whole-building path merges temporary stair bays only
                 // after furnishing, so its hallway cleanup belongs here.
                 int reclaimed = RoomLayoutPlanner.ReclaimOversizedGeneratedHallway(
@@ -678,6 +688,18 @@ public static class BuildingGenerator
                 RoomLayoutPlanner.ConsolidateGeneratedRooms(
                     proposed, index, protectedRooms, out var withMergedRooms);
                 proposed = withMergedRooms;
+                // Use shallow side pockets around a real exterior
+                // doorway for accessible storage, not oversized hallway.
+                int entryStores = RoomLayoutPlanner.PartitionGeneratedEntranceWing(
+                    proposed, index, protectedRooms, out var withStores);
+                proposed = withStores;
+                addedRooms += entryStores;
+                if (entryStores > 0 && options.Doors)
+                {
+                    addedDoors += BuildingConnectivity.AddDoors(
+                        proposed, index, out var withStoreDoors);
+                    proposed = withStoreDoors;
+                }
                 // The merged passages may otherwise inflate an L-shaped
                 // footprint's hallway to more than half its usable area.
                 // Only newly generated hallways are eligible for reclamation.
