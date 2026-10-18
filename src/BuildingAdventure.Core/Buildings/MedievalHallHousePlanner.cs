@@ -47,8 +47,10 @@ public static class MedievalHallHousePlanner
         foreach (bool alongX in new[] { longX, !longX })
         foreach (bool reverse in new[] { false, true })
         foreach (bool privateEnd in new[] { true, false })
+        foreach (double serviceFraction in new[] { 0.26, 0.20, 0.31 })
         {
             if (TryPlan(building, alongX, reverse, privateEnd,
+                    serviceFraction,
                     out var candidate, out var detail))
             {
                 updated = candidate;
@@ -61,7 +63,8 @@ public static class MedievalHallHousePlanner
     }
 
     private static bool TryPlan(BuildingDocument building, bool alongX,
-        bool reverse, bool privateEnd, out BuildingDocument result,
+        bool reverse, bool privateEnd, double serviceFraction,
+        out BuildingDocument result,
         out string reason)
     {
         result = BuildingStoreys.Copy(building);
@@ -81,7 +84,12 @@ public static class MedievalHallHousePlanner
 
         // Cuts along the social axis: service end / screens passage /
         // communal hall / optionally a parlour at the high end.
-        double service = Math.Max(2.2, Math.Min(length * 0.26, length - 5.6));
+        // Try different historical bay proportions. A stair flight
+        // requires its entire landing envelope in a single room;
+        // a slightly shorter service bay can put that landing inside
+        // the great hall instead of intersecting the screens wall.
+        double service = Math.Max(2.2,
+            Math.Min(length * serviceFraction, length - 5.6));
         double screens = 1.45;
         double parlour = privateEnd ? Math.Max(2.3, length * 0.23) : 0;
         if (length - service - screens - parlour < 3.3)
