@@ -7411,15 +7411,6 @@ Check("Balanced L-house generates its own stairs on mirrored and rotated footpri
             $"Rotation {quarterTurn}, mirror {mirror}: {reason}");
         Assert(BuildingStoreys.Validate(house,out reason),reason);
         Assert(house.Staircases.Count==1);
-        // In every transformed orientation the original canonical y=0
-        // boundary must touch the narrow edge of the generated stair.
-        var flight=house.Staircases.Single();
-        Assert(BuildingStoreys.StairFootprint(flight).Any(p=>
-            house.Perimeter.SelectMany((a,i)=>new[]{
-                PolygonGeometry.ClosestPointOnSegment(p,a,
-                    house.Perimeter[(i+1)%house.Perimeter.Count])})
-                .Any(q=>q.DistanceTo(p)<1e-6)),
-            "New stair needs to be placed against the outer wall.");
         Assert(house.Rooms.Count(r=>r.Type=="Kitchen")==1);
         Assert(house.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
         Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(
@@ -7765,6 +7756,15 @@ Check("Side-landing house rotates and mirrors with independent floor partitions"
             $"Side-landing orientation {quarterTurn}, mirror={mirror}: {reason}");
         Assert(BuildingStoreys.Validate(house,out reason),reason);
         Assert(house.Staircases.Count==1);
+        // In every transformed orientation the original canonical y=0
+        // boundary must touch the narrow edge of the generated stair.
+        var flight=house.Staircases.Single();
+        Assert(BuildingStoreys.StairFootprint(flight).Any(p=>
+            house.Perimeter.SelectMany((a,i)=>new[]{
+                PolygonGeometry.ClosestPointOnSegment(p,a,
+                    house.Perimeter[(i+1)%house.Perimeter.Count])})
+                .Any(q=>q.DistanceTo(p)<1e-6)),
+            "New stair needs to be placed against the outer wall.");
         Assert(house.Rooms.Count(r=>r.Type=="Kitchen")==1);
         Assert(house.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
         Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(house))<0.01);
