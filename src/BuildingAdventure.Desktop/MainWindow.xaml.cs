@@ -386,7 +386,8 @@ public partial class MainWindow : Window
         PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
         HintText.Text = _hint;
         AcceptSuggestionButton.IsEnabled = RememberSuggestionButton.IsEnabled =
-            DiscardSuggestionButton.IsEnabled = _pendingSuggestion is not null;
+            DiscardSuggestionButton.IsEnabled = AiAcceptPreviewButton.IsEnabled =
+            AiDiscardPreviewButton.IsEnabled = _pendingSuggestion is not null;
         AcceptSuggestedRoomButton.IsEnabled = _pendingSuggestion is not null &&
             !_pendingWholeBuilding && EditorSurface.SelectedSuggestedRoomId.HasValue;
         SuggestionInfoText.Text = _pendingSuggestion is null
