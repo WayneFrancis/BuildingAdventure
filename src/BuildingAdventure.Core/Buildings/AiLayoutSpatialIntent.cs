@@ -100,7 +100,7 @@ public static class AiLayoutSpatialIntent
     /// guessing it from the proposed room's name or bounding box.
     /// Handles L-shaped/orthogonal unions by using every grid cell midpoint.
     /// </summary>
-    internal static bool TryGainedFootprint(BuildingDocument source,
+    public static bool TryGainedFootprint(BuildingDocument source,
         int floorIndex, AiLayoutOption option,
         out RoomDefinition gainingRoom, out (double X0, double Y0,
             double X1, double Y1) gained)
