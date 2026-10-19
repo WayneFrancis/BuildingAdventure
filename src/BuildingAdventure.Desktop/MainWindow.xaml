@@ -243,6 +243,14 @@
                                        Text="AI idle. The preview-only test works without Ollama."
                                        Margin="0,0,0,8"/>
                             <WrapPanel Margin="0,0,0,8">
+                                <Button x:Name="AiAcceptPreviewButton" Content="Accept Preview"
+                                        Click="AcceptSuggestion_Click" IsEnabled="False"
+                                        Padding="7,5" Margin="0,0,8,4"/>
+                                <Button x:Name="AiDiscardPreviewButton" Content="Discard Preview"
+                                        Click="DiscardSuggestion_Click" IsEnabled="False"
+                                        Padding="7,5" Margin="0,0,8,4"/>
+                            </WrapPanel>
+                            <WrapPanel Margin="0,0,0,8">
                                 <Button x:Name="AiWarmButton" Content="Warm/test Ollama"
                                         Click="AiWarm_Click" Padding="7,5"
                                         Margin="0,0,8,4"/>
