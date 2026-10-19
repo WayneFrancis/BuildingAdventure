@@ -907,14 +907,21 @@ public partial class MainWindow : Window
         BeginSuggestion(suggestion, whole: false);
         string summary = origin + " selected a valid change. " +
             suggestion.Description.Replace("AI IMPROVEMENT DRAFT — ", "");
-        AiStatusText.Text = summary +
-            " The floor plan now shows the graphical preview: green dashed " +
-            "walls are proposed, orange dashed walls are existing, and " +
-            "green shading marks gained space. Click Accept All above to " +
-            "apply or Discard preview to leave the layout unchanged.";
-        _hint = "GRAPHICAL AI PREVIEW READY — green dashed = proposed walls; " +
-            "orange dashed = existing walls. Accept All to apply; " +
-            "Discard preview to cancel (Ctrl+Z undoes acceptance).";
+        bool doorway = suggestion.Description.Contains("Add doorway",
+            StringComparison.OrdinalIgnoreCase);
+        AiStatusText.Text = summary + (doorway
+            ? " The orange dashed doorway on the plan shows the NEW opening. "
+              + "No existing room walls or openings will move."
+            : " The floor plan shows green dashed proposed walls, orange "
+              + "dashed existing walls, and green shading for gained space.")
+            + " Click Accept All to apply or Discard preview to leave "
+            + "the building unchanged.";
+        _hint = doorway
+            ? "AI DOORWAY PREVIEW — orange dashed = new doorway. " +
+              "Accept All to add it; Discard preview to cancel."
+            : "GRAPHICAL AI PREVIEW READY — green dashed = proposed walls; " +
+              "orange dashed = existing walls. Accept All to apply; " +
+              "Discard preview to cancel (Ctrl+Z undoes acceptance).";
         Refresh();
     }
 
@@ -933,12 +940,16 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private static string NoAiLayoutCandidatesMessage() =>
-        "No safe room improvement was found on this floor. Supported edits " +
-        "include hallway corner transfers, simple shared-wall moves, " +
-        "and rectangular patches exchanged across partial or L-shaped " +
-        "orthogonal room boundaries. Existing doors, stairs, insufficient " +
-        "space and angled walls may prevent an edit.";
+    private static string NoAiLayoutCandidatesMessage(string? goal = null) =>
+        AiDoorPlacementPlanner.IsDoorwayGoal(goal)
+            ? "No safe doorway matches the requested rooms. The rooms must " +
+              "share a sufficiently long wall with room for an opening " +
+              "clear of existing doors, windows, stairs and landings."
+            : "No safe room improvement was found on this floor. Supported edits " +
+              "include hallway corner transfers, simple shared-wall moves, " +
+              "and rectangular patches exchanged across partial or L-shaped " +
+              "orthogonal room boundaries. Existing doors, stairs, insufficient " +
+              "space and angled walls may prevent an edit.";
 
     private async void AiPreviewValidated_Click(object sender, RoutedEventArgs e)
     {
@@ -968,7 +979,7 @@ public partial class MainWindow : Window
             }
             if (candidates.Count == 0)
             {
-                AiStatusText.Text = NoAiLayoutCandidatesMessage();
+                AiStatusText.Text = NoAiLayoutCandidatesMessage(previewGoal);
                 MessageBox.Show(this, AiStatusText.Text, "No safe improvement",
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
@@ -1057,9 +1068,9 @@ public partial class MainWindow : Window
                 result = "The building changed during the request; the proposal " +
                     "was discarded. Retry from the current version.";
             else if (candidates.Count == 0)
-                result = "No validated change matches the requested room, " +
-                    "direction and size. I will not substitute another side " +
-                    "of the room. " + NoAiLayoutCandidatesMessage();
+                result = "No validated change matches the request. I will not " +
+                    "substitute a different room or unwanted edit. " +
+                    NoAiLayoutCandidatesMessage(goal);
             else if (candidates.Count == 1)
             {
                 // The LLM cannot add value when the geometry and user goal
@@ -1104,10 +1115,6 @@ public partial class MainWindow : Window
                     result = "The model responded, but its choice was rejected: " +
                         reason + " You can test the geometry separately using " +
                         "Preview validated change (no AI).";
-                else if (BuildingGenerator.SameRoomLayout(
-                    source, suggestion.Building, [floorIndex]))
-                    result = "The model selected an unchanged layout. " +
-                        "Preview validated change (no AI) is available.";
                 else
                     ready = suggestion;
             }
@@ -1383,7 +1390,10 @@ public partial class MainWindow : Window
                 : regenerating
                     ? "Accepting this regeneration REPLACES rooms, doors and windows on the checked floors. The current perimeter and untouched floors are kept."
                     : aiImprovement
-                        ? "Accepting the AI improvement changes the two room boundaries on the current floor. The existing staircases, doors, other rooms and floors are preserved."
+                        ? _pendingSuggestion.Description.Contains("Add doorway",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "Accepting the AI improvement ADDS one doorway on the current floor. Existing room walls, stairs, doors and other floors are preserved."
+                            : "Accepting the AI improvement changes the two room boundaries on the current floor. Existing staircases, doors, other rooms and floors are preserved."
                         : "The building changed since this suggestion was saved. Applying it will REPLACE the current building with the saved candidate.";
             if (MessageBox.Show(this, explanation +
                     "\n\nThe current design can be restored with Ctrl+Z. Continue?",
