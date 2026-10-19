@@ -4,6 +4,42 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.52 — Accept hand-drawn near-rectangular rooms (development)
+
+The uploaded `example13.json` is a single-storey **7.62 m square**
+with two adjoining rooms of type `Other`. Room 1 is only approximately
+**1.52–1.58 m wide**, and its long dividing wall tilts **0.056 m** between
+the upper and lower endpoints. The original v0.51 planner rejected it
+*before contacting Ollama*: it required perfectly axis-aligned rectangles
+with a minimum **2.4 m initial width**.
+
+The resize planner now:
+
+- Locates **matching complete shared wall segments by their endpoints**,
+  even when a manually drawn vertical or horizontal partition has a small
+  lean (up to 0.15 m overall).
+- Preserves that lean when moving both shared endpoints horizontally or
+  vertically, without moving the exterior perimeter or unrelated rooms.
+- Tests the **resulting** room widths rather than excluding a narrow room
+  up front. Both resulting rooms must be at least **2.1 m** wide; an
+  undersized room can therefore be enlarged by a 0.6 m, 0.9 m or 1.2 m
+  shift when there is sufficient room to borrow.
+- Conserves combined room area and validates the whole building, all
+  unchanged doors and any staircase/chimney clearances. A doorway on
+  the moving wall continues to block the operation.
+- Retains existing hallway-corner edits, geometry-first AI candidate
+  selection, previews, explicit acceptance and undo.
+
+A new regression test reproduces **the exact outlines and room IDs from
+`example13.json`**, ensures `Room 1` can be enlarged while preserving
+its outer walls, and verifies that AI receives a numbered valid choice.
+The room types `Other`, a five-foot grid, and lack of doors are
+supported.
+
+To check the fix, open `example13.json`, choose **AI Improve current
+floor** with the goal "Make Room 1 larger by moving the shared wall
+toward Room 2", or first use **Preview validated change (no AI)**.
+
 ## v0.51 — AI-guided room resizing (development)
 
 Both local **Ollama `qwen3:8b`** and the no-model geometry preview
