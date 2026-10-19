@@ -8319,5 +8319,44 @@ Check("AI can reshape orthogonal L-shaped rooms without affecting existing doors
         "relocate/delete a doorway or invalidate the floor.");
 });
 
+
+Check("AI partial-wall demo fixture is completely allocated and improvable", () =>
+{
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var living=new RoomDefinition
+    {
+        Id=Guid.Parse("8c6ad1c9-cad4-4a45-a7b8-2a329d7d9d21"),
+        Name="L-shaped Living Room",Type="Living room",
+        Outline=[new(0,0),new(10,0),new(10,2),
+                 new(4,2),new(4,8),new(0,8)]
+    };
+    var bedroom=new RoomDefinition
+    {
+        Id=Guid.Parse("b6c7cfd7-bc4d-4b8d-b681-28157b8dba22"),
+        Name="Bedroom",Type="Bedroom",
+        Outline=R(4,2,10,8)
+    };
+    var full=new BuildingDocument
+    {
+        SchemaVersion=1,
+        Perimeter=R(0,0,10,8),
+        Rooms=[living,bedroom]
+    };
+    Assert(BuildingStoreys.Validate(full,out var reason),reason);
+    Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(full))<0.01,
+        "Demo should have no unallocated floor area.");
+    var proposed=AiPartialRoomResizePlanner.FindCandidates(full,0);
+    Assert(proposed.Count>0,
+        "The downloadable demo with two shared wall segments must be improvable.");
+    Assert(proposed.All(c =>
+        BuildingStoreys.Validate(c.Suggestion.Building,out _) &&
+        Math.Abs(RoomLayoutPlanner.UnassignedArea(c.Suggestion.Building))<0.01),
+        "Every proposed demo layout must conserve floor coverage and geometry.");
+    var combined=AiLayoutRecommendationPlanner.FindOptions(full,0);
+    Assert(combined.Any(o=>o.Kind=="Resize partial / L-shaped rooms"),
+        "Ollama's numbered candidate list must include the demo geometry.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
