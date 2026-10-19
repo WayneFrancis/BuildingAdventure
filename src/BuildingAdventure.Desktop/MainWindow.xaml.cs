@@ -908,11 +908,13 @@ public partial class MainWindow : Window
             return;
         }
         string snapshot = CurrentJson();
+        string previewGoal = AiGoalBox.Text.Trim();
         SetAiBusy(true, "Finding validated floor improvements locally");
         try
         {
             var candidates = await Task.Run(() =>
-                AiLayoutRecommendationPlanner.FindOptions(source, floorIndex));
+                AiLayoutRecommendationPlanner.FindOptions(
+                    source, floorIndex, goal: previewGoal));
             if (CurrentJson() != snapshot)
             {
                 AiStatusText.Text = "The layout changed during validation. Try again.";
@@ -1001,14 +1003,17 @@ public partial class MainWindow : Window
         try
         {
             var candidates = await Task.Run(() =>
-                AiLayoutRecommendationPlanner.FindOptions(source, floorIndex),
+                AiLayoutRecommendationPlanner.FindOptions(
+                    source, floorIndex, goal: goal),
                 cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             if (CurrentJson() != fingerprint)
                 result = "The building changed during the request; the proposal " +
                     "was discarded. Retry from the current version.";
             else if (candidates.Count == 0)
-                result = NoAiLayoutCandidatesMessage();
+                result = "No validated change matches the requested room, " +
+                    "direction and size. I will not substitute another side " +
+                    "of the room. " + NoAiLayoutCandidatesMessage();
             else
             {
                 var prompt = AiLayoutRecommendationPlanner.BuildSelectionPrompt(
