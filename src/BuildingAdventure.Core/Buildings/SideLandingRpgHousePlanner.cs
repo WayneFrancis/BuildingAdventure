@@ -124,12 +124,15 @@ public static class SideLandingRpgHousePlanner
         const double hallLeft = 4.2;
         const double groundEntryDepth = 3.1;
         const double upperSittingDepth = 2.8;
-        double pantryStart = stepY - 1.4;
+        // Put the pantry against the far/front kitchen wall, rather than
+        // between the kitchen and dining room. The entire kitchen-dining
+        // partition is then available for a direct serving doorway.
+        double pantryEnd = 1.4;
         double crossStart = variant.CorridorStart;
         double crossEnd = variant.CorridorEnd;
         double rearSplit = width * variant.RearSplit;
         if (stepX - bayWidth < 4.3 ||
-            pantryStart - groundEntryDepth < 1.2 ||
+            stepY - pantryEnd < 3.05 ||
             crossStart - upperSittingDepth < 1.9 ||
             crossStart >= stepY - 0.45 ||
             crossEnd <= stepY + 0.3 ||
@@ -137,17 +140,40 @@ public static class SideLandingRpgHousePlanner
             rearSplit < 4.5 || width - rearSplit < 4.5)
             return false;
 
-        var stair = source.Staircases.Count == 1
-            ? source.Staircases.Single().Copy()
+        // The previous automatically generated stair centred at V=1.1m,
+        // leaving 0.65m of unusable floor between its edge and the wall.
+        // New flights abut the perimeter. On regeneration move ONLY the
+        // recognisable old generated flight; preserve any custom placement.
+        // Updating the copied document retains the original staircase ID
+        // and keeps the source building untouched until Accept.
+        var stair = result.Staircases.Count == 1
+            ? result.Staircases.Single()
             : new StaircaseDefinition
             {
-                LowerFloorIndex = 0, Centre = P(2.8, 1.1),
+                LowerFloorIndex = 0, Centre = P(2.8, 0.45),
                 Length = 2.8, Width = 0.9, LandingLength = 1,
                 RotationDegrees = variant.Swap
                     ? (variant.FlipU ? 180 : 0)
                     : (variant.FlipU ? 90 : 270)
             };
         if (stair.LowerFloorIndex != 0) return false;
+        if (source.Staircases.Count == 1 &&
+            Math.Abs(U(stair.Centre) - 2.8) < Epsilon &&
+            Math.Abs(V(stair.Centre) - 1.1) < Epsilon &&
+            Math.Abs(stair.Length - 2.8) < Epsilon &&
+            Math.Abs(stair.Width - 0.9) < Epsilon &&
+            Math.Abs(stair.LandingLength - 1) < Epsilon &&
+            stair.OpeningExtraWidth == 0 && stair.OpeningExtraLength == 0)
+        {
+            // The perimeter can be mirrored or rotated, so snap along the
+            // canonical short axis, not in absolute screen coordinates.
+            // The stair is horizontal in the canonical local coordinates:
+            // its narrow footprint edge must sit on the exterior wall.
+            if (Math.Abs(stair.RotationDegrees -
+                    (variant.Swap ? (variant.FlipU ? 180 : 0)
+                                  : (variant.FlipU ? 90 : 270))) < Epsilon)
+                stair.Centre = P(2.8, stair.Width / 2);
+        }
         var reservations = new[]
         {
             BuildingStoreys.StairFootprint(stair),
@@ -175,8 +201,8 @@ public static class SideLandingRpgHousePlanner
         var groundRoles = new[]
         {
             ("Living room", "Living room", lowerLiving),
-            ("Kitchen", "Kitchen", Rect(bayWidth,0,stepX,pantryStart)),
-            ("Pantry", "Pantry", Rect(bayWidth,pantryStart,stepX,stepY)),
+            ("Kitchen", "Kitchen", Rect(bayWidth,pantryEnd,stepX,stepY)),
+            ("Pantry", "Pantry", Rect(bayWidth,0,stepX,pantryEnd)),
             ("Study", "Study", Rect(0,stepY,hallLeft,depth)),
             ("Dining room", "Dining room", Rect(bayWidth,stepY,width,depth))
         };
@@ -256,6 +282,24 @@ public static class SideLandingRpgHousePlanner
         {
             BuildingConnectivity.AddDoors(result, index, out var withDoors);
             result = withDoors;
+        }
+
+        // The pantry may never block the kitchen/dining serving route.
+        // This direct doorway is required in addition to doors leading
+        // through the hall and from the kitchen into the pantry.
+        var groundAfterDoors = BuildingStoreys.GetFloor(result, 0);
+        var kitchen = groundAfterDoors.Rooms.Single(r => r.Type == "Kitchen");
+        var dining = groundAfterDoors.Rooms.Single(r => r.Type == "Dining room");
+        static bool OnSharedWall(Point2 p, IReadOnlyList<Point2> outline) =>
+            Enumerable.Range(0, outline.Count).Any(i =>
+                PolygonGeometry.ClosestPointOnSegment(p, outline[i],
+                    outline[(i + 1) % outline.Count]).DistanceTo(p) < Epsilon);
+        if (!groundAfterDoors.Doors.Any(d =>
+                OnSharedWall(d.Centre, kitchen.Outline) &&
+                OnSharedWall(d.Centre, dining.Outline)))
+        {
+            reason = "Kitchen and dining room have no direct serving doorway.";
+            return false;
         }
 
         // Existing chimney masonry is immutable, but its old room GUID
