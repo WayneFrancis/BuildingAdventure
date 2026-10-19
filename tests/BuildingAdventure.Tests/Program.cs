@@ -7918,5 +7918,101 @@ Check("AI layout improvement transfers a hallway dead end into Bedroom 3", () =>
         "Reject removal of an existing wall that contains a doorway.");
 });
 
+
+Check("AI candidate shortlist avoids invented wall geometry and IDs", () =>
+{
+    List<Point2> R(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var hall=new RoomDefinition
+    {
+        Name="Upper cross hall",Type="Hallway",
+        Outline=[
+            new(0,4.9),new(10.5,4.9),
+            new(10.5,6),new(12.5,6),
+            new(12.5,6.5),new(0,6.5)
+        ]
+    };
+    var bedroom=new RoomDefinition
+    {
+        Name="Bedroom 3",Type="Bedroom",Outline=R(6.25,6.5,12.5,10)
+    };
+    var entrance=new DoorDefinition
+    {
+        Centre=new Point2(9.375,6.5),Width=0.9
+    };
+    var original=new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=R(0,0,12.5,10),
+        Rooms=[hall,bedroom],
+        Doors=[entrance]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    var candidates=AiLayoutCandidatePlanner.FindCandidates(original,0);
+    Assert(candidates.Count>0,
+        "C# must find the legitimate 2m x 0.5m Bedroom 3 corner without AI coordinates.");
+    var candidate=candidates.FirstOrDefault(c=>
+        c.Transfer.FromRoomId==hall.Id && c.Transfer.ToRoomId==bedroom.Id &&
+        Math.Abs(c.Transfer.XMin-10.5)<1e-5 &&
+        Math.Abs(c.Transfer.XMax-12.5)<1e-5 &&
+        Math.Abs(c.Transfer.YMin-6)<1e-5 &&
+        Math.Abs(c.Transfer.YMax-6.5)<1e-5);
+    Assert(candidate is not null,
+        "The exact example12 upper hall dead-end should be an available candidate.");
+    Assert(candidates.All(c=>
+        AiLayoutImprover.TryApply(original,0,
+            System.Text.Json.JsonSerializer.Serialize(c.Transfer),out _,out _)),
+        "Every shortlisted transfer must pass the complete C# validator.");
+
+    var prompt=AiLayoutCandidatePlanner.BuildSelectionPrompt(original,0,
+        "Give Bedroom 3 the unused northeast corner.",candidates);
+    Assert(prompt.Contains("candidateId") &&
+        prompt.Contains("Bedroom 3") &&
+        prompt.Contains("already-validated",StringComparison.OrdinalIgnoreCase) &&
+        !prompt.Contains("fromRoomId"),
+        "Language model should select a candidate, not compose room IDs.");
+
+    var choice=System.Text.Json.JsonSerializer.Serialize(new
+    {
+        candidateId=candidate!.Id,
+        reason="This is the unused northeast corridor tip."
+    });
+    Assert(AiLayoutCandidatePlanner.TryApplySelection(
+        original,0,choice,candidates,out var proposed,out reason),reason);
+    Assert(BuildingStoreys.Validate(proposed.Building,out reason),reason);
+    Assert(PolygonGeometry.ContainsPoint(
+        proposed.Building.Rooms.Single(r=>r.Name=="Bedroom 3").Outline,
+        new Point2(11.5,6.2)));
+    Assert(!PolygonGeometry.ContainsPoint(
+        proposed.Building.Rooms.Single(r=>r.Type=="Hallway").Outline,
+        new Point2(11.5,6.2)));
+    Assert(original.Rooms.Single(r=>r.Type=="Hallway")
+        .Outline.SequenceEqual(hall.Outline),
+        "AI selection must not mutate the original design.");
+    Assert(!AiLayoutCandidatePlanner.TryApplySelection(original,0,
+        "{\"candidateId\":9999,\"reason\":\"Guess\"}",candidates,
+        out _,out reason) && reason.Contains("unknown candidate"),
+        "Reject hallucinated candidate IDs explicitly.");
+    Assert(!AiLayoutCandidatePlanner.TryApplySelection(original,0,
+        "not json",candidates,out _,out _),
+        "Reject non-JSON model responses.");
+
+    var alreadyFixed=BuildingStoreys.Copy(proposed.Building);
+    var leftovers=AiLayoutCandidatePlanner.FindCandidates(alreadyFixed,0);
+    Assert(!leftovers.Any(c=>c.Transfer.ToRoomId==bedroom.Id &&
+        c.Transfer.XMin>=10.5),
+        "Once recovered, the same hallway corner must not be offered again.");
+    var blocked=BuildingStoreys.Copy(original);
+    blocked.Doors.Add(new DoorDefinition
+    {
+        Centre=new Point2(11.5,6.5),Width=0.9
+    });
+    Assert(BuildingStoreys.Validate(blocked,out reason),reason);
+    var blockedCandidates=AiLayoutCandidatePlanner.FindCandidates(blocked,0);
+    Assert(!blockedCandidates.Any(c=>c.Transfer.ToRoomId==bedroom.Id &&
+        c.Transfer.XMin>=10.5),
+        "The validator must not shortlist a patch that destroys an existing door.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
