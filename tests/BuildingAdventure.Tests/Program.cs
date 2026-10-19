@@ -8647,6 +8647,12 @@ Check("AI can propose a validated new doorway without resizing rooms", () =>
         "not turn the default resize goal into a doorway request.");
     Assert(AiDoorPlacementPlanner.IsDoorwayGoal("Connect Kitchen to Dining room."),
         "Explicit requests to connect rooms should offer doorways.");
+    Assert(!AiDoorPlacementPlanner.IsDoorwayGoal(
+        "Do not add any new doors. Enlarge the kitchen."),
+        "Negative constraints must not authorize new doors.");
+    Assert(!AiDoorPlacementPlanner.IsDoorwayGoal(
+        "Connect Kitchen to Dining room without a door."),
+        "A request explicitly prohibiting a door must fail closed.");
     Assert(AiLayoutRecommendationPlanner.FindOptions(
         original, 0, 20, "Add a door between Kitchen and Attic.").Count == 0,
         "Unknown room names must not be replaced by a different neighbour.");
