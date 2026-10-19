@@ -8207,5 +8207,108 @@ Check("AI resize recognises the slightly slanted two-room example13 layout", () 
         "Existing door on the slanted partition must prevent silent relocation.");
 });
 
+
+Check("AI can improve rooms with only a partial shared internal wall", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var main = new RoomDefinition
+    {
+        Name = "Study", Type = "Study", Outline = Rect(0,0,5,6)
+    };
+    var annex = new RoomDefinition
+    {
+        Name = "Bedroom", Type = "Bedroom", Outline = Rect(5,2,9,6)
+    };
+    var building = new BuildingDocument
+    {
+        Perimeter = Rect(0,0,9,6), Rooms = [main,annex]
+    };
+    Assert(BuildingStoreys.Validate(building,out var reason),reason);
+    Assert(AiRoomResizePlanner.FindCandidates(building,0).Count == 0,
+        "The original shared-full-wall planner cannot resize a partial partition.");
+    var choices = AiPartialRoomResizePlanner.FindCandidates(building,0);
+    Assert(choices.Count >= 2 && choices.Any(c=>c.GainingRoom=="Study") &&
+        choices.Any(c=>c.GainingRoom=="Bedroom"),
+        "Both directions of a partial shared wall must offer safe transfers.");
+    var growStudy = choices.First(c=>c.GainingRoom=="Study");
+    var changed = growStudy.Suggestion.Building;
+    Assert(BuildingStoreys.Validate(changed,out reason),reason);
+    Assert(changed.Rooms.Single(r=>r.Id==main.Id).Outline.Count>=6,
+        "The study should become L-shaped when it acquires only the upper strip.");
+    Assert(changed.Rooms.Single(r=>r.Id==main.Id).Outline
+        .Any(p=>p.X>5+0.4), "Study must gain width along the partial wall.");
+    Assert(changed.Rooms.Single(r=>r.Id==annex.Id).Outline.Count==4,
+        "The donor bedroom should remain rectangular.");
+    Assert(PolygonGeometry.Area(main.Outline)==30 &&
+        PolygonGeometry.Area(annex.Outline)==16,
+        "Unaccepted proposals must not modify source outlines.");
+    Assert(changed.Perimeter.SequenceEqual(building.Perimeter) &&
+        Math.Abs(PolygonGeometry.Area(changed.Rooms[0].Outline)+
+          PolygonGeometry.Area(changed.Rooms[1].Outline)-46)<0.001,
+        "Combined room area and exterior outline must be preserved.");
+
+    var combined = AiLayoutRecommendationPlanner.FindOptions(building,0);
+    Assert(combined.Any(o => o.Kind=="Resize partial / L-shaped rooms"),
+        "Partially shared edges must reach the Ollama candidate shortlist.");
+    var chosen = combined.First(o => o.Kind=="Resize partial / L-shaped rooms"
+        && o.Summary.StartsWith("Enlarge Study"));
+    string answer = System.Text.Json.JsonSerializer.Serialize(
+        new { candidateId=chosen.Id,reason="Make the study larger" });
+    Assert(AiLayoutRecommendationPlanner.TryApplySelection(
+        building,0,answer,combined,out var proposal,out reason),reason);
+    Assert(BuildingStoreys.Validate(proposal.Building,out reason),reason);
+});
+
+Check("AI can reshape orthogonal L-shaped rooms without affecting existing doors", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var irregular = new RoomDefinition
+    {
+        Name="L-shaped living room",Type="Living room",
+        Outline=[
+            new(0,0),new(6,0),new(6,2),
+            new(4,2),new(4,8),new(0,8)
+        ]
+    };
+    var bedroom = new RoomDefinition
+    {
+        Name="Bedroom",Type="Bedroom",Outline=Rect(4,2,10,8)
+    };
+    var building = new BuildingDocument
+    {
+        Perimeter=Rect(0,0,10,8),Rooms=[irregular,bedroom],
+        Doors=[new DoorDefinition
+        {
+            Centre=new Point2(0,4),Width=0.9
+        }]
+    };
+    Assert(BuildingStoreys.Validate(building,out var reason),reason);
+    var options=AiPartialRoomResizePlanner.FindCandidates(building,0);
+    Assert(options.Any(c=>c.GainingRoom=="L-shaped living room"),
+        "Existing L-shaped living rooms should gain a validated area strip.");
+    var winning=options.First(c=>c.GainingRoom=="L-shaped living room");
+    var floor=winning.Suggestion.Building;
+    Assert(BuildingStoreys.Validate(floor,out reason),reason);
+    Assert(floor.Doors.Single().Id==building.Doors.Single().Id &&
+        floor.Doors.Single().Centre.DistanceTo(building.Doors.Single().Centre)<1e-7,
+        "External door must not be moved or deleted.");
+    Assert(PolygonGeometry.Area(floor.Rooms.Single(r=>r.Id==irregular.Id).Outline)
+        > PolygonGeometry.Area(irregular.Outline));
+    Assert(!BuildingGenerator.SameRoomLayout(building,floor,[0]));
+    Assert(PolygonGeometry.Area(irregular.Outline)==36,
+        "The old L shape must remain unchanged until accepting the preview.");
+
+    var protectedDoor=BuildingStoreys.Copy(building);
+    protectedDoor.Doors.Add(new DoorDefinition
+    {
+        Centre=new Point2(4,5),Width=0.9
+    });
+    Assert(BuildingStoreys.Validate(protectedDoor,out reason),reason);
+    Assert(AiPartialRoomResizePlanner.FindCandidates(protectedDoor,0).Count==0,
+        "Do not silently relocate an existing doorway along a partial wall.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
