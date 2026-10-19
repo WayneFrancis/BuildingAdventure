@@ -8574,5 +8574,110 @@ Check("AI direction filters fail closed and distinguish left from above", () =>
     Assert(generic.Count>0, "No-goal shortlist must remain available.");
 });
 
+Check("AI can propose a validated new doorway without resizing rooms", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+    var kitchen = new RoomDefinition
+    {
+        Name = "Kitchen", Type = "Kitchen", Outline = Rect(0, 0, 5, 4)
+    };
+    var dining = new RoomDefinition
+    {
+        Name = "Dining room", Type = "Dining room",
+        Outline = Rect(0, 4, 5, 8)
+    };
+    var outsideDoor = new DoorDefinition
+    {
+        Centre = new Point2(0, 2), Width = 0.9
+    };
+    var original = new BuildingDocument
+    {
+        Perimeter = Rect(0, 0, 5, 8),
+        Rooms = [kitchen, dining], Doors = [outsideDoor]
+    };
+    Assert(BuildingStoreys.Validate(original, out var reason), reason);
+
+    string goal = "Add a door between Kitchen and Dining room.";
+    var candidates = AiLayoutRecommendationPlanner.FindOptions(
+        original, 0, 20, goal);
+    Assert(candidates.Count >= 2 && candidates.All(c => c.Kind == "Add doorway"),
+        "An explicit door request should only offer validated doorway proposals.");
+    Assert(candidates.All(c => c.Suggestion.Building.Doors.Count == 2 &&
+        c.Suggestion.Building.Doors.Any(d => d.Id == outsideDoor.Id) &&
+        BuildingStoreys.Validate(c.Suggestion.Building, out _)),
+        "Every proposed opening must validate and preserve existing doors.");
+    Assert(candidates.All(c => BuildingGenerator.SameRoomLayout(
+        original, c.Suggestion.Building, [0]) &&
+        c.Suggestion.Building.Perimeter.SequenceEqual(original.Perimeter)),
+        "Opening a door must not move any room or exterior walls.");
+    Assert(original.Doors.Count == 1 &&
+        original.Rooms[0].Outline.SequenceEqual(kitchen.Outline),
+        "The preview may not change the source building.");
+    var prompt = AiLayoutRecommendationPlanner.BuildSelectionPrompt(
+        original, 0, goal, candidates);
+    Assert(prompt.Contains("Add doorway") && prompt.Contains("candidateId"),
+        "The language model selects a prevalidated doorway by number.");
+
+    string selected = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        candidateId = candidates[0].Id,
+        reason = "The rooms need a direct internal doorway."
+    });
+    Assert(AiLayoutRecommendationPlanner.TryApplySelection(
+        original, 0, selected, candidates, out var suggestion, out reason),
+        reason);
+    Assert(suggestion.Description.Contains("Add doorway") &&
+        suggestion.Building.Doors.Count == 2 &&
+        BuildingGenerator.SameRoomLayout(original, suggestion.Building, [0]),
+        "A door-only improvement must be accepted even with identical rooms.");
+    Assert(!AiLayoutRecommendationPlanner.TryApplySelection(
+        original, 0, """{"candidateId":999}""", candidates, out _, out _),
+        "The model may not invent an unlisted door.");
+    Assert(AiLayoutRecommendationPlanner.FindOptions(
+        suggestion.Building, 0, 20, goal).Count == 0,
+        "Don't propose a duplicate doorway after the rooms are connected.");
+
+    Assert(!AiDoorPlacementPlanner.IsDoorwayGoal("Make Kitchen larger"),
+        "Ordinary resize goals must continue using the resize planners.");
+    Assert(AiLayoutRecommendationPlanner.FindOptions(
+        original, 0, 20, "Add a door between Kitchen and Attic.").Count == 0,
+        "Unknown room names must not be replaced by a different neighbour.");
+});
+
+Check("AI door placement never substitutes an adjacent room", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+    var store = new RoomDefinition
+    {
+        Name = "Storeroom", Type = "Storeroom", Outline = Rect(0, 0, 4, 6)
+    };
+    var kitchen = new RoomDefinition
+    {
+        Name = "Kitchen", Type = "Kitchen", Outline = Rect(4, 0, 8, 6)
+    };
+    var dining = new RoomDefinition
+    {
+        Name = "Dining room", Type = "Dining room",
+        Outline = Rect(8, 0, 12, 6)
+    };
+    var original = new BuildingDocument
+    {
+        Perimeter = Rect(0, 0, 12, 6),
+        Rooms = [store, kitchen, dining]
+    };
+    Assert(BuildingStoreys.Validate(original, out var reason), reason);
+    Assert(AiLayoutRecommendationPlanner.FindOptions(original, 0, 20,
+        "Add a doorway between Storeroom and Dining room.").Count == 0,
+        "Corner-free but nonadjacent rooms cannot acquire a direct door.");
+    var options = AiLayoutRecommendationPlanner.FindOptions(original, 0, 20,
+        "Connect Kitchen to Dining room.");
+    Assert(options.Count > 0 &&
+        options.All(o => o.Kind == "Add doorway" &&
+            o.Suggestion.Building.Doors.All(d => Math.Abs(d.Centre.X - 8) < 0.01)),
+        "Only the requested adjacent pair may receive a doorway.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
