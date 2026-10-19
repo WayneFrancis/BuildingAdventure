@@ -4,6 +4,20 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.47 — Reclaim the upstairs hall dead-end for Bedroom 3 (development)
+
+The accepted `example12(2).json` left a **2m by 0.5m (1m²) dead-end**
+on the northeast side of the upper cross hall, beyond its useful bedroom
+door access. The side-landing planner now stops the hallway at the stepped
+front-wing edge and absorbs that strip into **Bedroom 3**, creating an
+L-shaped room with a small usable nook. The bedroom keeps its independent
+door into the cross hall.
+
+The layout remains fully allocated without moving other rooms, the stair,
+the kitchen-dining doorway or chimney. Regression tests assert that the
+northeast strip belongs to Bedroom 3 rather than the hall across multiple
+seeds, regeneration and eight rotated/mirrored footprint orientations.
+
 ## v0.46 — Flush stairs and kitchen-to-dining serving door (development)
 
 The accepted `example12(1).json` shows a **0.65m dead strip** between a
