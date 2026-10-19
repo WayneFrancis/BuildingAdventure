@@ -4,6 +4,45 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.49 — AI selects validated layout changes, not coordinates (development)
+
+Fixes AI Improve Layout rejecting a proposed rectangle with
+**"The selected patch does not share a wall with the destination room."**
+The earlier prototype gave the language model the entire floor geometry
+and asked it to invent both room GUIDs and rectangle coordinates; this was
+unreliable with smaller local models even when a safe improvement existed.
+
+The new geometry-first workflow:
+
+1. `AiLayoutCandidatePlanner.FindCandidates` scans shared hallway/room
+   walls and the actual orthogonal room-corner coordinates. It proposes
+   rectangle transfers only at existing corridor corners or dead ends.
+2. Every candidate is passed through the complete, unchanged
+   `AiLayoutImprover.TryApply` geometry validation before listing it.
+   Invalid doors, disconnected rooms, overlapping rooms, broken staircase
+   clearances and incorrect wall contacts never reach the LLM.
+3. **Ollama** or **OpenAI** receives a short, numbered list of validated
+   candidates (including target room name, size and rectangle) and the
+   user's natural-language goal. It returns only
+   `{"candidateId": 1, "reason": "..."}`; the model does not write
+   coordinates or room IDs.
+4. C# verifies the selected ID, rebuilds the preview from its stored
+   candidate, and reruns validation. The original is unchanged until
+   **Accept All** is clicked. Invalid IDs are rejected explicitly.
+5. When no supported, valid corner transfer exists (including when the
+   example's hallway dead end has already been removed), the UI explains
+   the limitation **before** making any network request.
+
+Scope remains intentionally narrow: orthogonal corridor-corner patches
+only, unchanged doors/staircases, existing preview and undo workflow.
+The initial AI goal is still user-editable. No API request occurs unless
+the user clicks the AI Improve button.
+
+Regression tests verify detection of the exact old Bedroom 3 northeast
+hallway tip, numbered AI selection, source preservation, blocked door
+rejection, invented ID rejection and correct handling of an already fixed
+corner. Live Ollama/OpenAI responses are not exercised in CI.
+
 ## v0.48 — Experimental AI Improve Layout (development)
 
 The **Generator / Suggestions** sidebar now includes **AI Improve current
