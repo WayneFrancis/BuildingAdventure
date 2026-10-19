@@ -887,10 +887,11 @@ public partial class MainWindow : Window
     }
 
     private static string NoAiLayoutCandidatesMessage() =>
-        "No safe hallway corner or simple shared-wall resize was found " +
-        "on this floor. The AI improvement prototype only handles hallway " +
-        "corner transfers or two rectangular rooms sharing a full wall. " +
-        "Existing doors, stairs, and geometry may prevent an edit.";
+        "No safe room improvement was found on this floor. Supported edits " +
+        "include hallway corner transfers, simple shared-wall moves, " +
+        "and rectangular patches exchanged across partial or L-shaped " +
+        "orthogonal room boundaries. Existing doors, stairs, insufficient " +
+        "space and angled walls may prevent an edit.";
 
     private async void AiPreviewValidated_Click(object sender, RoutedEventArgs e)
     {
