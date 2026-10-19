@@ -910,7 +910,7 @@ public partial class MainWindow : Window
         try
         {
             var candidates = await Task.Run(() =>
-                AiLayoutRecommendationPlanner.FindCandidates(source, floorIndex));
+                AiLayoutRecommendationPlanner.FindOptions(source, floorIndex));
             if (CurrentJson() != snapshot)
             {
                 AiStatusText.Text = "The layout changed during validation. Try again.";
@@ -999,7 +999,7 @@ public partial class MainWindow : Window
         try
         {
             var candidates = await Task.Run(() =>
-                AiLayoutRecommendationPlanner.FindCandidates(source, floorIndex),
+                AiLayoutRecommendationPlanner.FindOptions(source, floorIndex),
                 cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             if (CurrentJson() != fingerprint)
