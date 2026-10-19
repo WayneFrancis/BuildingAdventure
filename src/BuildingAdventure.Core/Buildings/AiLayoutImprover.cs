@@ -88,7 +88,22 @@ public static class AiLayoutImprover
     }
 
     public static bool TryApply(BuildingDocument source, int activeFloor,
-        string modelJson, out BuildingSuggestion suggestion, out string reason)
+        string modelJson, out BuildingSuggestion suggestion, out string reason) =>
+        TryApplyCore(source, activeFloor, modelJson, true,
+            out suggestion, out reason);
+
+    // Only call this with C#-generated, prevalidated candidate rectangles.
+    // Unlike the public legacy hallway transfer, both rooms are ordinary
+    // rooms; an L-shaped outline is permitted when its edges are orthogonal.
+    internal static bool TryApplyRoomTransfer(BuildingDocument source,
+        int activeFloor, AiRoomTransfer edit,
+        out BuildingSuggestion suggestion, out string reason) =>
+        TryApplyCore(source, activeFloor, JsonSerializer.Serialize(edit),
+            false, out suggestion, out reason);
+
+    private static bool TryApplyCore(BuildingDocument source, int activeFloor,
+        string modelJson, bool hallwaySource,
+        out BuildingSuggestion suggestion, out string reason)
     {
         suggestion = new BuildingSuggestion(BuildingStoreys.Copy(source),
             0, [], "");
@@ -133,10 +148,15 @@ public static class AiLayoutImprover
         var hall = originalFloor.Rooms.FirstOrDefault(r => r.Id == edit.FromRoomId);
         var target = originalFloor.Rooms.FirstOrDefault(r => r.Id == edit.ToRoomId);
         if (hall is null || target is null ||
-            hall.Type is not ("Hallway" or "Corridor") ||
-            target.Type is "Hallway" or "Corridor")
+            (hallwaySource
+                ? hall.Type is not ("Hallway" or "Corridor") ||
+                  target.Type is "Hallway" or "Corridor"
+                : hall.Type is "Hallway" or "Corridor" ||
+                  target.Type is "Hallway" or "Corridor"))
         {
-            reason = "AI must move area from an existing hallway to a different room.";
+            reason = hallwaySource
+                ? "AI must move area from an existing hallway to a different room."
+                : "Both rooms must exist and must not be hallways or corridors.";
             return false;
         }
         var rectangle = new List<Point2>
