@@ -200,13 +200,13 @@
                                        Margin="0,0,0,5"/>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579"
                                        Margin="0,0,0,7"
-                                       Text="Ask a local Ollama model or OpenAI to propose one small hallway-to-room adjustment on the CURRENT floor. The app verifies all geometry and shows a preview. Only clicking Accept All changes the building."/>
+                                       Text="Ask Ollama or OpenAI to choose from C#-validated changes on the CURRENT floor: reclaim an unused hallway corner or resize two adjoining rectangular rooms by shifting their shared wall. Preview first; only Accept All changes your building."/>
                             <TextBlock Text="What should improve?" Margin="0,0,0,4"/>
                             <TextBox x:Name="AiGoalBox" Margin="0,0,0,8" Padding="5"
                                      AcceptsReturn="True" TextWrapping="Wrap"
                                      MinHeight="56" MaxHeight="90"
                                      VerticalScrollBarVisibility="Auto"
-                                     Text="Recover a dead-end piece of hallway for an adjacent bedroom or other useful room without blocking circulation, existing doors or stairs."/>
+                                     Text="Improve practical room sizes and recover wasted hallway space where possible. Preserve usable circulation, doors and stairs."/>
                             <WrapPanel Margin="0,0,0,7">
                                 <ComboBox x:Name="AiProviderCombo" Width="105"
                                           SelectedIndex="0" Padding="4"
