@@ -207,21 +207,31 @@ public static class SideLandingRpgHousePlanner
             ("Dining room", "Dining room", Rect(bayWidth,stepY,width,depth))
         };
 
-        // The upstairs hall is genuinely different: it runs ACROSS the
-        // house to two rear bedrooms, not down the same central ground
-        // corridor. A small upper sitting room contains the stairhead.
+        // The upstairs hall runs ACROSS the house to both rear bedrooms,
+        // but must stop where it has already served their doors. The
+        // outer L wing (stepX..width, stepY..crossEnd) is a dead-end
+        // corridor patch; annex it to Bedroom 3 instead of wasting it.
+        // The resulting L-shaped bedroom has a useful nook and still
+        // shares a wide doorway-capable wall with the remaining hall.
         var upperHall = new List<Point2>
         {
             P(hallLeft,upperSittingDepth),
             P(bayWidth,upperSittingDepth),
             P(bayWidth,crossStart),
             P(stepX,crossStart),
-            P(stepX,stepY),
-            P(width,stepY),
-            P(width,crossEnd),
+            P(stepX,crossEnd),
             P(0,crossEnd),
             P(0,crossStart),
             P(hallLeft,crossStart)
+        };
+        var rearBedroomWithNook = new List<Point2>
+        {
+            P(rearSplit,crossEnd),
+            P(stepX,crossEnd),
+            P(stepX,stepY),
+            P(width,stepY),
+            P(width,depth),
+            P(rearSplit,depth)
         };
         var upperRoles = new[]
         {
@@ -229,7 +239,7 @@ public static class SideLandingRpgHousePlanner
             ("Bedroom", "Bedroom 2", Rect(bayWidth,0,stepX,crossStart)),
             ("Bathroom", "Bathroom", Rect(0,upperSittingDepth,hallLeft,crossStart)),
             ("Bedroom", "Master Bedroom", Rect(0,crossEnd,rearSplit,depth)),
-            ("Bedroom", "Bedroom 3", Rect(rearSplit,crossEnd,width,depth))
+            ("Bedroom", "Bedroom 3", rearBedroomWithNook)
         };
         double ShortSide(IReadOnlyList<Point2> p) =>
             Math.Min(p.Max(t=>U(t)) - p.Min(t=>U(t)),
