@@ -855,11 +855,28 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Geometry-first: only ask the model to select from actual,
+        // validated edits. It must never propose coordinates or UUIDs.
+        var candidates = AiLayoutCandidatePlanner.FindCandidates(source, floorIndex);
+        if (candidates.Count == 0)
+        {
+            _generatorStatus = "No safe redundant hallway corner was found on " +
+                "this floor. The AI prototype can only enlarge an adjacent " +
+                "room with a validated rectangular hallway patch. " +
+                "If this corner was already fixed, there is nothing to reclaim.";
+            _hint = _generatorStatus;
+            Refresh();
+            MessageBox.Show(this, _generatorStatus, "AI layout improvement",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
         string provider = AiProviderCombo.SelectedIndex == 1 ? "OpenAI" : "Ollama";
         string model = AiModelBox.Text.Trim();
-        var prompt = AiLayoutImprover.BuildPrompt(source, floorIndex, goal);
+        var prompt = AiLayoutCandidatePlanner.BuildSelectionPrompt(
+            source, floorIndex, goal, candidates);
         AiImproveButton.IsEnabled = false;
-        _generatorStatus = $"Asking {provider} for a small architectural improvement…";
+        _generatorStatus = $"Asking {provider} to choose among " +
+            $"{candidates.Count} validated room improvements…";
         _hint = _generatorStatus;
         Refresh();
         try
@@ -871,7 +888,8 @@ public partial class MainWindow : Window
                 _generatorStatus = "The building changed while the AI was responding. " +
                     "The old proposal was discarded; request another improvement.";
             }
-            else if (!AiLayoutImprover.TryApply(source, floorIndex, response,
+            else if (!AiLayoutCandidatePlanner.TryApplySelection(
+                         source, floorIndex, response, candidates,
                          out var suggestion, out var reason))
             {
                 _generatorStatus = "AI proposal rejected: " + reason;
