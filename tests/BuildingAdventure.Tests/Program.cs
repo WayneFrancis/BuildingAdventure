@@ -8358,5 +8358,97 @@ Check("AI partial-wall demo fixture is completely allocated and improvable", () 
         "Ollama's numbered candidate list must include the demo geometry.");
 });
 
+
+Check("AI preview identifies modified room outlines even when room IDs stay the same", () =>
+{
+    // This is the exact failure mode in AI resizing: the proposed rooms
+    // keep their original IDs, so a new-ID-only preview renders nothing.
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var small=new RoomDefinition
+    {
+        Name="Study",Type="Study",Outline=Rect(0,0,4,5)
+    };
+    var large=new RoomDefinition
+    {
+        Name="Bedroom",Type="Bedroom",Outline=Rect(4,0,10,5)
+    };
+    var building=new BuildingDocument
+    {
+        Perimeter=Rect(0,0,10,5),Rooms=[small,large]
+    };
+    Assert(BuildingStoreys.Validate(building,out var reason),reason);
+    var resize=AiRoomResizePlanner.FindCandidates(building,0)
+        .First(c => c.GainingRoom=="Study");
+    var proposed=resize.Suggestion.Building;
+
+    Assert(building.Rooms.Select(r=>r.Id)
+        .OrderBy(x=>x).SequenceEqual(proposed.Rooms.Select(r=>r.Id)
+            .OrderBy(x=>x)),
+        "Proposed AI changes must retain the original IDs.");
+    var changes=RoomPreviewDiff.ChangedExistingRooms(
+        building.Rooms,proposed.Rooms);
+    Assert(changes.Count==2 && changes.All(c=>
+        c.RoomId==small.Id || c.RoomId==large.Id),
+        "Both resized rooms must be shown on the graphical preview.");
+    var gained=changes.Single(c=>c.RoomId==small.Id);
+    var lost=changes.Single(c=>c.RoomId==large.Id);
+    Assert(gained.AfterSquareMetres>gained.BeforeSquareMetres &&
+        lost.AfterSquareMetres<lost.BeforeSquareMetres,
+        "Preview must show positive and negative room area changes.");
+    Assert(Math.Abs((gained.AfterSquareMetres-gained.BeforeSquareMetres)+
+        (lost.AfterSquareMetres-lost.BeforeSquareMetres))<0.001,
+        "Preview area deltas must balance.");
+
+    var same=building.Rooms.Select(r=>r.Copy()).ToArray();
+    same[0].Outline=[
+        same[0].Outline[2],same[0].Outline[3],
+        same[0].Outline[0],same[0].Outline[1]
+    ];
+    same[1].Outline=[
+        same[1].Outline[0],same[1].Outline[3],
+        same[1].Outline[2],same[1].Outline[1]
+    ];
+    Assert(RoomPreviewDiff.ChangedExistingRooms(building.Rooms,same).Count==0,
+        "Reordered/reversed polygon vertices are not visible edits.");
+    Assert(RoomPreviewDiff.SameOutline(
+        building.Rooms[0].Outline,building.Rooms[0].Outline));
+});
+
+Check("AI L-shaped edits display changes to old IDs but ignore newly created rooms", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var first=new RoomDefinition
+    {
+        Name="Study",Type="Study",Outline=Rect(0,0,5,6)
+    };
+    var second=new RoomDefinition
+    {
+        Name="Bedroom",Type="Bedroom",Outline=Rect(5,2,9,6)
+    };
+    var building=new BuildingDocument
+    {
+        Perimeter=Rect(0,0,9,6),Rooms=[first,second]
+    };
+    Assert(BuildingStoreys.Validate(building,out var reason),reason);
+    var proposal=AiPartialRoomResizePlanner.FindCandidates(building,0)
+        .First(c=>c.GainingRoom=="Study").Suggestion.Building;
+    Assert(proposal.Rooms.Single(r=>r.Id==first.Id).Outline.Count>=6);
+    var changed=RoomPreviewDiff.ChangedExistingRooms(
+        building.Rooms,proposal.Rooms);
+    Assert(changed.Count==2 &&
+        changed.Any(c=>c.RoomId==first.Id && c.AfterSquareMetres>c.BeforeSquareMetres),
+        "Modified existing L-shaped room must appear in preview.");
+    var withNewRoom=proposal.Rooms.Select(r=>r.Copy()).ToList();
+    withNewRoom.Add(new RoomDefinition
+    {
+        Name="Added room",Type="Other",Outline=Rect(0,0,1,1)
+    });
+    Assert(RoomPreviewDiff.ChangedExistingRooms(
+        building.Rooms,withNewRoom).Count==2,
+        "Existing-room diff should leave newly added-room preview to its own renderer.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
