@@ -7635,6 +7635,20 @@ Check("example12 side-landing floorplan is accessible and not mirrored upstairs"
             FloorGeometry.IsWithinPolygon(p,living.Outline) &&
             FloorGeometry.IsWithinPolygon(p,sitting.Outline)),
             "Put the ground flight inside the living room and the upper flight inside sitting.");
+        // example12(2): the northeast 2m-wide wing (x=10.5..12.5)
+        // from y=6 to the back-hall line belongs to Bedroom 3, not
+        // to a dead-end of the upstairs corridor. Doors must still
+        // connect the bedroom directly to the remaining cross hall.
+        var bedroom3=upper.Rooms.Single(r=>r.Name=="Bedroom 3");
+        var formerDeadEnd=new Point2(11.5,6.2);
+        Assert(PolygonGeometry.ContainsPoint(bedroom3.Outline,formerDeadEnd),
+            "Bedroom 3 should absorb the upper-right dead-end hallway patch.");
+        Assert(!PolygonGeometry.ContainsPoint(upperHall.Outline,formerDeadEnd),
+            "The hallway must not extend into the unused upper-right wing.");
+        Assert(bedroom3.Outline.Count>=6,
+            "Bedroom 3 should have an L-shaped outline, not a rectangle.");
+        Assert(Math.Abs(upperHall.Outline.Max(p=>p.X)-10.5)<1e-7,
+            "The upstairs cross-hall should stop at the front-wing corner.");
         var bedroomAreas=upper.Rooms.Where(r=>r.Type=="Bedroom")
             .Select(r=>PolygonGeometry.Area(r.Outline)).ToArray();
         Assert(bedroomAreas.Max()/bedroomAreas.Min()<1.75);
@@ -7709,6 +7723,10 @@ Check("example12 side-landing floorplan is accessible and not mirrored upstairs"
         out var suggestion,out reason),"example12 regeneration: "+reason);
     Assert(suggestion.Description.Contains("Side-landing"),
         "Regeneration must choose the new independent upper layout.");
+    Assert(PolygonGeometry.ContainsPoint(
+            suggestion.Building.UpperFloors[0].Rooms.Single(r=>r.Name=="Bedroom 3").Outline,
+            new Point2(11.5,6.2)),
+        "Regeneration must absorb the example12(2) upstairs dead-end nook.");
     Assert(suggestion.Building.Chimneys.Single().Id==hearth.Id &&
         suggestion.Building.Chimneys.Single().HearthRoomIds.SequenceEqual(
             new[]{suggestion.Building.Rooms.Single(r=>r.Type=="Kitchen").Id}),
@@ -7767,6 +7785,9 @@ Check("Side-landing house rotates and mirrors with independent floor partitions"
             "New stair needs to be placed against the outer wall.");
         Assert(house.Rooms.Count(r=>r.Type=="Kitchen")==1);
         Assert(house.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(house.UpperFloors[0].Rooms.Single(r=>r.Name=="Bedroom 3")
+            .Outline.Count>=6,
+            "Rotated or mirrored upstairs wing must become an L-shaped Bedroom 3.");
         Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(house))<0.01);
         Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(
             BuildingStoreys.GetFloor(house,1)))<0.01);
