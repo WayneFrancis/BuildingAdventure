@@ -8123,5 +8123,89 @@ Check("AI room resizing preserves door-bearing shared walls and floor validity",
         "Rejected changes must leave source room areas untouched.");
 });
 
+
+Check("AI resize recognises the slightly slanted two-room example13 layout", () =>
+{
+    // Exact room coordinates from example13.json. Neither room was a
+    // perfect rectangle; Room 1 starts only 1.52m wide at its narrow end.
+    var room1=new RoomDefinition
+    {
+        Id=Guid.Parse("c3fa9ec5-26b6-410a-b79c-43aaadf279e4"),
+        Name="Room 1",Type="Other",
+        Outline=[
+            new(9.2,0),new(9.144,7.62),
+            new(7.62,7.62),new(7.62,0)
+        ]
+    };
+    var room2=new RoomDefinition
+    {
+        Id=Guid.Parse("07e7b5c8-5da1-47e6-a5c8-90b64dfb1723"),
+        Name="Room 2",Type="Other",
+        Outline=[
+            new(9.2,0),new(9.144,7.62),
+            new(15.24,7.62),new(15.24,0)
+        ]
+    };
+    var original=new BuildingDocument
+    {
+        SchemaVersion=1,GridFeet=5,
+        Perimeter=[new(7.62,0),new(7.62,7.62),
+                   new(15.24,7.62),new(15.24,0)],
+        Rooms=[room1,room2]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    Assert(room1.Outline.Max(p=>p.X)-room1.Outline.Min(p=>p.X)<2.4,
+        "The test fixture must reproduce the undersized first room.");
+
+    var changes=AiRoomResizePlanner.FindCandidates(original,0);
+    Assert(changes.Any(c=>c.GainingRoom=="Room 1" &&
+        c.LosingRoom=="Room 2"),
+        "Small rooms with a slightly slanted full shared wall should be eligible.");
+
+    var enlarge=changes.First(c=>c.GainingRoom=="Room 1");
+    var suggested=enlarge.Suggestion.Building;
+    Assert(BuildingStoreys.Validate(suggested,out reason),reason);
+    var grown=suggested.Rooms.Single(r=>r.Id==room1.Id);
+    var shrunk=suggested.Rooms.Single(r=>r.Id==room2.Id);
+    Assert(PolygonGeometry.Area(grown.Outline)>PolygonGeometry.Area(room1.Outline),
+        "Room 1 must become more usable.");
+    Assert(grown.Outline.Min(p=>p.X)==7.62 &&
+        grown.Outline.Max(p=>p.X)>=9.744-1e-5,
+        "Existing exterior wall remains fixed and shared wall moves at least 0.6m.");
+    Assert(Math.Abs((grown.Outline[0].X-grown.Outline[1].X)-0.056)<1e-5,
+        "Moving the partition must retain its original slight lean.");
+    Assert(Math.Abs(PolygonGeometry.Area(grown.Outline)+
+        PolygonGeometry.Area(shrunk.Outline)-
+        PolygonGeometry.Area(room1.Outline)-
+        PolygonGeometry.Area(room2.Outline))<0.001,
+        "Transferring area cannot lose or invent usable floor space.");
+    Assert(suggested.Perimeter.SequenceEqual(original.Perimeter) &&
+        original.Rooms.Single(r=>r.Id==room1.Id).Outline[0].X==9.2,
+        "The source and exterior perimeter are unchanged before acceptance.");
+
+    var choices=AiLayoutRecommendationPlanner.FindOptions(original,0);
+    Assert(choices.Any(c=>c.Kind=="Resize adjacent rooms" &&
+        c.Summary.StartsWith("Enlarge Room 1")),
+        "The AI should receive a numbered valid option for this exact file.");
+    var selected=choices.First(c=>c.Summary.StartsWith("Enlarge Room 1"));
+    var response=System.Text.Json.JsonSerializer.Serialize(new
+    {
+        candidateId=selected.Id,reason="Give the narrow room more space"
+    });
+    Assert(AiLayoutRecommendationPlanner.TryApplySelection(
+        original,0,response,choices,out var proposal,out reason),reason);
+    Assert(proposal.Description.Contains("Room 1") &&
+        BuildingStoreys.Validate(proposal.Building,out reason),reason);
+
+    var protectedWall=BuildingStoreys.Copy(original);
+    protectedWall.Doors.Add(new DoorDefinition
+    {
+        Centre=new Point2(9.172,3.81),Width=0.9
+    });
+    Assert(BuildingStoreys.Validate(protectedWall,out reason),reason);
+    Assert(AiRoomResizePlanner.FindCandidates(protectedWall,0).Count==0,
+        "Existing door on the slanted partition must prevent silent relocation.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
