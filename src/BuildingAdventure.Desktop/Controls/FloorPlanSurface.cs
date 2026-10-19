@@ -1086,6 +1086,59 @@ public sealed class FloorPlanSurface : FrameworkElement
             DrawText(dc, "+ " + room.Name, at, 12, Brushes.DarkGreen);
         }
 
+        // AI resizes and shape transfers preserve existing room IDs.
+        // Compare outlines to make their proposed changes visible on the
+        // floor plan, without editing the working document.
+        var changedRooms = RoomPreviewDiff.ChangedExistingRooms(
+            _rooms, proposed.Rooms);
+        if (changedRooms.Count > 0)
+        {
+            var originalById = _rooms.ToDictionary(r => r.Id);
+            var proposedById = proposed.Rooms.ToDictionary(r => r.Id);
+            var oldWallPen = new Pen(Brushes.DarkOrange, 2.3)
+            {
+                DashStyle = DashStyles.Dash
+            };
+            var newWallPen = new Pen(Brushes.ForestGreen, 3.2)
+            {
+                DashStyle = DashStyles.Dash
+            };
+            var gainedFill = new SolidColorBrush(
+                Color.FromArgb(110, 35, 173, 100));
+
+            foreach (var change in changedRooms)
+            {
+                var oldRoom = originalById[change.RoomId];
+                var newRoom = proposedById[change.RoomId];
+                var before = BuildGeometry(oldRoom.Outline, true);
+                var after = BuildGeometry(newRoom.Outline, true);
+
+                // Fill each gained patch only once. Its old owner loses
+                // the same footprint; double-filling would obscure it.
+                if (change.AfterSquareMetres > change.BeforeSquareMetres + 0.01)
+                {
+                    var gained = new CombinedGeometry(
+                        GeometryCombineMode.Exclude, after, before);
+                    dc.DrawGeometry(gainedFill, null, gained);
+                }
+                dc.DrawGeometry(null, oldWallPen, before);
+                dc.DrawGeometry(null, newWallPen, after);
+
+                double delta = change.AfterSquareMetres -
+                    change.BeforeSquareMetres;
+                string sign = delta >= 0 ? "+" : "";
+                Point anchor = ToScreen(FindRoomLabelPoint(newRoom.Outline));
+                DrawText(dc,
+                    $"PROPOSED {change.Name}: {sign}{delta:0.##} m²",
+                    new Point(anchor.X, anchor.Y + 17), 12,
+                    delta >= 0 ? Brushes.DarkGreen : Brushes.DarkOrange);
+            }
+            DrawText(dc,
+                "AI PREVIEW: GREEN dashed = proposed walls | " +
+                "ORANGE dashed = existing walls | Accept All to apply",
+                new Point(20, 38), 13, Brushes.DarkGreen);
+        }
+
         var previewWalls = FloorGeometry.BuildWalls(proposed.Perimeter, proposed.Rooms);
         var newDoors = proposed.Doors.Where(d => _doors.All(o => o.Id != d.Id));
         foreach (var door in newDoors)
