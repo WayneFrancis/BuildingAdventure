@@ -1,4 +1,6 @@
 using System.IO;
+using System.Net.Http;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -800,6 +802,111 @@ public partial class MainWindow : Window
         Refresh();
     }
 
+    private void AiProviderCombo_SelectionChanged(
+        object sender, SelectionChangedEventArgs e)
+    {
+        if (AiModelBox is null || AiProviderCombo is null) return;
+        AiModelBox.Text = AiProviderCombo.SelectedIndex == 1
+            ? "gpt-4.1-mini" : "qwen3:8b";
+    }
+
+    private async void AiImprove_Click(object sender, RoutedEventArgs e)
+    {
+        if (AiImproveButton is null || !AiImproveButton.IsEnabled) return;
+        BuildingDocument source;
+        string fingerprint;
+        try
+        {
+            source = CurrentDocument();
+            fingerprint = CurrentJson();
+        }
+        catch (InvalidDataException ex)
+        {
+            MessageBox.Show(this, "Fix the current building first: " + ex.Message,
+                "AI layout improvement", MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+        if (!BuildingStoreys.Validate(source, out var problem))
+        {
+            MessageBox.Show(this, problem, "Invalid building",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        int floorIndex = _activeFloorIndex;
+        var floor = BuildingStoreys.GetFloor(source, floorIndex);
+        if (!floor.Rooms.Any(r => r.Type is "Hallway" or "Corridor") ||
+            !floor.Rooms.Any(r => r.Type is not ("Hallway" or "Corridor")))
+        {
+            MessageBox.Show(this,
+                "The current floor needs a hallway and at least one other room.",
+                "AI layout improvement", MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+        string goal = AiGoalBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(goal))
+            goal = "Recover wasted hallway area for an adjacent room.";
+        if (goal.Length > 1000)
+        {
+            MessageBox.Show(this, "Please shorten the goal to 1000 characters.",
+                "AI layout improvement", MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        string provider = AiProviderCombo.SelectedIndex == 1 ? "OpenAI" : "Ollama";
+        string model = AiModelBox.Text.Trim();
+        var prompt = AiLayoutImprover.BuildPrompt(source, floorIndex, goal);
+        AiImproveButton.IsEnabled = false;
+        _generatorStatus = $"Asking {provider} for a small architectural improvement…";
+        _hint = _generatorStatus;
+        Refresh();
+        try
+        {
+            string response = await AiLayoutModelClient.RequestAsync(
+                provider, model, prompt);
+            if (CurrentJson() != fingerprint)
+            {
+                _generatorStatus = "The building changed while the AI was responding. " +
+                    "The old proposal was discarded; request another improvement.";
+            }
+            else if (!AiLayoutImprover.TryApply(source, floorIndex, response,
+                         out var suggestion, out var reason))
+            {
+                _generatorStatus = "AI proposal rejected: " + reason;
+            }
+            else if (BuildingGenerator.SameRoomLayout(
+                         source, suggestion.Building, [floorIndex]))
+            {
+                _generatorStatus = "The AI proposal did not change the layout.";
+            }
+            else
+            {
+                BeginSuggestion(suggestion, whole: false);
+                _hint = "AI improvement is a PREVIEW. Inspect the current floor, " +
+                    "then choose Accept All or Discard preview.";
+                Refresh();
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or
+            TaskCanceledException or InvalidOperationException or
+            JsonException or ArgumentException)
+        {
+            _generatorStatus = "AI request failed: " + ex.Message;
+        }
+        finally
+        {
+            AiImproveButton.IsEnabled = true;
+        }
+        _hint = _generatorStatus;
+        Refresh();
+        MessageBox.Show(this, _generatorStatus,
+            "AI layout improvement", MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
     private void NextSuggestedFloor_Click(object sender, RoutedEventArgs e)
     {
         if (_pendingSuggestion is null || _pendingSuggestion.FloorIndexes.Count == 0)
@@ -1022,13 +1129,17 @@ public partial class MainWindow : Window
         }
         bool regenerating = _pendingSuggestion.Description.StartsWith(
             "REPLACEMENT DRAFT", StringComparison.Ordinal);
-        if (_pendingWholeBuilding || changedBase || regenerating)
+        bool aiImprovement = _pendingSuggestion.Description.StartsWith(
+            "AI IMPROVEMENT DRAFT", StringComparison.Ordinal);
+        if (_pendingWholeBuilding || changedBase || regenerating || aiImprovement)
         {
             string explanation = _pendingWholeBuilding
                 ? "Accepting this whole-building draft REPLACES the current building."
                 : regenerating
                     ? "Accepting this regeneration REPLACES rooms, doors and windows on the checked floors. The current perimeter and untouched floors are kept."
-                    : "The building changed since this suggestion was saved. Applying it will REPLACE the current building with the saved candidate.";
+                    : aiImprovement
+                        ? "Accepting the AI improvement changes the two room boundaries on the current floor. The existing staircases, doors, other rooms and floors are preserved."
+                        : "The building changed since this suggestion was saved. Applying it will REPLACE the current building with the saved candidate.";
             if (MessageBox.Show(this, explanation +
                     "\n\nThe current design can be restored with Ctrl+Z. Continue?",
                 "Apply suggested building", MessageBoxButton.YesNo,
