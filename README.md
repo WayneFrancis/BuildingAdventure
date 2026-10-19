@@ -39,12 +39,15 @@ L-shaped living room adjoining a bedroom, exterior-door preservation,
 rejection of edits that would relocate an existing internal door, and
 preservation of the donor, room area and complete outer perimeter.
 
-To test this feature, draw a large rectangular room beside another
-room which touches **only part of its side** (or an L-shaped living room
-beside a bedroom), without a door on the shared segment. Select that
-floor and click **Preview validated change (no AI)**. The next step is
-to ask Ollama for an improvement to a specified room and compare its
-numbered choice.
+To test this feature, open
+[`examples/ai_partial_wall_demo.json`](examples/ai_partial_wall_demo.json)
+from the repository in BuildingAdventure. It contains a 10 × 8 metre
+building completely divided into one **L-shaped Living Room** and one
+**Bedroom**, with two eligible shared-wall segments. Select the ground
+floor and click **Preview validated change (no AI)**. Discard that
+preview and ask Ollama to "make the bedroom larger by borrowing a little
+space from the L-shaped living room", then compare its numbered choice.
+You can also draw two rooms that share only part of one wall.
 
 ## v0.52 — Accept hand-drawn near-rectangular rooms (development)
 
