@@ -7823,5 +7823,100 @@ Check("Side-landing preserves a genuinely custom staircase instead of snapping i
         "Do not auto-move custom flights that were not at the old 1.1m default.");
 });
 
+
+Check("AI layout improvement transfers a hallway dead end into Bedroom 3", () =>
+{
+    List<Point2> rect(double x0,double y0,double x1,double y1)=>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var hall=new RoomDefinition
+    {
+        Name="Upper cross hall",Type="Hallway",
+        Outline=[
+            new(0,4.9),new(10.5,4.9),
+            new(10.5,6),new(12.5,6),
+            new(12.5,6.5),new(0,6.5)
+        ]
+    };
+    var bedroom=new RoomDefinition
+    {
+        Name="Bedroom 3",Type="Bedroom",
+        Outline=rect(6.25,6.5,12.5,10)
+    };
+    var door=new DoorDefinition
+    {
+        Centre=new Point2(9.375,6.5),Width=0.9
+    };
+    var original=new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=rect(0,0,12.5,10),
+        Rooms=[hall,bedroom],
+        Doors=[door]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    string goal="Give Bedroom 3 the unused northeast upper-hall patch.";
+    string prompt=AiLayoutImprover.BuildPrompt(original,0,goal);
+    Assert(prompt.Contains(hall.Id.ToString()) &&
+        prompt.Contains(bedroom.Id.ToString()) &&
+        prompt.Contains(goal) && prompt.Contains("metres") &&
+        prompt.Contains("doorways"),
+        "Prompt must describe true geometry, IDs, units and the goal.");
+    string Proposal(double x0,double y0,double x1,double y1,
+        Guid? from=null,Guid? to=null,int floor=0) =>
+        System.Text.Json.JsonSerializer.Serialize(new
+        {
+            floorIndex=floor,
+            fromRoomId=(from??hall.Id).ToString(),
+            toRoomId=(to??bedroom.Id).ToString(),
+            xMin=x0,yMin=y0,xMax=x1,yMax=y1,
+            reason="Recover redundant corridor nook"
+        });
+    Assert(AiLayoutImprover.TryApply(original,0,
+        Proposal(10.5,6,12.5,6.5),out var suggestion,out reason),reason);
+    var improved=suggestion.Building;
+    Assert(suggestion.Description.StartsWith("AI IMPROVEMENT DRAFT"));
+    Assert(BuildingStoreys.Validate(improved,out reason),reason);
+    Assert(improved.Rooms.Count==2 &&
+        improved.Rooms.All(r=>original.Rooms.Any(old=>old.Id==r.Id)),
+        "Edit must retain all room IDs and room count.");
+    Assert(improved.Doors.Single().Id==door.Id &&
+        improved.Doors.Single().Centre.DistanceTo(door.Centre)<1e-8);
+    Assert(improved.Rooms.Single(r=>r.Id==bedroom.Id).Outline.Count>=6);
+    Assert(PolygonGeometry.ContainsPoint(improved.Rooms.Single(r=>r.Id==bedroom.Id)
+        .Outline,new Point2(11.5,6.2)));
+    Assert(!PolygonGeometry.ContainsPoint(improved.Rooms.Single(r=>r.Id==hall.Id)
+        .Outline,new Point2(11.5,6.2)));
+    Equal(PolygonGeometry.Area(improved.Rooms.Single(r=>r.Id==bedroom.Id).Outline) -
+        PolygonGeometry.Area(bedroom.Outline),1);
+    Equal(PolygonGeometry.Area(hall.Outline) -
+        PolygonGeometry.Area(improved.Rooms.Single(r=>r.Id==hall.Id).Outline),1);
+    Assert(PolygonGeometry.ContainsPoint(hall.Outline,new Point2(11.5,6.2)),
+        "Source document must not be mutated before explicit acceptance.");
+    Assert(!AiLayoutImprover.TryApply(original,0,
+        Proposal(6.25,6.5,8,7),out _,out reason),
+        "Reject a rectangle that is outside the hallway.");
+    Assert(!AiLayoutImprover.TryApply(original,0,
+        Proposal(7,4.9,8,6.5),out _,out reason),
+        "Reject a patch splitting hallway into disconnected parts.");
+    Assert(!AiLayoutImprover.TryApply(original,0,
+        Proposal(10.5,6,12.5,6.5,from:Guid.NewGuid()),out _,out reason),
+        "Reject hallucinated source room IDs.");
+    Assert(!AiLayoutImprover.TryApply(original,0,
+        Proposal(10.5,6,12.5,6.5,floor:1),out _,out reason),
+        "Reject hallucinated floor index.");
+    Assert(!AiLayoutImprover.TryApply(original,0,"not json",out _,out reason),
+        "Reject non-JSON model output.");
+
+    var blocked=BuildingStoreys.Copy(original);
+    blocked.Doors.Add(new DoorDefinition
+    {
+        Centre=new Point2(11.5,6.5),Width=0.9
+    });
+    Assert(BuildingStoreys.Validate(blocked,out reason),reason);
+    Assert(!AiLayoutImprover.TryApply(blocked,0,
+        Proposal(10.5,6,12.5,6.5),out _,out reason),
+        "Reject removal of an existing wall that contains a doorway.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
