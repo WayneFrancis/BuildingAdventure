@@ -14,7 +14,8 @@ public sealed record AiLayoutOption(
 public static class AiLayoutRecommendationPlanner
 {
     public static IReadOnlyList<AiLayoutOption> FindOptions(
-        BuildingDocument source, int floorIndex, int maxResults = 20)
+        BuildingDocument source, int floorIndex, int maxResults = 20,
+        string? goal = null)
     {
         if (!BuildingStoreys.HasFloor(source,floorIndex) || maxResults<1)
             return [];
@@ -47,8 +48,14 @@ public static class AiLayoutRecommendationPlanner
         // Partial shared walls and orthogonal L-shaped rooms are validated
         // by the same shape-transfer engine, rather than trusting the LLM
         // to invent disconnected or overlapping room polygons.
+        // For a specific goal, retain all safe directions and full-band
+        // depths until AFTER spatial constraints are applied. Earlier
+        // alphabetical/small-area truncation hid the upper bedroom strip.
+        int partialLimit = string.IsNullOrWhiteSpace(goal)
+            ? Math.Min(7, maxResults)
+            : Math.Min(48, Math.Max(24, maxResults * 2));
         foreach (var partial in AiPartialRoomResizePlanner.FindCandidates(
-                     source, floorIndex, Math.Min(7, maxResults)))
+                     source, floorIndex, partialLimit))
         {
             options.Add(new AiLayoutOption(options.Count + 1,
                 "Resize partial / L-shaped rooms",
@@ -58,7 +65,14 @@ public static class AiLayoutRecommendationPlanner
                 $"{partial.GainingAreaAfter:0.#} m²)",
                 partial.AreaSquareMetres, partial.Suggestion));
         }
-        return options.Take(maxResults).ToArray();
+        var relevant = string.IsNullOrWhiteSpace(goal)
+            ? options
+            : AiLayoutSpatialIntent.Filter(source, floorIndex, goal, options)
+                .ToList();
+        // Renumber AFTER narrowing the shortlist. The IDs offered to the
+        // model must match the final geometrically valid selection list.
+        return relevant.Take(maxResults).Select((o, i) =>
+            o with { Id = i + 1 }).ToArray();
     }
 
     public static string BuildSelectionPrompt(
@@ -93,7 +107,12 @@ public static class AiLayoutRecommendationPlanner
             "others RESIZE adjacent rooms by MOVING a shared internal wall, "+
             "or reclaim a rectangular patch from a partial shared wall "+
             "between two rooms (including L-shaped rooms). "+
-            "Consider practical room sizes, accessibility and adjacency. "+
+            "A named room, relative direction (ABOVE/BELOW/LEFT/RIGHT), "+
+            "and words such as ALL or ENTIRE are mandatory spatial "+
+            "constraints, not optional suggestions. ABOVE means smaller "+
+            "Y coordinates in this floor plan. Only listed candidates "+
+            "already match the requested location; never substitute "+
+            "a different side. Consider practical room sizes. "+
             "Do not invent wall coordinates, new room IDs or extra edits. "+
             "Return ONLY JSON with candidateId (integer, one of the supplied "+
             "IDs) and reason (short string). No Markdown.\n\n"+
