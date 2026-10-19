@@ -4,6 +4,33 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.46 — Flush stairs and kitchen-to-dining serving door (development)
+
+The accepted `example12(1).json` shows a **0.65m dead strip** between a
+0.9m-wide horizontal stair and the front exterior wall: the stored flight is
+at (2.8,1.1), rather than flush against the wall at (2.8,0.45). It also places
+a full-width pantry between the kitchen and dining room, so no serving door
+can connect them.
+
+The updated `SideLandingRpgHousePlanner` moves newly generated stairs flush
+with the exterior wall while retaining room and landing clearances. During
+two-floor **Regenerate**, it additionally recognises the exact previous
+side-landing default stair (including original rotation, landing size and
+no manual opening extensions) and snaps only that old generated flight
+into place. It keeps its ID and leaves the source document unchanged until
+acceptance; a manually repositioned or resized staircase is not relocated.
+Stair footprints and upper slab openings remain vertically aligned.
+
+Pantry is now at the **opposite/front side** of kitchen (a shallow 1.4m
+strip), with kitchen extending to the dining-room shared wall. A direct
+kitchen-to-dining interior door is mandatory for accepting the archetype,
+in addition to the kitchen/pantry and hall access.
+
+Regression tests cover the old stair moving from 1.1m to 0.45m,
+other custom stairs remaining untouched, a usable pantry connection, a
+real kitchen/dining doorway, both floors' coverage, and all rotated and
+mirrored variants. Unrelated L-house archetypes are not changed.
+
 ## v0.45 — Independent upstairs rooms and stair access for deeper L houses (development)
 
 The exported `example12.json` is an approximately **113m² per storey** L-shaped
