@@ -19,6 +19,12 @@ public static class AiLayoutRecommendationPlanner
     {
         if (!BuildingStoreys.HasFloor(source,floorIndex) || maxResults<1)
             return [];
+        // Doorway intents are separate from resizing: a request to connect
+        // two rooms must never silently change their dimensions instead.
+        if (AiDoorPlacementPlanner.IsDoorwayGoal(goal))
+            return AiDoorPlacementPlanner.FindOptions(
+                source, floorIndex, goal!, maxResults);
+
         var options=new List<AiLayoutOption>();
         // Preserve hallway dead-end recovery from the existing prototype.
         foreach (var corner in AiLayoutCandidatePlanner.FindCandidates(
@@ -107,6 +113,8 @@ public static class AiLayoutRecommendationPlanner
             "others RESIZE adjacent rooms by MOVING a shared internal wall, "+
             "or reclaim a rectangular patch from a partial shared wall "+
             "between two rooms (including L-shaped rooms). "+
+            "For a doorway request, candidates add a safe new doorway on "+
+            "an existing shared partition without moving any room walls. "+
             "A named room, relative direction (ABOVE/BELOW/LEFT/RIGHT), "+
             "and words such as ALL or ENTIRE are mandatory spatial "+
             "constraints, not optional suggestions. ABOVE means smaller "+
@@ -159,8 +167,15 @@ public static class AiLayoutRecommendationPlanner
             reason="Candidate failed revalidation: "+reason;
             return false;
         }
-        if (BuildingGenerator.SameRoomLayout(source,
-            option.Suggestion.Building,[floorIndex]))
+        // SameRoomLayout intentionally ignores doors and windows (it is
+        // used by room regeneration). A doorway-only AI edit must not be
+        // discarded simply because its room outlines remain unchanged.
+        bool roomChanged = !BuildingGenerator.SameRoomLayout(source,
+            option.Suggestion.Building, [floorIndex]);
+        bool doorChanged = BuildingStoreys.GetFloor(source, floorIndex)
+            .Doors.Count != BuildingStoreys.GetFloor(
+                option.Suggestion.Building, floorIndex).Doors.Count;
+        if (!roomChanged && !doorChanged)
         {
             reason="The selected candidate doesn't change the floor.";
             return false;
