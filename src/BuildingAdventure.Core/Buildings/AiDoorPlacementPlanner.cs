@@ -17,6 +17,15 @@ public static class AiDoorPlacementPlanner
     public static bool IsDoorwayGoal(string? goal)
     {
         if (string.IsNullOrWhiteSpace(goal)) return false;
+        // Never interpret a negative constraint as authorization to insert
+        // an opening, even if the sentence contains "add a door".
+        if (Regex.IsMatch(goal,
+            @"\b(?:do\s+not|don't|never)\s+(?:\w+\s+){0,4}(?:add|create|place|install|insert|make)\b.{0,40}\b(?:door|doors|doorway|doorways)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) ||
+            Regex.IsMatch(goal,
+                @"\bwithout\s+(?:adding\s+)?(?:(?:a|any)\s+)?(?:new\s+)?(?:door|doors|doorway|doorways)\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return false;
         // "Preserve doors" in the default resize goal is NOT an instruction
         // to create an opening. Only explicit creation/connection intent
         // should switch the planner away from room improvements.
