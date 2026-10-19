@@ -34,12 +34,16 @@ public static class AiLayoutSpatialIntent
 
         // Directional words are hard constraints. The floor coordinate
         // system has Y increasing downwards, so ABOVE is smaller Y.
-        var directionMatch = Regex.Match(goal,
+        var directionMatches = Regex.Matches(goal,
             @"\b(above|below|underneath|under|left|right|top|bottom)\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (!directionMatch.Success && requestedTarget is null)
+        // Prefer the last spatial reference. "top band ... ABOVE the
+        // bedroom" refers to the bedroom, not the earlier 'top' phrase.
+        Match? directionMatch = directionMatches.Count == 0 ? null
+            : directionMatches[directionMatches.Count - 1];
+        if (directionMatch is null && requestedTarget is null)
             return options;
-        string direction = directionMatch.Success
+        string direction = directionMatch is not null
             ? directionMatch.Value.ToLowerInvariant() switch
             {
                 "under" or "underneath" or "bottom" => "below",
@@ -50,7 +54,7 @@ public static class AiLayoutSpatialIntent
 
         // An explicitly named room AFTER "above" or "to the left of" is
         // the spatial anchor. Otherwise the room being enlarged is used.
-        string following = directionMatch.Success
+        string following = directionMatch is not null
             ? goal[(directionMatch.Index + directionMatch.Length)..]
             : "";
         RoomDefinition? anchor = floor.Rooms
