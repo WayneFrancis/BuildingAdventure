@@ -8306,8 +8306,17 @@ Check("AI can reshape orthogonal L-shaped rooms without affecting existing doors
         Centre=new Point2(4,5),Width=0.9
     });
     Assert(BuildingStoreys.Validate(protectedDoor,out reason),reason);
-    Assert(AiPartialRoomResizePlanner.FindCandidates(protectedDoor,0).Count==0,
-        "Do not silently relocate an existing doorway along a partial wall.");
+    var protectedChoices=AiPartialRoomResizePlanner.FindCandidates(
+        protectedDoor,0);
+    Assert(protectedChoices.All(c =>
+        BuildingStoreys.Validate(c.Suggestion.Building,out _) &&
+        c.Suggestion.Building.Doors.Count==protectedDoor.Doors.Count &&
+        c.Suggestion.Building.Doors.All(d =>
+            protectedDoor.Doors.Any(original =>
+                original.Id==d.Id &&
+                original.Centre.DistanceTo(d.Centre)<1e-7))),
+        "Other eligible shared edges may still move, but no candidate may " +
+        "relocate/delete a doorway or invalidate the floor.");
 });
 
 Console.WriteLine($"{passed} passed; {failed} failed.");
