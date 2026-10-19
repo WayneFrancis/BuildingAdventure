@@ -4,6 +4,59 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.56 — Easy Discard Preview and responsive Ollama diagnostics (development)
+
+The primary **Accept All** and **Discard Preview** controls now appear
+**side by side** in Generator / Suggestions and are both disabled unless
+a draft exists. The old buried Discard button was removed. Discard clears
+only the suggested overlay, never the original building, and now resets
+the nearby AI status text as well.
+
+The local Ollama integration no longer spends up to two minutes asking
+a model to choose **the only valid candidate**. When the room name,
+direction and geometric constraints leave exactly one option, the C#
+validator previews that option directly, explicitly saying the model
+was not needed. This is both faster and avoids a needless cold load.
+
+For requests with multiple valid choices that genuinely need the LLM:
+
+- The Ollama chat API now uses **streaming NDJSON** instead of
+  `stream=false`; the progress text displays when Ollama connects
+  and when actual output fragments start arriving. A linked
+  two-minute cancellation cap applies to the *entire* streamed body,
+  not merely the HTTP response headers.
+- Each Ollama request uses `keep_alive: "1h"` (rather than the
+  default approximately five minutes), `think: false`, and a small
+  output-token limit appropriate to selecting one candidate.
+- **Warm/test Ollama** next to the AI status sends a small real
+  JSON-selection test and verifies `candidateId=1` in the answer,
+  without changing the building. This distinguishes a successful model
+  load from successful token generation. The request supports
+  **Cancel AI request** and displays its result. Warmed models may
+  still be evicted early if GPU/RAM resources are needed elsewhere.
+- Upon successful streamed completion, the model reports timings
+  including `load_duration` and `total_duration` in seconds in
+  the progress text. Failing or timed-out requests advise using
+  the local geometry preview.
+
+The log entry `srv server_strea: conv_id= (empty=1)` is a
+low-level llama-server request/stream message, **not proof of an
+error or a successful completion**. For diagnosis, first try
+**Warm/test Ollama**. In PowerShell check the live endpoint with:
+
+```powershell
+Invoke-RestMethod http://localhost:11434/api/ps
+```
+
+This lists loaded models; verify the model's actual name, GPU/CPU
+placement and memory use. If a model repeatedly fails to produce
+tokens while already loaded, inspect Docker container logs for
+sampler errors, resource exhaustion and stalled/queued requests.
+
+The design remains offline-first: the C# geometry validator chooses
+whether any edit is possible and never lets the model modify a plan
+directly. The original design changes only with **Accept All**.
+
 ## v0.55 — Honor requested room, direction and entire strip (development)
 
 Fixes AI improving the bedroom from the **left** when the instruction
