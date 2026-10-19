@@ -4,6 +4,48 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.53 — AI adjustments across partial walls and L-shaped rooms (development)
+
+The previous resize planner could move only a complete shared wall
+between nearly rectangular rooms. A new `AiPartialRoomResizePlanner`
+suggests small, safe **rectangular area transfers** where the shared wall
+is only part of a room's boundary, or one/both rooms are orthogonal
+L-shaped or stepped polygons.
+
+- The C# engine discovers coincident straight wall spans of at least
+  1.8 m between two non-hallway rooms and proposes a 0.5–1.0 m deep
+  strip wholly within the donor room.
+- `AiLayoutImprover` now reuses its original validated polygon
+  union/difference engine for room-to-room changes, while retaining the
+  public hallway-only validation for the earlier AI workflow.
+- Only **orthogonal** four-to-sixteen-vertex rooms are supported here;
+  the near-rectangular slightly tilted **full-wall** case in
+  `example13.json` remains handled by the separate v0.52 planner.
+  General sloping partial walls are not yet supported.
+- Every proposal is checked against the current building: room IDs,
+  area conservation, connected polygon outlines, unchanged exterior,
+  door/window placement, stair openings and chimney reservations.
+  A doorway on the shared wall excludes its partial-wall transfer.
+- The existing numbered options sent to Ollama now include
+  **Resize partial / L-shaped rooms**, as well as hallway-corner
+  reclamation and full-wall moves. The model cannot add new geometry.
+- **Preview validated change (no AI)**, **AI Improve current floor**,
+  **Accept All**, **Discard preview** and **Undo** keep their previous
+  non-destructive semantics.
+
+Regression fixtures include: two rectangles sharing only the upper
+portion of a wall (the receiving study becomes L-shaped), an existing
+L-shaped living room adjoining a bedroom, exterior-door preservation,
+rejection of edits that would relocate an existing internal door, and
+preservation of the donor, room area and complete outer perimeter.
+
+To test this feature, draw a large rectangular room beside another
+room which touches **only part of its side** (or an L-shaped living room
+beside a bedroom), without a door on the shared segment. Select that
+floor and click **Preview validated change (no AI)**. The next step is
+to ask Ollama for an improvement to a specified room and compare its
+numbered choice.
+
 ## v0.52 — Accept hand-drawn near-rectangular rooms (development)
 
 The uploaded `example13.json` is a single-storey **7.62 m square**
