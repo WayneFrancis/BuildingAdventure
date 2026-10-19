@@ -218,12 +218,30 @@
                                 <TextBox x:Name="AiModelBox" Text="qwen3:8b" Width="147"
                                          Padding="5" ToolTip="Ollama model, or OpenAI model ID"/>
                             </WrapPanel>
-                            <Button x:Name="AiImproveButton" Content="AI Improve current floor"
-                                    Click="AiImprove_Click" Padding="7,5"
-                                    HorizontalAlignment="Left" Margin="0,0,0,5"/>
+                            <WrapPanel Margin="0,0,0,7">
+                                <Button x:Name="AiImproveButton" Content="AI Improve current floor"
+                                        Click="AiImprove_Click" Padding="7,5"
+                                        Margin="0,0,6,5"/>
+                                <Button x:Name="AiCancelButton" Content="Cancel AI request"
+                                        Click="AiCancel_Click" Padding="7,5"
+                                        IsEnabled="False" Visibility="Collapsed"
+                                        Margin="0,0,0,5"/>
+                            </WrapPanel>
+                            <Button x:Name="AiPreviewValidatedButton"
+                                    Content="Preview validated change (no AI)"
+                                    Click="AiPreviewValidated_Click"
+                                    HorizontalAlignment="Left" Padding="7,5"
+                                    Margin="0,0,0,7"/>
+                            <ProgressBar x:Name="AiProgressBar" Height="5"
+                                         IsIndeterminate="True"
+                                         Visibility="Collapsed" Margin="0,0,0,5"/>
+                            <TextBlock x:Name="AiStatusText" TextWrapping="Wrap"
+                                       Foreground="#176B9A" FontWeight="SemiBold"
+                                       Text="AI idle. The preview-only test works without Ollama."
+                                       Margin="0,0,0,8"/>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579"
                                        Margin="0,0,0,10"
-                                       Text="Only a button click sends floor geometry to your chosen provider. Ollama uses local localhost:11434. OpenAI uses the OPENAI_API_KEY environment variable; API charges may apply. Keys are not stored here. Invalid proposals are rejected, not applied."/>
+                                       Text="Progress and results appear directly above. A valid suggestion is a preview, not an automatic edit. Use Accept All above to apply it, or Discard preview. Ollama uses local localhost:11434; OpenAI needs OPENAI_API_KEY and may incur API charges."/>
                             <TextBlock Text="New whole-building draft (1–4 floors)" FontWeight="SemiBold"
                                        Margin="0,10,0,5"/>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579" Margin="0,0,0,8"
