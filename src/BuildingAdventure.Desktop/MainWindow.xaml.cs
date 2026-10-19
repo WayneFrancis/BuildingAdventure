@@ -879,7 +879,7 @@ public partial class MainWindow : Window
         {
             outcome = "Ollama model test cancelled; no building changes.";
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             outcome = "Ollama model test timed out after 2 minutes. The " +
                 "model may still be loading, queued, or unable to generate. " +
@@ -1115,10 +1115,12 @@ public partial class MainWindow : Window
         {
             result = "AI request cancelled. The building was not changed.";
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
-            result = "The AI request timed out (2-minute limit). Try again, " +
-                "use a faster local model, or choose Preview validated change (no AI).";
+            result = "The AI request timed out (2-minute limit). " +
+                "If using Ollama, press Warm/test Ollama to check whether " +
+                "the model can load AND generate JSON. Try the local " +
+                "validated preview when the model is unavailable.";
         }
         catch (Exception ex) when (ex is HttpRequestException or
             InvalidOperationException or JsonException or ArgumentException
@@ -1427,7 +1429,9 @@ public partial class MainWindow : Window
 
     private void DiscardSuggestion_Click(object sender, RoutedEventArgs e)
     {
+        if (_pendingSuggestion is null) return;
         ClearPendingSuggestion();
+        AiStatusText.Text = "Preview discarded. Your original building is unchanged.";
         _hint = "Suggestion discarded; the building was not changed.";
         Refresh();
     }
