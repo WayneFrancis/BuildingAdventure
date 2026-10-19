@@ -94,17 +94,22 @@ internal static class AiLayoutModelClient
                 new { role = "user", content = prompt }
             }
         };
+        // HttpClient.Timeout only covers headers when the response is
+        // streamed; cap the entire NDJSON body read with a linked token.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromMinutes(2));
+        var requestToken = deadline.Token;
         progress?.Report("Sent to Ollama; waiting for response headers / model load");
         using var response = await PostAsync(
-            "http://127.0.0.1:11434/api/chat", payload, null, token,
+            "http://127.0.0.1:11434/api/chat", payload, null, requestToken,
             HttpCompletionOption.ResponseHeadersRead);
         progress?.Report("Ollama connected; waiting for the first generated token");
-        using var stream = await response.Content.ReadAsStreamAsync(token);
+        using var stream = await response.Content.ReadAsStreamAsync(requestToken);
         using var reader = new StreamReader(stream);
         var content = new StringBuilder();
         bool completed = false;
         int events = 0;
-        while (await reader.ReadLineAsync(token) is { } line)
+        while (await reader.ReadLineAsync(requestToken) is { } line)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             using var part = JsonDocument.Parse(line);
