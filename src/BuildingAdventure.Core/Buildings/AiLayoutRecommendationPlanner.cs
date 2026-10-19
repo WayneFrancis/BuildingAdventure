@@ -21,7 +21,7 @@ public static class AiLayoutRecommendationPlanner
         var options=new List<AiLayoutOption>();
         // Preserve hallway dead-end recovery from the existing prototype.
         foreach (var corner in AiLayoutCandidatePlanner.FindCandidates(
-                     source,floorIndex,Math.Min(8,maxResults)))
+                     source,floorIndex,Math.Min(6,maxResults)))
         {
             if (!AiLayoutImprover.TryApply(source,floorIndex,
                 JsonSerializer.Serialize(corner.Transfer),out var plan,out _))
@@ -34,7 +34,7 @@ public static class AiLayoutRecommendationPlanner
         // Additional option type: a partition separating two rectangular
         // rooms can be nudged without relocating any existing doorway.
         foreach (var resize in AiRoomResizePlanner.FindCandidates(
-                     source,floorIndex,Math.Min(12,maxResults)))
+                     source,floorIndex,Math.Min(7,maxResults)))
         {
             options.Add(new AiLayoutOption(options.Count+1,
                 "Resize adjacent rooms",
@@ -43,6 +43,20 @@ public static class AiLayoutRecommendationPlanner
                 $"{resize.GainingAreaBefore:0.#} → "+
                 $"{resize.GainingAreaAfter:0.#} m²)",
                 resize.AreaSquareMetres,resize.Suggestion));
+        }
+        // Partial shared walls and orthogonal L-shaped rooms are validated
+        // by the same shape-transfer engine, rather than trusting the LLM
+        // to invent disconnected or overlapping room polygons.
+        foreach (var partial in AiPartialRoomResizePlanner.FindCandidates(
+                     source, floorIndex, Math.Min(7, maxResults)))
+        {
+            options.Add(new AiLayoutOption(options.Count + 1,
+                "Resize partial / L-shaped rooms",
+                "Enlarge " + partial.GainingRoom + " at the expense of " +
+                partial.LosingRoom + " (" +
+                $"{partial.GainingAreaBefore:0.#} → " +
+                $"{partial.GainingAreaAfter:0.#} m²)",
+                partial.AreaSquareMetres, partial.Suggestion));
         }
         return options.Take(maxResults).ToArray();
     }
@@ -76,7 +90,9 @@ public static class AiLayoutRecommendationPlanner
             "All proposed candidate improvements were ALREADY VERIFIED by "+
             "the C# geometry engine. Choose the ONE candidate that best "+
             "matches the user's goal. Some reclaim dead-end hallway corners; "+
-            "others RESIZE adjacent rooms by MOVING a shared internal wall. "+
+            "others RESIZE adjacent rooms by MOVING a shared internal wall, "+
+            "or reclaim a rectangular patch from a partial shared wall "+
+            "between two rooms (including L-shaped rooms). "+
             "Consider practical room sizes, accessibility and adjacency. "+
             "Do not invent wall coordinates, new room IDs or extra edits. "+
             "Return ONLY JSON with candidateId (integer, one of the supplied "+
