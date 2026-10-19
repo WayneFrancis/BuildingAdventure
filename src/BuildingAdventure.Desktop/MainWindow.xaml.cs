@@ -386,7 +386,7 @@ public partial class MainWindow : Window
         PanButton.FontWeight = EditorSurface.Tool == EditorTool.Pan ? FontWeights.Bold : FontWeights.Normal;
         HintText.Text = _hint;
         AcceptSuggestionButton.IsEnabled = RememberSuggestionButton.IsEnabled =
-            _pendingSuggestion is not null;
+            DiscardSuggestionButton.IsEnabled = _pendingSuggestion is not null;
         AcceptSuggestedRoomButton.IsEnabled = _pendingSuggestion is not null &&
             !_pendingWholeBuilding && EditorSurface.SelectedSuggestedRoomId.HasValue;
         SuggestionInfoText.Text = _pendingSuggestion is null
@@ -830,6 +830,7 @@ public partial class MainWindow : Window
     {
         AiImproveButton.IsEnabled = !busy;
         AiPreviewValidatedButton.IsEnabled = !busy;
+        AiWarmButton.IsEnabled = !busy;
         AiCancelButton.IsEnabled = busy;
         AiCancelButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         AiProgressBar.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
@@ -853,6 +854,50 @@ public partial class MainWindow : Window
         AiStatusText.Text = "Cancelling AI request…";
         AiCancelButton.IsEnabled = false;
         _aiRequestCancellation.Cancel();
+    }
+
+    private async void AiWarm_Click(object sender, RoutedEventArgs e)
+    {
+        if (!AiWarmButton.IsEnabled) return;
+        string model = AiModelBox.Text.Trim();
+        using var cancellation = new CancellationTokenSource();
+        _aiRequestCancellation = cancellation;
+        SetAiBusy(true, "Starting Ollama model generation test");
+        string outcome;
+        try
+        {
+            var progress = new Progress<string>(message =>
+            {
+                _aiProgressStage = message;
+                AiStatusText.Text = message +
+                    $" ({_aiElapsed.Elapsed.TotalSeconds:0}s elapsed)";
+            });
+            outcome = await AiLayoutModelClient.WarmOllamaAsync(
+                model, cancellation.Token, progress);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            outcome = "Ollama model test cancelled; no building changes.";
+        }
+        catch (TaskCanceledException)
+        {
+            outcome = "Ollama model test timed out after 2 minutes. The " +
+                "model may still be loading, queued, or unable to generate. " +
+                "Check Docker logs and GPU/RAM utilisation.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or
+            InvalidOperationException or ArgumentException or JsonException)
+        {
+            outcome = "Ollama model test failed: " + ex.Message;
+        }
+        finally
+        {
+            _aiRequestCancellation = null;
+            SetAiBusy(false);
+        }
+        AiStatusText.Text = outcome;
+        _hint = outcome;
+        Refresh();
     }
 
     private void ShowAiImprovementPreview(BuildingSuggestion suggestion,
@@ -1014,6 +1059,24 @@ public partial class MainWindow : Window
                 result = "No validated change matches the requested room, " +
                     "direction and size. I will not substitute another side " +
                     "of the room. " + NoAiLayoutCandidatesMessage();
+            else if (candidates.Count == 1)
+            {
+                // The LLM cannot add value when the geometry and user goal
+                // already uniquely identify the permitted edit. In particular
+                // avoid waking a cold model just to return candidateId = 1.
+                string choice = JsonSerializer.Serialize(new
+                {
+                    candidateId = candidates[0].Id,
+                    reason = "Only safe matching candidate; no model call needed"
+                });
+                if (AiLayoutRecommendationPlanner.TryApplySelection(
+                    source, floorIndex, choice, candidates,
+                    out var suggestion, out var reason))
+                    ready = suggestion;
+                else
+                    result = "The single matching proposal failed validation: " +
+                        reason;
+            }
             else
             {
                 var prompt = AiLayoutRecommendationPlanner.BuildSelectionPrompt(
@@ -1022,8 +1085,14 @@ public partial class MainWindow : Window
                     $"{candidates.Count} validated changes";
                 AiStatusText.Text = _aiProgressStage +
                     $" ({_aiElapsed.Elapsed.TotalSeconds:0}s elapsed).";
+                var progress = new Progress<string>(message =>
+                {
+                    _aiProgressStage = message;
+                    AiStatusText.Text = message +
+                        $" ({_aiElapsed.Elapsed.TotalSeconds:0}s elapsed)";
+                });
                 string response = await AiLayoutModelClient.RequestAsync(
-                    provider, model, prompt, cancellation.Token);
+                    provider, model, prompt, cancellation.Token, progress);
                 cancellation.Token.ThrowIfCancellationRequested();
                 if (CurrentJson() != fingerprint)
                     result = "The building changed while the model was working; " +
@@ -1064,7 +1133,11 @@ public partial class MainWindow : Window
         }
         if (ready is not null)
         {
-            ShowAiImprovementPreview(ready, provider + " (" + model + ")");
+            ShowAiImprovementPreview(ready,
+                ready.Description.Contains("no model call needed",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "Local validated choice (Ollama not needed)"
+                    : provider + " (" + model + ")");
             return;
         }
         AiStatusText.Text = result;
