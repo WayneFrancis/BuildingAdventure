@@ -8559,6 +8559,13 @@ Check("AI direction filters fail closed and distinguish left from above", () =>
             .Single(r=>r.Id==bedroom.Id).Outline,
             other.Suggestion.Building.Rooms.Single(r=>r.Id==bedroom.Id).Outline))),
         "A LEFT candidate may never be offered for ABOVE.");
+    var mixed=AiLayoutRecommendationPlanner.FindOptions(original,0,20,
+        goal:"Make the Bedroom larger by taking all the top band of " +
+             "the L-shaped Living Room above the Bedroom");
+    Assert(mixed.Count==1 &&
+        Math.Abs(mixed[0].AreaSquareMetres-12)<0.001,
+        "The final ABOVE Bedroom reference must take precedence over " +
+        "an earlier TOP band mention.");
     var wrong=AiLayoutRecommendationPlanner.FindOptions(original,0,20,
         goal:"Make the Bedroom larger with space below the Bedroom");
     Assert(wrong.Count==0,
