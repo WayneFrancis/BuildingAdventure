@@ -4,6 +4,35 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.57 — AI-assisted doorway placement (development)
+
+AI Improve Layout now supports explicit opening requests, in addition to
+hallway reclamation and shared-wall resizing. For example:
+
+> Add a door between Kitchen and Dining room.
+
+- C# generates a shortlist of positions on the **actual shared interior
+  partition**, and validates each proposed 0.9 m doorway against the entire
+  building. Existing doors, windows, stair flights and landings cannot be
+  obstructed.
+- The language model selects **only a numbered, prevalidated candidate**.
+  It cannot invent a doorway location or move existing walls.
+- Requests that name two rooms fail closed if the pair cannot be identified
+  or doesn't share a safe wall. Door requests are never turned into a
+  room-resizing operation.
+- The existing graphical preview displays the new doorway as an **orange
+  dashed opening** before it is accepted; Accept All and Discard Preview
+  work as before. Undo remains available after acceptance.
+- A selected doorway is now accepted even though the room polygons don't
+  change: the old room-layout-only comparison ignored added openings.
+- The local **Preview validated change (no AI)** option works for doorway
+  requests as well. With one candidate the AI model is bypassed.
+
+Only **new interior doors between existing rooms** are supported in this
+step. Exterior doors, moving/removing doors, and creating new rooms or
+walls are not yet AI edits. The desktop geometry engine retains ownership
+of those operations.
+
 ## v0.56 — Easy Discard Preview and responsive Ollama diagnostics (development)
 
 The primary **Accept All** and **Discard Preview** controls now appear
