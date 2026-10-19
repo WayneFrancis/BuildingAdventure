@@ -200,7 +200,7 @@
                                        Margin="0,0,0,5"/>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579"
                                        Margin="0,0,0,7"
-                                       Text="Ask Ollama or OpenAI to choose from C#-validated changes on the CURRENT floor: reclaim an unused hallway corner or resize two adjoining rectangular rooms by shifting their shared wall. Preview first; only Accept All changes your building."/>
+                                       Text="Ask Ollama or OpenAI to choose from C#-validated changes on the CURRENT floor: reclaim a hallway corner, resize adjoining rooms, or reshape orthogonal L-shaped and partial shared-wall rooms. Preview first; only Accept All changes your building."/>
                             <TextBlock Text="What should improve?" Margin="0,0,0,4"/>
                             <TextBox x:Name="AiGoalBox" Margin="0,0,0,8" Padding="5"
                                      AcceptsReturn="True" TextWrapping="Wrap"
