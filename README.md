@@ -8,9 +8,11 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
 
 The primary **Accept All** and **Discard Preview** controls now appear
 **side by side** in Generator / Suggestions and are both disabled unless
-a draft exists. The old buried Discard button was removed. Discard clears
-only the suggested overlay, never the original building, and now resets
-the nearby AI status text as well.
+a draft exists. The same actions, labeled **Accept Preview** and
+**Discard Preview**, are repeated immediately below the AI status text
+so a user reviewing Ollama changes need not scroll up. The old buried
+Discard button was removed. Discard clears only the suggested overlay,
+never the original building, and resets the nearby AI status text.
 
 The local Ollama integration no longer spends up to two minutes asking
 a model to choose **the only valid candidate**. When the room name,
