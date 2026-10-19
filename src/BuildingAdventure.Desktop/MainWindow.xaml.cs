@@ -862,13 +862,14 @@ public partial class MainWindow : Window
         string summary = origin + " selected a valid change. " +
             suggestion.Description.Replace("AI IMPROVEMENT DRAFT — ", "");
         AiStatusText.Text = summary +
-            " This is only a preview. Click Accept All in GENERATOR / SUGGESTIONS " +
-            "to apply it or Discard preview to leave your design unchanged.";
-        _hint = "AI PREVIEW READY: " + summary +
-            " Use Accept All to apply the change (Ctrl+Z undoes it).";
+            " The floor plan now shows the graphical preview: green dashed " +
+            "walls are proposed, orange dashed walls are existing, and " +
+            "green shading marks gained space. Click Accept All above to " +
+            "apply or Discard preview to leave the layout unchanged.";
+        _hint = "GRAPHICAL AI PREVIEW READY — green dashed = proposed walls; " +
+            "orange dashed = existing walls. Accept All to apply; " +
+            "Discard preview to cancel (Ctrl+Z undoes acceptance).";
         Refresh();
-        MessageBox.Show(this, AiStatusText.Text, "Layout improvement preview ready",
-            MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private static bool IsAiLayoutEligible(BuildingDocument source,
