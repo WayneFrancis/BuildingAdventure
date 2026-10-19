@@ -8450,5 +8450,122 @@ Check("AI L-shaped edits display changes to old IDs but ignore newly created roo
         "Existing-room diff should leave newly added-room preview to its own renderer.");
 });
 
+
+Check("AI honors the entire upper band instead of taking the bedroom's left wall", () =>
+{
+    // Matches examples/ai_partial_wall_demo.json exactly: a 2m upper
+    // living-room band above a 6m-wide bedroom plus an L-shaped left wing.
+    List<Point2> Rect(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var living=new RoomDefinition
+    {
+        Id=Guid.Parse("8c6ad1c9-cad4-4a45-a7b8-2a329d7d9d21"),
+        Name="L-shaped Living Room",Type="Living room",
+        Outline=[new(0,0),new(10,0),new(10,2),
+                 new(4,2),new(4,8),new(0,8)]
+    };
+    var bedroom=new RoomDefinition
+    {
+        Id=Guid.Parse("b6c7cfd7-bc4d-4b8d-b681-28157b8dba22"),
+        Name="Bedroom",Type="Bedroom",Outline=Rect(4,2,10,8)
+    };
+    var building=new BuildingDocument
+    {
+        Perimeter=Rect(0,0,10,8),Rooms=[living,bedroom]
+    };
+    Assert(BuildingStoreys.Validate(building,out var reason),reason);
+    var partials=AiPartialRoomResizePlanner.FindCandidates(building,0,32);
+    Assert(partials.Any(p=>p.GainingRoom=="Bedroom" &&
+        Math.Abs(p.AreaSquareMetres-12)<0.001),
+        "Candidate generator must offer the entire 6x2m upper band.");
+    Assert(partials.Any(p=>p.GainingRoom=="Bedroom" &&
+        Math.Abs(p.AreaSquareMetres-6)<0.001),
+        "Left-side strips should also exist but must not meet an ABOVE request.");
+
+    const string instruction =
+        "Make the bedroom larger by taking all the space from thin band in " +
+        "the the L-shaped living room above the bedroom. " +
+        "Keep the outside walls unchanged.";
+    var options=AiLayoutRecommendationPlanner.FindOptions(
+        building,0,20,goal:instruction);
+    Assert(options.Count==1,
+        "Explicit ABOVE, BEDROOM and ALL should leave only the safe full-band change.");
+    var full=options.Single();
+    Assert(full.Id==1 && full.Summary.StartsWith("Enlarge Bedroom") &&
+        Math.Abs(full.AreaSquareMetres-12)<0.001,
+        "The model must receive the entire upper band, not a left-side strip.");
+    var edited=full.Suggestion.Building;
+    Assert(BuildingStoreys.Validate(edited,out reason),reason);
+    Assert(edited.Perimeter.SequenceEqual(building.Perimeter),
+        "The instruction must leave the outside walls unchanged.");
+    var newLiving=edited.Rooms.Single(r=>r.Id==living.Id);
+    var newBedroom=edited.Rooms.Single(r=>r.Id==bedroom.Id);
+    Assert(RoomPreviewDiff.SameOutline(newLiving.Outline,Rect(0,0,4,8)),
+        "Removing the thin band must leave a rectangular living room at the left.");
+    Assert(RoomPreviewDiff.SameOutline(newBedroom.Outline,Rect(4,0,10,8)),
+        "The bedroom must extend to the top outside wall.");
+    Assert(!PolygonGeometry.ContainsPoint(newLiving.Outline,new Point2(7,1)) &&
+        PolygonGeometry.ContainsPoint(newBedroom.Outline,new Point2(7,1)),
+        "The actual location transferred must be ABOVE the bedroom.");
+    Assert(PolygonGeometry.ContainsPoint(newLiving.Outline,new Point2(2,4)),
+        "Do not remove any space from the left side.");
+    Assert(Math.Abs(PolygonGeometry.Area(newBedroom.Outline)-48)<0.001);
+    Assert(Math.Abs(PolygonGeometry.Area(newLiving.Outline)-32)<0.001);
+
+    var modelChoice=System.Text.Json.JsonSerializer.Serialize(new
+    {
+        candidateId=full.Id,reason="Reclaim the complete strip over the bedroom."
+    });
+    Assert(AiLayoutRecommendationPlanner.TryApplySelection(building,0,
+        modelChoice,options,out var suggestion,out reason),reason);
+    Assert(RoomPreviewDiff.SameOutline(suggestion.Building.Rooms
+        .Single(r=>r.Id==bedroom.Id).Outline,Rect(4,0,10,8)));
+    Assert(RoomPreviewDiff.SameOutline(building.Rooms.Single(r=>r.Id==bedroom.Id)
+        .Outline,Rect(4,2,10,8)), "The preview must not mutate the source.");
+});
+
+Check("AI direction filters fail closed and distinguish left from above", () =>
+{
+    List<Point2> Rect(double x0,double y0,double x1,double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var living=new RoomDefinition
+    {
+        Name="L-shaped Living Room",Type="Living room",
+        Outline=[new(0,0),new(10,0),new(10,2),
+                 new(4,2),new(4,8),new(0,8)]
+    };
+    var bedroom=new RoomDefinition
+    {
+        Name="Bedroom",Type="Bedroom",Outline=Rect(4,2,10,8)
+    };
+    var original=new BuildingDocument
+    {
+        Perimeter=Rect(0,0,10,8),Rooms=[living,bedroom]
+    };
+    var above=AiLayoutRecommendationPlanner.FindOptions(original,0,20,
+        goal:"Make the Bedroom larger with space above the Bedroom");
+    var left=AiLayoutRecommendationPlanner.FindOptions(original,0,20,
+        goal:"Make the Bedroom larger with space left of the Bedroom");
+    Assert(above.Count>0 && left.Count>0,
+        "Each spatial direction should have safe candidates.");
+    Assert(above.All(o=>AiLayoutSpatialIntent.TryGainedFootprint(
+        original,0,o,out var room,out var patch) &&
+        room.Id==bedroom.Id && patch.Y1<=2+1e-5));
+    Assert(left.All(o=>AiLayoutSpatialIntent.TryGainedFootprint(
+        original,0,o,out var room,out var patch) &&
+        room.Id==bedroom.Id && patch.X1<=4+1e-5));
+    Assert(!above.Any(o=>left.Any(other=>
+        RoomPreviewDiff.SameOutline(o.Suggestion.Building.Rooms
+            .Single(r=>r.Id==bedroom.Id).Outline,
+            other.Suggestion.Building.Rooms.Single(r=>r.Id==bedroom.Id).Outline))),
+        "A LEFT candidate may never be offered for ABOVE.");
+    var wrong=AiLayoutRecommendationPlanner.FindOptions(original,0,20,
+        goal:"Make the Bedroom larger with space below the Bedroom");
+    Assert(wrong.Count==0,
+        "If there is no safe area below, reject rather than moving another wall.");
+    var generic=AiLayoutRecommendationPlanner.FindOptions(original,0);
+    Assert(generic.Count>0, "No-goal shortlist must remain available.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
