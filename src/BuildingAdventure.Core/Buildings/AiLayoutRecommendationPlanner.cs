@@ -103,7 +103,8 @@ public static class AiLayoutRecommendationPlanner
             {
                 candidateId=o.Id,kind=o.Kind,
                 summary=o.Summary,
-                affectedAreaSquareMetres=o.AreaSquareMetres
+                affectedAreaSquareMetres=o.Kind=="Add doorway"
+                    ? (double?)null : o.AreaSquareMetres
             })
         };
         return "You are an architect reviewing an RPG building layout. "+
@@ -182,11 +183,13 @@ public static class AiLayoutRecommendationPlanner
         }
         string explanation=choice?.Reason ?? "";
         explanation=explanation.Length>200 ? explanation[..200] : explanation;
+        string effect = option.Kind == "Add doorway"
+            ? ". Room outlines and existing openings are preserved. "
+            : $"; {option.AreaSquareMetres:0.##} m² affected. ";
         suggestion=new BuildingSuggestion(
             BuildingStoreys.Copy(option.Suggestion.Building),
             0,[floorIndex],"AI IMPROVEMENT DRAFT — "+option.Kind+
-            ": "+option.Summary+ $"; {option.AreaSquareMetres:0.##} m² affected. "+
-            explanation);
+            ": "+option.Summary + effect + explanation);
         reason="";
         return true;
     }
