@@ -11,6 +11,7 @@ public static class AiPartialRoomResizePlanner
 {
     private const double Eps = 1e-6;
     private static readonly double[] Depths = [0.5, 0.75, 1.0];
+    private const double MaximumTransferArea = 12;
 
     public static IReadOnlyList<AiRoomResizeCandidate> FindCandidates(
         BuildingDocument source, int floorIndex, int maxResults = 8)
@@ -85,7 +86,17 @@ public static class AiPartialRoomResizePlanner
                         !PolygonGeometry.ContainsPoint(receiver.Outline, outwardProbe))
                         continue;
 
-                    foreach (double depth in Depths)
+                    // Candidate depths include the ACTUAL opposite edges
+                    // of the donor. A user can request an entire thin band
+                    // rather than being limited to the former 1m nudge.
+                    // For the demo L-shaped living room this adds 2m,
+                    // allowing all 6 x 2m above the bedroom to transfer.
+                    var depths = Depths.Concat(donor.Outline.Select(p =>
+                        Math.Abs((horizontal ? p.Y : p.X) -
+                                 (horizontal ? from.A.Y : from.A.X))))
+                        .Where(d => d >= 0.2 && d <= 4)
+                        .Distinct().OrderBy(d => d).ToArray();
+                    foreach (double depth in depths)
                     {
                         if (checks >= 180) break;
                         double x0 = horizontal ? lo :
@@ -97,7 +108,7 @@ public static class AiPartialRoomResizePlanner
                         double y1 = horizontal ?
                             Math.Max(from.A.Y, from.A.Y + sign * depth) : hi;
                         double area = (x1 - x0) * (y1 - y0);
-                        if (area < 0.5 || area > 8) continue;
+                        if (area < 0.5 || area > MaximumTransferArea) continue;
                         string key = FormattableString.Invariant(
                             $"{donor.Id}:{receiver.Id}:{x0:F5}:{y0:F5}:{x1:F5}:{y1:F5}");
                         if (!unique.Add(key)) continue;
