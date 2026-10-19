@@ -4,6 +4,52 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.55 — Honor requested room, direction and entire strip (development)
+
+Fixes AI improving the bedroom from the **left** when the instruction
+explicitly requested **all the thin living-room band above** it.
+
+Root causes: the partial-wall candidate planner tested only 0.5, 0.75
+and 1.0 m deep transfers, and the LLM candidate list contained no
+enforceable directional constraints. In the supplied example the band
+above the bedroom is **6 × 2 m (12 m²)**, so the complete, correct
+transformation was never available to Ollama.
+
+The new behavior:
+
+- Partial-wall candidates include strip depths terminating at actual
+  donor-room boundaries; up to **12 m²** can transfer if every building
+  validator passes. For the demo, a complete 6 × 2 m upper band is now a
+  candidate, leaving the living room rectangular and expanding the
+  bedroom all the way to the top exterior wall.
+- **Before sending a prompt**, the app identifies an explicit gaining
+  room (e.g. "make the bedroom larger") and filters all candidate
+  options by hard spatial directions: **above, below, left, right**.
+  The polygon of the *gained area* is compared against the original
+  named room; the LLM cannot choose a wrong-side edit.
+- "All the space", "entire band" and "whole strip" prioritize the
+  **largest valid transfer in the requested direction**, rather than
+  picking the smallest nudge by default. It will report no matching
+  safe candidate instead of silently substituting another wall.
+- The same constraints apply to the **Preview validated change
+  (no AI)** button using the editable goal field.
+- The final candidate list is renumbered after filtering, so Ollama
+  still returns only a known `candidateId`; geometric construction and
+  final validation stay in C#.
+
+Regression tests reproduce the original demo layout and the user's
+exact sentence, asserting that the only offered edit expands the
+bedroom from y=2 m up to y=0, retains its x=4–10 m span and all exterior
+walls, gives the living room the x=0–4 m left rectangle, and conserves
+the original **80 m²**. Other tests distinguish above vs. left, prevent
+wrong-side fallbacks, and handle goals that mention both "top" and
+"above".
+
+This is a constrained natural-language interpreter for explicitly
+named rooms and directions, not arbitrary interpretation of every
+architectural instruction. Unsupported or ambiguous improvements
+remain restricted to the safe C# candidate set.
+
 ## v0.54 — Visible AI resize previews (development)
 
 Fixes AI improvement previews that appeared to exist only as text in
