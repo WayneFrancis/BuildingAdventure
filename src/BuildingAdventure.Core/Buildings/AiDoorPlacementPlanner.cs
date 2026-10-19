@@ -14,11 +14,18 @@ public static class AiDoorPlacementPlanner
     private const double Width = 0.9;
     private static readonly double[] Positions = [0.5, 0.32, 0.68];
 
-    public static bool IsDoorwayGoal(string? goal) =>
-        !string.IsNullOrWhiteSpace(goal) &&
-        Regex.IsMatch(goal,
-            @"\b(?:door|doors|doorway|doorways|entrance|entryway|connect|connecting|connection|access)\b",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    public static bool IsDoorwayGoal(string? goal)
+    {
+        if (string.IsNullOrWhiteSpace(goal)) return false;
+        // "Preserve doors" in the default resize goal is NOT an instruction
+        // to create an opening. Only explicit creation/connection intent
+        // should switch the planner away from room improvements.
+        return Regex.IsMatch(goal,
+            @"\b(?:add|create|install|place|insert|put|build|open|propose|suggest)\b.{0,35}\b(?:door|doors|doorway|doorways|entrance|entryway)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) ||
+            Regex.IsMatch(goal, @"\bconnect\s+(?:the\s+)?\w",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
 
     public static IReadOnlyList<AiLayoutOption> FindOptions(
         BuildingDocument source, int floorIndex, string goal,
