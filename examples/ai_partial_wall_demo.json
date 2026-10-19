@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "name": "AI Partial Wall and L-Shaped Room Demo",
+  "gridFeet": 0,
+  "perimeter": [
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 10,
+      "y": 0
+    },
+    {
+      "x": 10,
+      "y": 8
+    },
+    {
+      "x": 0,
+      "y": 8
+    }
+  ],
+  "rooms": [
+    {
+      "id": "8c6ad1c9-cad4-4a45-a7b8-2a329d7d9d21",
+      "name": "L-shaped Living Room",
+      "type": "Living room",
+      "outline": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 10,
+          "y": 0
+        },
+        {
+          "x": 10,
+          "y": 2
+        },
+        {
+          "x": 4,
+          "y": 2
+        },
+        {
+          "x": 4,
+          "y": 8
+        },
+        {
+          "x": 0,
+          "y": 8
+        }
+      ]
+    },
+    {
+      "id": "b6c7cfd7-bc4d-4b8d-b681-28157b8dba22",
+      "name": "Bedroom",
+      "type": "Bedroom",
+      "outline": [
+        {
+          "x": 4,
+          "y": 2
+        },
+        {
+          "x": 10,
+          "y": 2
+        },
+        {
+          "x": 10,
+          "y": 8
+        },
+        {
+          "x": 4,
+          "y": 8
+        }
+      ]
+    }
+  ],
+  "doors": [],
+  "windows": [],
+  "wallThickness": {
+    "exteriorMetres": 0.24,
+    "interiorMetres": 0.12
+  },
+  "upperFloors": [],
+  "basementFloors": [],
+  "hasGroundFloor": true,
+  "staircases": [],
+  "chimneys": []
+}
