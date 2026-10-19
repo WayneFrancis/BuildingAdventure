@@ -4,6 +4,56 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.48 — Experimental AI Improve Layout (development)
+
+The **Generator / Suggestions** sidebar now includes **AI Improve current
+floor**. This is deliberately a narrowly scoped experiment alongside the
+existing deterministic room generators, not a replacement for them.
+
+1. Open a building with an existing hallway and adjacent room, and navigate
+   to the floor you want to improve. For initial testing, use an accepted
+   older version of `example12(2).json` with the hallway dead-end intact.
+2. Under **AI Improve Layout**, describe the desired improvement. Choose
+   **Ollama** (default model `qwen3:8b`) or **OpenAI** (default
+   `gpt-4.1-mini`). Click **AI Improve current floor**.
+3. The model is asked for **one rectangle of hallway floor area** to transfer
+   into an adjacent existing room, identified by its actual room IDs, not
+   for complete room polygons. This avoids letting an approximate model
+   redraw all the walls.
+4. The C# `AiLayoutImprover` reconstructs both room polygons (including
+   L-shaped outlines), conserves area, verifies the source/destination and
+   that the hallway stays connected, and runs full-building validation
+   covering existing doors, stairs, slab openings and fireplaces.
+   Invalid suggestions are rejected without changing the document.
+5. A valid proposal appears as a normal **suggestion preview**. **Accept
+   All** explicitly commits the new room boundaries (with Undo); **Discard
+   preview** changes nothing. No API call is made unless the user presses
+   the AI button.
+
+**Providers, security and limits:**
+
+- Ollama connects only to `http://127.0.0.1:11434/api/chat` on the
+  current machine. Install/start Ollama and download the chosen model first
+  (for example `ollama pull qwen3:8b`). No API key needed.
+- OpenAI uses `https://api.openai.com/v1/responses` with strict structured
+  JSON output. Set the **`OPENAI_API_KEY` environment variable** before
+  launching the desktop app. A ChatGPT subscription does not include API
+  usage; API charges are separate. Keys are never stored in application
+  settings or building files.
+- The current floor's walls, rooms, doors, related stair geometry and
+  optional goal text are sent to the selected model. **Do not choose
+  OpenAI if you do not want that information sent externally.**
+- Prototype scope: **orthogonal room outlines only**, one rectangular
+  transfer of **0.25–12m²**, no creation/deletion of rooms or doors, no
+  stair or chimney moves. It may reject many model proposals; try a more
+  specific goal or another model. The existing generator remains fully
+  functional with no network or keys.
+
+Geometry unit tests include successfully reclaiming the 1m² upper-hall
+nook for Bedroom 3, and rejecting disconnected hallways, bad IDs, wrong
+floors, blocked doors and out-of-hall patches. There are no live provider
+calls in CI; validate model connectivity on the local desktop machine.
+
 ## v0.47 — Reclaim the upstairs hall dead-end for Bedroom 3 (development)
 
 The accepted `example12(2).json` left a **2m by 0.5m (1m²) dead-end**
