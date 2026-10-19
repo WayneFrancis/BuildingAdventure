@@ -19,10 +19,11 @@ internal static class AiLayoutModelClient
 
     private const string Instructions =
         "You are an architecture layout improvement assistant. " +
-        "Return precisely one JSON object with fields floorIndex, fromRoomId, " +
-        "toRoomId, xMin, yMin, xMax, yMax and reason. " +
-        "No Markdown. Never invent IDs, coordinates or edits outside " +
-        "the permitted corridor-to-room rectangular transfer.";
+        "The application already computed and verified every allowed edit. " +
+        "Choose exactly one existing candidate from the user's list. " +
+        "Return a JSON object containing candidateId (integer) and reason " +
+        "(short string). Do not output wall coordinates or invent a new ID. " +
+        "No Markdown.";
 
     public static async Task<string> RequestAsync(
         string provider, string model, string prompt, CancellationToken token = default)
@@ -77,13 +78,7 @@ internal static class AiLayoutModelClient
         static object Type(string type) => new { type };
         var fields = new Dictionary<string, object>
         {
-            ["floorIndex"] = Type("integer"),
-            ["fromRoomId"] = Type("string"),
-            ["toRoomId"] = Type("string"),
-            ["xMin"] = Type("number"),
-            ["yMin"] = Type("number"),
-            ["xMax"] = Type("number"),
-            ["yMax"] = Type("number"),
+            ["candidateId"] = Type("integer"),
             ["reason"] = Type("string")
         };
         var payload = new
@@ -96,7 +91,7 @@ internal static class AiLayoutModelClient
                 format = new
                 {
                     type = "json_schema",
-                    name = "room_area_transfer",
+                    name = "validated_layout_candidate",
                     strict = true,
                     schema = new
                     {
