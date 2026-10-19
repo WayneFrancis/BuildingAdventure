@@ -4,6 +4,41 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.54 — Visible AI resize previews (development)
+
+Fixes AI improvement previews that appeared to exist only as text in
+the completion message box. The floor-plan preview renderer previously
+highlighted **only new room IDs**. Hallway-corner recovery, shared-wall
+resizing and L-shaped edits instead modify **existing room outlines while
+preserving their IDs**, so their proposals were not drawn.
+
+The editor now compares each existing room's polygon with the proposed
+room of the same ID, and overlays changes directly on the floor plan:
+
+- **Orange dashed walls:** the working, original room outlines.
+- **Green dashed walls:** the proposed room outlines.
+- **Translucent green fill:** the area a room would gain.
+- **Per-room labels:** the amount gained or lost, in square metres.
+- **Legend:** the graphical preview is not committed until **Accept All**.
+
+A successful model or **Preview validated change (no AI)** request no
+longer opens a modal success message box that obscures the graphical
+preview. Instead, its result appears in the AI status text and editor
+hint. Failures still show useful error messages. **Accept All**,
+**Discard preview** and undo are unchanged.
+
+The renderer uses `RoomPreviewDiff`, a core geometry helper that
+detects changes even when room IDs stay the same and does not
+misidentify an outline whose vertices were merely rotated or reversed.
+Regression tests cover original-ID room resizing, room-area deltas,
+polygon winding/starting point invariance, and L-shaped room previews.
+
+**Test:** open `example13.json` or the L-shaped-room sample,
+click **Preview validated change (no AI)**, then close any dialogs and
+inspect the **main drawing surface**. You should immediately see the
+green/orange outlines and area labels before accepting. The working
+rooms must retain their original geometry until **Accept All**.
+
 ## v0.53 — AI adjustments across partial walls and L-shaped rooms (development)
 
 The previous resize planner could move only a complete shared wall
