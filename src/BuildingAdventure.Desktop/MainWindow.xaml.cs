@@ -876,10 +876,10 @@ public partial class MainWindow : Window
     {
         if (!BuildingStoreys.Validate(source, out reason)) return false;
         var floor = BuildingStoreys.GetFloor(source, floorIndex);
-        if (!floor.Rooms.Any(r => r.Type is "Hallway" or "Corridor") ||
-            !floor.Rooms.Any(r => r.Type is not ("Hallway" or "Corridor")))
+        if (floor.Rooms.Count < 2)
         {
-            reason = "The current floor needs a hallway and at least one other room.";
+            reason = "The current floor needs at least two rooms for a " +
+                "hallway improvement or a shared-wall resize.";
             return false;
         }
         reason = "";
@@ -887,10 +887,10 @@ public partial class MainWindow : Window
     }
 
     private static string NoAiLayoutCandidatesMessage() =>
-        "No suitable redundant hallway corner was found on this floor. " +
-        "The AI prototype can only transfer a validated rectangular hallway " +
-        "patch into an adjacent room. The corner might already have been fixed, " +
-        "or its doors and walls make a transfer unsafe.";
+        "No safe hallway corner or simple shared-wall resize was found " +
+        "on this floor. The AI improvement prototype only handles hallway " +
+        "corner transfers or two rectangular rooms sharing a full wall. " +
+        "Existing doors, stairs, and geometry may prevent an edit.";
 
     private async void AiPreviewValidated_Click(object sender, RoutedEventArgs e)
     {
@@ -906,11 +906,11 @@ public partial class MainWindow : Window
             return;
         }
         string snapshot = CurrentJson();
-        SetAiBusy(true, "Finding validated hallway improvements locally");
+        SetAiBusy(true, "Finding validated floor improvements locally");
         try
         {
             var candidates = await Task.Run(() =>
-                AiLayoutCandidatePlanner.FindCandidates(source, floorIndex));
+                AiLayoutRecommendationPlanner.FindCandidates(source, floorIndex));
             if (CurrentJson() != snapshot)
             {
                 AiStatusText.Text = "The layout changed during validation. Try again.";
@@ -927,9 +927,9 @@ public partial class MainWindow : Window
             string choice = System.Text.Json.JsonSerializer.Serialize(new
             {
                 candidateId = candidate.Id,
-                reason = "First geometrically valid hallway-corner change (no AI)"
+                reason = "First geometrically valid room adjustment (no AI)"
             });
-            if (!AiLayoutCandidatePlanner.TryApplySelection(
+            if (!AiLayoutRecommendationPlanner.TryApplySelection(
                 source, floorIndex, choice, candidates,
                 out var suggestion, out var reason))
             {
@@ -999,7 +999,7 @@ public partial class MainWindow : Window
         try
         {
             var candidates = await Task.Run(() =>
-                AiLayoutCandidatePlanner.FindCandidates(source, floorIndex),
+                AiLayoutRecommendationPlanner.FindCandidates(source, floorIndex),
                 cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             if (CurrentJson() != fingerprint)
@@ -1009,7 +1009,7 @@ public partial class MainWindow : Window
                 result = NoAiLayoutCandidatesMessage();
             else
             {
-                var prompt = AiLayoutCandidatePlanner.BuildSelectionPrompt(
+                var prompt = AiLayoutRecommendationPlanner.BuildSelectionPrompt(
                     source, floorIndex, goal, candidates);
                 _aiProgressStage = $"Waiting for {provider} ({model}) to choose among " +
                     $"{candidates.Count} validated changes";
@@ -1021,7 +1021,7 @@ public partial class MainWindow : Window
                 if (CurrentJson() != fingerprint)
                     result = "The building changed while the model was working; " +
                         "the outdated proposal was discarded.";
-                else if (!AiLayoutCandidatePlanner.TryApplySelection(
+                else if (!AiLayoutRecommendationPlanner.TryApplySelection(
                     source, floorIndex, response, candidates,
                     out var suggestion, out var reason))
                     result = "The model responded, but its choice was rejected: " +
