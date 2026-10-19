@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
@@ -31,10 +32,25 @@ public partial class MainWindow : Window
     private readonly List<SavedSuggestionEntry> _suggestionMemory = SuggestionMemory.Load();
     private bool _loadingDoorVisibility;
     private bool _loadingStairPicker;
+    private CancellationTokenSource? _aiRequestCancellation;
+    private readonly Stopwatch _aiElapsed = new();
+    private readonly DispatcherTimer _aiProgressTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(1)
+    };
+    private string _aiProgressStage = "";
+
 
     public MainWindow()
     {
         InitializeComponent();
+        _aiProgressTimer.Tick += (_, _) =>
+        {
+            if (_aiRequestCancellation is not null)
+                AiStatusText.Text = _aiProgressStage +
+                    $" ({_aiElapsed.Elapsed.TotalSeconds:0}s elapsed; " +
+                    "Cancel AI request is available).";
+        };
         RestoreSavedLayout();
         StateChanged += (_, _) =>
         {
@@ -810,6 +826,133 @@ public partial class MainWindow : Window
             ? "gpt-4.1-mini" : "qwen3:8b";
     }
 
+    private void SetAiBusy(bool busy, string stage = "")
+    {
+        AiImproveButton.IsEnabled = !busy;
+        AiPreviewValidatedButton.IsEnabled = !busy;
+        AiCancelButton.IsEnabled = busy;
+        AiCancelButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        AiProgressBar.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        if (busy)
+        {
+            _aiProgressStage = stage;
+            _aiElapsed.Restart();
+            _aiProgressTimer.Start();
+            AiStatusText.Text = stage + " (0s elapsed; Cancel is available).";
+        }
+        else
+        {
+            _aiProgressTimer.Stop();
+            _aiElapsed.Stop();
+        }
+    }
+
+    private void AiCancel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_aiRequestCancellation is null) return;
+        AiStatusText.Text = "Cancelling AI request…";
+        AiCancelButton.IsEnabled = false;
+        _aiRequestCancellation.Cancel();
+    }
+
+    private void ShowAiImprovementPreview(BuildingSuggestion suggestion,
+        string origin)
+    {
+        BeginSuggestion(suggestion, whole: false);
+        string summary = origin + " selected a valid change. " +
+            suggestion.Description.Replace("AI IMPROVEMENT DRAFT — ", "");
+        AiStatusText.Text = summary +
+            " This is only a preview. Click Accept All in GENERATOR / SUGGESTIONS " +
+            "to apply it or Discard preview to leave your design unchanged.";
+        _hint = "AI PREVIEW READY: " + summary +
+            " Use Accept All to apply the change (Ctrl+Z undoes it).";
+        Refresh();
+        MessageBox.Show(this, AiStatusText.Text, "Layout improvement preview ready",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private static bool IsAiLayoutEligible(BuildingDocument source,
+        int floorIndex, out string reason)
+    {
+        if (!BuildingStoreys.Validate(source, out reason)) return false;
+        var floor = BuildingStoreys.GetFloor(source, floorIndex);
+        if (!floor.Rooms.Any(r => r.Type is "Hallway" or "Corridor") ||
+            !floor.Rooms.Any(r => r.Type is not ("Hallway" or "Corridor")))
+        {
+            reason = "The current floor needs a hallway and at least one other room.";
+            return false;
+        }
+        reason = "";
+        return true;
+    }
+
+    private static string NoAiLayoutCandidatesMessage() =>
+        "No suitable redundant hallway corner was found on this floor. " +
+        "The AI prototype can only transfer a validated rectangular hallway " +
+        "patch into an adjacent room. The corner might already have been fixed, " +
+        "or its doors and walls make a transfer unsafe.";
+
+    private async void AiPreviewValidated_Click(object sender, RoutedEventArgs e)
+    {
+        if (AiPreviewValidatedButton is null || !AiPreviewValidatedButton.IsEnabled)
+            return;
+        var source = CurrentDocument();
+        int floorIndex = _activeFloorIndex;
+        if (!IsAiLayoutEligible(source, floorIndex, out var invalidReason))
+        {
+            AiStatusText.Text = invalidReason;
+            MessageBox.Show(this, invalidReason, "Layout preview",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        string snapshot = CurrentJson();
+        SetAiBusy(true, "Finding validated hallway improvements locally");
+        try
+        {
+            var candidates = await Task.Run(() =>
+                AiLayoutCandidatePlanner.FindCandidates(source, floorIndex));
+            if (CurrentJson() != snapshot)
+            {
+                AiStatusText.Text = "The layout changed during validation. Try again.";
+                return;
+            }
+            if (candidates.Count == 0)
+            {
+                AiStatusText.Text = NoAiLayoutCandidatesMessage();
+                MessageBox.Show(this, AiStatusText.Text, "No safe improvement",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            var candidate = candidates[0];
+            string choice = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                candidateId = candidate.Id,
+                reason = "First geometrically valid hallway-corner change (no AI)"
+            });
+            if (!AiLayoutCandidatePlanner.TryApplySelection(
+                source, floorIndex, choice, candidates,
+                out var suggestion, out var reason))
+            {
+                AiStatusText.Text = "The local preview was rejected: " + reason;
+                MessageBox.Show(this, AiStatusText.Text, "Layout preview",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            ShowAiImprovementPreview(suggestion, "Local geometry validator");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or
+            InvalidOperationException or ArgumentException)
+        {
+            AiStatusText.Text = "Local layout preview failed: " + ex.Message;
+            MessageBox.Show(this, AiStatusText.Text, "Layout preview",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            SetAiBusy(false);
+        }
+    }
+
     private async void AiImprove_Click(object sender, RoutedEventArgs e)
     {
         if (AiImproveButton is null || !AiImproveButton.IsEnabled) return;
@@ -822,26 +965,17 @@ public partial class MainWindow : Window
         }
         catch (InvalidDataException ex)
         {
-            MessageBox.Show(this, "Fix the current building first: " + ex.Message,
-                "AI layout improvement", MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-        if (!BuildingStoreys.Validate(source, out var problem))
-        {
-            MessageBox.Show(this, problem, "Invalid building",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            AiStatusText.Text = "Fix the building first: " + ex.Message;
+            MessageBox.Show(this, AiStatusText.Text, "AI layout improvement",
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         int floorIndex = _activeFloorIndex;
-        var floor = BuildingStoreys.GetFloor(source, floorIndex);
-        if (!floor.Rooms.Any(r => r.Type is "Hallway" or "Corridor") ||
-            !floor.Rooms.Any(r => r.Type is not ("Hallway" or "Corridor")))
+        if (!IsAiLayoutEligible(source, floorIndex, out var problem))
         {
-            MessageBox.Show(this,
-                "The current floor needs a hallway and at least one other room.",
-                "AI layout improvement", MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            AiStatusText.Text = problem;
+            MessageBox.Show(this, problem, "AI layout improvement",
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         string goal = AiGoalBox.Text.Trim();
@@ -849,80 +983,90 @@ public partial class MainWindow : Window
             goal = "Recover wasted hallway area for an adjacent room.";
         if (goal.Length > 1000)
         {
-            MessageBox.Show(this, "Please shorten the goal to 1000 characters.",
-                "AI layout improvement", MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        // Geometry-first: only ask the model to select from actual,
-        // validated edits. It must never propose coordinates or UUIDs.
-        var candidates = AiLayoutCandidatePlanner.FindCandidates(source, floorIndex);
-        if (candidates.Count == 0)
-        {
-            _generatorStatus = "No safe redundant hallway corner was found on " +
-                "this floor. The AI prototype can only enlarge an adjacent " +
-                "room with a validated rectangular hallway patch. " +
-                "If this corner was already fixed, there is nothing to reclaim.";
-            _hint = _generatorStatus;
-            Refresh();
-            MessageBox.Show(this, _generatorStatus, "AI layout improvement",
+            AiStatusText.Text = "Please shorten the goal to 1000 characters.";
+            MessageBox.Show(this, AiStatusText.Text, "AI layout improvement",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+
         string provider = AiProviderCombo.SelectedIndex == 1 ? "OpenAI" : "Ollama";
         string model = AiModelBox.Text.Trim();
-        var prompt = AiLayoutCandidatePlanner.BuildSelectionPrompt(
-            source, floorIndex, goal, candidates);
-        AiImproveButton.IsEnabled = false;
-        _generatorStatus = $"Asking {provider} to choose among " +
-            $"{candidates.Count} validated room improvements…";
-        _hint = _generatorStatus;
-        Refresh();
+        using var cancellation = new CancellationTokenSource();
+        _aiRequestCancellation = cancellation;
+        SetAiBusy(true, "Checking candidate geometry locally");
+        BuildingSuggestion? ready = null;
+        string result = "";
         try
         {
-            string response = await AiLayoutModelClient.RequestAsync(
-                provider, model, prompt);
+            var candidates = await Task.Run(() =>
+                AiLayoutCandidatePlanner.FindCandidates(source, floorIndex),
+                cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             if (CurrentJson() != fingerprint)
-            {
-                _generatorStatus = "The building changed while the AI was responding. " +
-                    "The old proposal was discarded; request another improvement.";
-            }
-            else if (!AiLayoutCandidatePlanner.TryApplySelection(
-                         source, floorIndex, response, candidates,
-                         out var suggestion, out var reason))
-            {
-                _generatorStatus = "AI proposal rejected: " + reason;
-            }
-            else if (BuildingGenerator.SameRoomLayout(
-                         source, suggestion.Building, [floorIndex]))
-            {
-                _generatorStatus = "The AI proposal did not change the layout.";
-            }
+                result = "The building changed during the request; the proposal " +
+                    "was discarded. Retry from the current version.";
+            else if (candidates.Count == 0)
+                result = NoAiLayoutCandidatesMessage();
             else
             {
-                BeginSuggestion(suggestion, whole: false);
-                _hint = "AI improvement is a PREVIEW. Inspect the current floor, " +
-                    "then choose Accept All or Discard preview.";
-                Refresh();
-                return;
+                var prompt = AiLayoutCandidatePlanner.BuildSelectionPrompt(
+                    source, floorIndex, goal, candidates);
+                _aiProgressStage = $"Waiting for {provider} ({model}) to choose among " +
+                    $"{candidates.Count} validated changes";
+                AiStatusText.Text = _aiProgressStage +
+                    $" ({_aiElapsed.Elapsed.TotalSeconds:0}s elapsed).";
+                string response = await AiLayoutModelClient.RequestAsync(
+                    provider, model, prompt, cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (CurrentJson() != fingerprint)
+                    result = "The building changed while the model was working; " +
+                        "the outdated proposal was discarded.";
+                else if (!AiLayoutCandidatePlanner.TryApplySelection(
+                    source, floorIndex, response, candidates,
+                    out var suggestion, out var reason))
+                    result = "The model responded, but its choice was rejected: " +
+                        reason + " You can test the geometry separately using " +
+                        "Preview validated change (no AI).";
+                else if (BuildingGenerator.SameRoomLayout(
+                    source, suggestion.Building, [floorIndex]))
+                    result = "The model selected an unchanged layout. " +
+                        "Preview validated change (no AI) is available.";
+                else
+                    ready = suggestion;
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or
-            TaskCanceledException or InvalidOperationException or
-            JsonException or ArgumentException)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            _generatorStatus = "AI request failed: " + ex.Message;
+            result = "AI request cancelled. The building was not changed.";
+        }
+        catch (TaskCanceledException)
+        {
+            result = "The AI request timed out (2-minute limit). Try again, " +
+                "use a faster local model, or choose Preview validated change (no AI).";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or
+            InvalidOperationException or JsonException or ArgumentException
+            or InvalidDataException)
+        {
+            result = "AI request failed: " + ex.Message;
         }
         finally
         {
-            AiImproveButton.IsEnabled = true;
+            _aiRequestCancellation = null;
+            SetAiBusy(false);
         }
-        _hint = _generatorStatus;
+        if (ready is not null)
+        {
+            ShowAiImprovementPreview(ready, provider + " (" + model + ")");
+            return;
+        }
+        AiStatusText.Text = result;
+        _generatorStatus = result;
+        _hint = result;
         Refresh();
-        MessageBox.Show(this, _generatorStatus,
-            "AI layout improvement", MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        if (!cancellation.IsCancellationRequested)
+            MessageBox.Show(this, result, "AI layout improvement",
+                MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void NextSuggestedFloor_Click(object sender, RoutedEventArgs e)
