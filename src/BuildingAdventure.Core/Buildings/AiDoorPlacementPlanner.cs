@@ -29,6 +29,28 @@ public static class AiDoorPlacementPlanner
         var floor = BuildingStoreys.GetFloor(source, floorIndex);
         var rooms = floor.Rooms.ToArray();
 
+        // A request naming TWO rooms must match both actual rooms. Do not
+        // silently connect one known room to a different neighbour because
+        // the other name was misspelled or is not present on this floor.
+        var pair = Regex.Match(goal,
+            @"\bbetween\s+(?:the\s+)?(?<from>.+?)\s+and\s+(?:the\s+)?(?<to>.+?)(?:[.!?;]|$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!pair.Success)
+            pair = Regex.Match(goal,
+                @"\bconnect\s+(?:the\s+)?(?<from>.+?)\s+to\s+(?:the\s+)?(?<to>.+?)(?:[.!?;]|$)",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (pair.Success)
+        {
+            var from = pair.Groups["from"].Value.Trim();
+            var to = pair.Groups["to"].Value.Trim();
+            if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase) ||
+                !rooms.Any(r => string.Equals(r.Name, from,
+                    StringComparison.OrdinalIgnoreCase)) ||
+                !rooms.Any(r => string.Equals(r.Name, to,
+                    StringComparison.OrdinalIgnoreCase)))
+                return [];
+        }
+
         // Explicitly named rooms are hard constraints. Never place a door
         // between some other pair because the requested pair has no shared wall.
         var named = rooms.Where(r => Regex.IsMatch(goal,
