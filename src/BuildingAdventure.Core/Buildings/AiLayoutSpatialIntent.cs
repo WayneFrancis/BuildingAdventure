@@ -89,7 +89,7 @@ public static class AiLayoutSpatialIntent
         // "Take ALL the space from the band" means favour the largest
         // safe, matching patch, not the former smallest arbitrary nudge.
         bool entire = Regex.IsMatch(goal,
-            @"\b(?:all\s+(?:of\s+)?(?:the\s+)?(?:space|band|strip|area)|entire\s+(?:thin\s+)?(?:band|strip|area|space)|whole\s+(?:band|strip|area|space))\b",
+            @"\b(?:all\s+(?:of\s+)?(?:the\s+)?(?:(?:thin|top|upper|lower|bottom|left|right)\s+){0,3}(?:space|band|strip|area)|entire\s+(?:the\s+)?(?:(?:thin|top|upper|lower|bottom)\s+){0,2}(?:band|strip|area|space)|whole\s+(?:the\s+)?(?:(?:thin|top|upper|lower|bottom)\s+){0,2}(?:band|strip|area|space))\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (entire && matched.Count > 0)
         {
