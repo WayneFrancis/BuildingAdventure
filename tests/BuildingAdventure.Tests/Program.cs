@@ -7411,6 +7411,15 @@ Check("Balanced L-house generates its own stairs on mirrored and rotated footpri
             $"Rotation {quarterTurn}, mirror {mirror}: {reason}");
         Assert(BuildingStoreys.Validate(house,out reason),reason);
         Assert(house.Staircases.Count==1);
+        // In every transformed orientation the original canonical y=0
+        // boundary must touch the narrow edge of the generated stair.
+        var flight=house.Staircases.Single();
+        Assert(BuildingStoreys.StairFootprint(flight).Any(p=>
+            house.Perimeter.SelectMany((a,i)=>new[]{
+                PolygonGeometry.ClosestPointOnSegment(p,a,
+                    house.Perimeter[(i+1)%house.Perimeter.Count])})
+                .Any(q=>q.DistanceTo(p)<1e-6)),
+            "New stair needs to be placed against the outer wall.");
         Assert(house.Rooms.Count(r=>r.Type=="Kitchen")==1);
         Assert(house.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
         Assert(Math.Abs(RoomLayoutPlanner.UnassignedArea(
@@ -7583,7 +7592,10 @@ Check("example12 side-landing floorplan is accessible and not mirrored upstairs"
             "Side-landing generation on example12 seed "+seed+": "+reason);
         Assert(BuildingStoreys.Validate(house,out reason),reason);
         Assert(house.Staircases.Single().Id==flight.Id &&
-            house.Staircases.Single().Centre.DistanceTo(flight.Centre)<1e-7);
+            house.Staircases.Single().Centre.DistanceTo(new Point2(2.8,0.45))<1e-7,
+            "Old auto-generated stairs should move flush against the exterior wall.");
+        Assert(flight.Centre.DistanceTo(new Point2(2.8,1.1))<1e-7,
+            "Regeneration must not alter the source staircase.");
         var lower=BuildingStoreys.GetFloor(house,0);
         var upper=BuildingStoreys.GetFloor(house,1);
         Assert(lower.Rooms.Count(r=>r.Type=="Hallway")==1);
@@ -7604,11 +7616,30 @@ Check("example12 side-landing floorplan is accessible and not mirrored upstairs"
         Assert(!lower.Rooms.Where(r=>r.Type!="Hallway")
             .Any(r=>upper.Rooms.Any(u=>r.Outline.SequenceEqual(u.Outline))),
             "Do not mirror ground-floor room boundaries upstairs.");
-        var stairReservations=new[]{BuildingStoreys.StairFootprint(flight),
-            BuildingStoreys.StairOpeningFootprint(flight)}
-            .Concat(BuildingStoreys.StairLandings(flight)).ToArray();
+        var newStair=house.Staircases.Single();
+        var stairReservations=new[]{BuildingStoreys.StairFootprint(newStair),
+            BuildingStoreys.StairOpeningFootprint(newStair)}
+            .Concat(BuildingStoreys.StairLandings(newStair)).ToArray();
         var living=lower.Rooms.Single(r=>r.Type=="Living room");
         var sitting=upper.Rooms.Single(r=>r.Type=="Sitting room");
+        Assert(Math.Abs(BuildingStoreys.StairFootprint(newStair)
+            .Min(p=>p.Y))<1e-7,
+            "The long staircase edge should abut the north exterior wall.");
+        var kitchen=lower.Rooms.Single(r=>r.Type=="Kitchen");
+        var pantryRoom=lower.Rooms.Single(r=>r.Type=="Pantry");
+        var dining=lower.Rooms.Single(r=>r.Type=="Dining room");
+        Assert(pantryRoom.Outline.Max(p=>p.Y)<=
+            kitchen.Outline.Min(p=>p.Y)+1e-7,
+            "Pantry must be on the far side of kitchen, not between kitchen and dining.");
+        Assert(Math.Abs(kitchen.Outline.Max(p=>p.Y)-6)<1e-7,
+            "Kitchen must share the full serving wall with the dining room.");
+        bool OnWall(Point2 p,IReadOnlyList<Point2> outline)=>
+            Enumerable.Range(0,outline.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(p,
+                    outline[i],outline[(i+1)%outline.Count]).DistanceTo(p)<1e-5);
+        Assert(lower.Doors.Any(d=>OnWall(d.Centre,kitchen.Outline) &&
+            OnWall(d.Centre,dining.Outline)),
+            "Require a direct kitchen-to-dining doorway.");
         Assert(stairReservations.All(p=>
             FloorGeometry.IsWithinPolygon(p,living.Outline) &&
             FloorGeometry.IsWithinPolygon(p,sitting.Outline)),
@@ -7691,8 +7722,13 @@ Check("example12 side-landing floorplan is accessible and not mirrored upstairs"
         suggestion.Building.Chimneys.Single().HearthRoomIds.SequenceEqual(
             new[]{suggestion.Building.Rooms.Single(r=>r.Type=="Kitchen").Id}),
         "Retain example12 kitchen chimney link.");
-    Assert(suggestion.Building.Staircases.Single().Id==flight.Id,
-        "Do not silently move user-approved existing staircases.");
+    Assert(suggestion.Building.Staircases.Single().Id==flight.Id &&
+        suggestion.Building.Staircases.Single().Centre.DistanceTo(
+            new Point2(2.8,0.45))<1e-7,
+        "The recognisable previously generated stair may be snapped to the wall.");
+    Assert(existing.Staircases.Single().Centre.DistanceTo(
+        new Point2(2.8,1.1))<1e-7,
+        "Regeneration must not move the original stair before acceptance.");
     Assert(existing.Rooms.Single(r=>r.Type=="Hallway").Name=="Stair passage",
         "Regeneration should leave the accepted source untouched.");
 });
@@ -7737,6 +7773,33 @@ Check("Side-landing house rotates and mirrors with independent floor partitions"
         Assert(!house.Rooms.Single(r=>r.Type=="Hallway").Outline.SequenceEqual(
             house.UpperFloors[0].Rooms.Single(r=>r.Type=="Hallway").Outline));
     }
+});
+
+
+Check("Side-landing preserves a genuinely custom staircase instead of snapping it", () =>
+{
+    var shape=new List<Point2>
+    {
+        new(0,0),new(10.5,0),new(10.5,6),
+        new(12.5,6),new(12.5,10),new(0,10)
+    };
+    var customFlight=new StaircaseDefinition
+    {
+        LowerFloorIndex=0,Centre=new(2.8,0.8),
+        Length=2.8,Width=0.9,LandingLength=1,RotationDegrees=270
+    };
+    var blank=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=shape.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=shape.ToList()}],
+        Staircases=[customFlight.Copy()]
+    };
+    Assert(BuildingStoreys.Validate(blank,out var reason),reason);
+    Assert(SideLandingRpgHousePlanner.TryGenerate(blank,9,
+        out var planned,out reason),reason);
+    Assert(planned.Staircases.Single().Id==customFlight.Id &&
+        planned.Staircases.Single().Centre.DistanceTo(customFlight.Centre)<1e-7,
+        "Do not auto-move custom flights that were not at the old 1.1m default.");
 });
 
 Console.WriteLine($"{passed} passed; {failed} failed.");
