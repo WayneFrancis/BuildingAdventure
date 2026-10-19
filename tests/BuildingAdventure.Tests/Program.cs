@@ -8014,5 +8014,114 @@ Check("AI candidate shortlist avoids invented wall geometry and IDs", () =>
         "The validator must not shortlist a patch that destroys an existing door.");
 });
 
+
+Check("AI shared-wall resize offers useful validated room changes without Ollama", () =>
+{
+    List<Point2> R(double x0,double y0,double x1,double y1)=>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var study=new RoomDefinition
+    {
+        Name="Study",Type="Study",Outline=R(0,0,4,5)
+    };
+    var bedroom=new RoomDefinition
+    {
+        Name="Bedroom",Type="Bedroom",Outline=R(4,0,10,5)
+    };
+    var outsideDoor=new DoorDefinition
+    {
+        Centre=new Point2(0,2.5),Width=0.9
+    };
+    var original=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=R(0,0,10,5),
+        Rooms=[study,bedroom],Doors=[outsideDoor]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    Assert(AiLayoutCandidatePlanner.FindCandidates(original,0).Count==0,
+        "Old corner-only planner cannot improve a building with no hallways.");
+    var changes=AiRoomResizePlanner.FindCandidates(original,0);
+    Assert(changes.Count>=2,
+        "New planner should find both directions for a 5m shared wall.");
+    var studyGrowth=changes.FirstOrDefault(c=>
+        c.GainingRoom=="Study" && c.LosingRoom=="Bedroom");
+    Assert(studyGrowth is not null,"Study should gain space from the larger bedroom.");
+    Assert(studyGrowth!.AreaSquareMetres>=1.5 &&
+        studyGrowth.GainingAreaAfter>studyGrowth.GainingAreaBefore);
+    var proposed=studyGrowth.Suggestion.Building;
+    Assert(BuildingStoreys.Validate(proposed,out reason),reason);
+    Assert(proposed.Rooms.Select(r=>r.Id)
+        .OrderBy(id=>id).SequenceEqual(original.Rooms.Select(r=>r.Id).OrderBy(id=>id)));
+    Assert(proposed.Doors.Single().Id==outsideDoor.Id &&
+        proposed.Doors.Single().Centre.DistanceTo(outsideDoor.Centre)<1e-7,
+        "Do not change existing openings when moving this internal partition.");
+    Equal(PolygonGeometry.Area(proposed.Rooms.Single(r=>r.Id==study.Id).Outline)+
+        PolygonGeometry.Area(proposed.Rooms.Single(r=>r.Id==bedroom.Id).Outline),50);
+    Equal(PolygonGeometry.Area(study.Outline),20); // source unchanged
+    var options=AiLayoutRecommendationPlanner.FindOptions(original,0);
+    Assert(options.Count>0 && options.All(o=>o.Kind=="Resize adjacent rooms"),
+        "No hallway needed: the combined planner exposes wall shifts.");
+    string prompt=AiLayoutRecommendationPlanner.BuildSelectionPrompt(original,0,
+        "Enlarge the study by reducing the oversized bedroom.",options);
+    Assert(prompt.Contains("Study") && prompt.Contains("Bedroom") &&
+        prompt.Contains("shared internal wall") &&
+        prompt.Contains("candidateId") &&
+        !prompt.Contains(study.Id.ToString()),
+        "The LLM must choose meaningful numbered changes, not room IDs.");
+    var correct=options.First(o=>o.Summary.StartsWith("Enlarge Study"));
+    var answer=System.Text.Json.JsonSerializer.Serialize(new
+    {
+        candidateId=correct.Id,reason="Makes the smaller study more usable"
+    });
+    Assert(AiLayoutRecommendationPlanner.TryApplySelection(
+        original,0,answer,options,out var choice,out reason),reason);
+    Assert(choice.Description.StartsWith("AI IMPROVEMENT DRAFT") &&
+        choice.Description.Contains("Resize adjacent rooms") &&
+        choice.Building.Rooms.Single(r=>r.Id==study.Id).Outline
+            .Max(p=>p.X)>4);
+    Assert(!AiLayoutRecommendationPlanner.TryApplySelection(
+        original,0,"{\"candidateId\":9999,\"reason\":\"Fake\"}",
+        options,out _,out reason) && reason.Contains("unknown candidate"),
+        "Invalid model IDs must never execute arbitrary geometry.");
+    Assert(!AiLayoutRecommendationPlanner.TryApplySelection(
+        original,0,"not json",options,out _,out _));
+});
+
+Check("AI room resizing preserves door-bearing shared walls and floor validity", () =>
+{
+    List<Point2> R(double x0,double y0,double x1,double y1)=>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var first=new RoomDefinition
+    {
+        Name="Kitchen",Type="Kitchen",Outline=R(0,0,5,4)
+    };
+    var second=new RoomDefinition
+    {
+        Name="Dining room",Type="Dining room",Outline=R(0,4,5,10)
+    };
+    var original=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=R(0,0,5,10),
+        Rooms=[first,second]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    var options=AiRoomResizePlanner.FindCandidates(original,0);
+    Assert(options.Count>0 && options.Any(o=>o.GainingRoom=="Kitchen"),
+        "Horizontal full-wall adjacency must support the same validated shifts.");
+    Assert(options.All(o=>BuildingStoreys.Validate(o.Suggestion.Building,out _)));
+    var blocked=BuildingStoreys.Copy(original);
+    blocked.Doors.Add(new DoorDefinition
+    {
+        Centre=new Point2(2.5,4),Width=0.9
+    });
+    Assert(BuildingStoreys.Validate(blocked,out reason),reason);
+    Assert(AiRoomResizePlanner.FindCandidates(blocked,0).Count==0,
+        "AI must not move a shared partition that contains a doorway.");
+    Assert(AiLayoutRecommendationPlanner.FindOptions(blocked,0).Count==0,
+        "No-model preview should be told no safe edit exists.");
+    Assert(PolygonGeometry.Area(original.Rooms[0].Outline)==20 &&
+        PolygonGeometry.Area(original.Rooms[1].Outline)==30,
+        "Rejected changes must leave source room areas untouched.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
