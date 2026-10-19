@@ -4,6 +4,41 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.50 — Visible AI progress, cancellation and offline preview (development)
+
+Previously the Docker/Ollama model could run for some time with no
+obvious progress in the editor. The AI request status was only written to
+the general suggestion text further down the sidebar; a successful tiny
+room edit also only appeared as a preview outline without a clear
+completion announcement.
+
+The **AI Improve Layout** controls now report status beside the button:
+
+- The nearby progress indicator runs while C# scans layout candidates and
+  while the AI provider is responding. A live elapsed-seconds message
+  names the provider, model and number of safe changes.
+- **Cancel AI request** interrupts a request without changing the building.
+  The 2-minute HTTP timeout is explicitly explained, rather than
+  leaving the user to guess whether Docker is still processing.
+- **Preview validated change (no AI)** exercises the same deterministic
+  candidate selection and preview without making any Ollama/OpenAI call.
+  Use this first to check that the room outlines and preview workflow
+  work, then compare the Ollama result.
+- A successful response shows a completion dialog identifying the chosen
+  room transfer, plus a persistent inline message that **Accept All** is
+  needed to actually apply it. Preview, discard, and undo remain unchanged.
+- Rejections and provider errors are shown beside the request controls
+  and in a clear dialog, including when there are no eligible hallway
+  corners left to reclaim.
+
+To test: load a building with an unused hallway corner (for example the
+older `example12(2).json`, **not** the already-corrected bedroom-nook
+version), select First Floor, then click **Preview validated change
+(no AI)**. Confirm that an improvement preview appears and Accept All
+works. Reopen the original, select Ollama `qwen3:8b`, and click
+**AI Improve current floor**; watch the nearby elapsed timer and result.
+There is no need to set up API keys for the local test.
+
 ## v0.49 — AI selects validated layout changes, not coordinates (development)
 
 Fixes AI Improve Layout rejecting a proposed rectangle with
