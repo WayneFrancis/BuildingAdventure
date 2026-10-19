@@ -4,6 +4,43 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.51 — AI-guided room resizing (development)
+
+Both local **Ollama `qwen3:8b`** and the no-model geometry preview
+have been confirmed working on a user's Windows desktop. The AI-assisted
+improvement list now supports a second safe architectural operation:
+
+- **Reclaim a hallway corner:** existing v0.49 behavior retained.
+- **Resize adjacent rooms:** find two axis-aligned rectangular
+  non-corridor rooms sharing a **complete straight partition** with
+  matching endpoints. Offer 0.3m, 0.6m and 0.9m shifts in both
+  directions, allowing, for example, a cramped study to borrow area from
+  an oversized bedroom.
+- **Conservative safety:** do not shift any shared wall containing a door;
+  retain all room IDs, untouched rooms, perimeter, staircases, chimneys and
+  openings. Exclude proposals producing narrow rooms (under 2.4m short side),
+  invalid geometry, changed total floor area or inconsistent unassigned area.
+  Run `BuildingStoreys.Validate` on every candidate.
+- **AI decision:** the model sees *numbered, prevalidated choices* with
+  their type, affected rooms and before/after sizes. It can choose either
+  type, but cannot invent coordinates or reshape arbitrary rooms.
+- **Preview:** the existing **Preview validated change (no AI)** option
+  also shows eligible room resizing, including on layouts that have no
+  hallway. **Accept All** and Ctrl+Z retain their prior behavior.
+
+This is a limited first step toward AI-designed room proportions—not a
+general partition editor. Partial shared walls, nonrectangular room
+resizing, partitions with doors, and entire-floor redesign are deliberately
+outside this release. Regression tests cover full-length vertical and
+horizontal partitions, changes in both directions, geometry preservation,
+model candidate selection and rejection of door-bearing partitions.
+
+**Test suggestion:** load or draw two simple rectangular rooms that share
+an entire dividing wall, with no door on that wall. Under **AI Improve
+Layout**, request "Enlarge the smaller bedroom by moving the internal wall"
+or use the local no-model preview. A complex plan with no safe move will
+show a useful explanation instead of sending an unnecessary model request.
+
 ## v0.50 — Visible AI progress, cancellation and offline preview (development)
 
 Previously the Docker/Ollama model could run for some time with no
