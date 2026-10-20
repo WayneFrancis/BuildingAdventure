@@ -36,11 +36,23 @@ public static class AiRoomOperationPlanner
         }
         else
         {
+            // This implementation creates exactly two rooms, not an arbitrary
+            // requested count that happens to contain the word "split".
+            var count = Regex.Match(goal,
+                @"\b(?:into|to)\s+(?<count>\d+|one|two|three|four)\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (count.Success && count.Groups["count"].Value.ToLowerInvariant()
+                is not ("2" or "two")) return true;
             if (named.Length != 1) return true;
             options = Split(building, floorIndex, named[0], maxResults);
         }
         return true;
     }
+
+    public static bool IsSpecificEnlargementGoal(string? goal) =>
+        !string.IsNullOrWhiteSpace(goal) && Regex.IsMatch(goal,
+            @"\b(?:increase\s+(?:the\s+)?(?:size|area)\s+of|(?:enlarge|expand|grow|widen|extend)\s+\w+|make\s+(?:the\s+)?[\w\s]+?\s+(?:larger|bigger|wider))\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>
     /// A specific enlargement has a single named receiver. Select the FIRST
