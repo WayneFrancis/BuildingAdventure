@@ -132,8 +132,8 @@ public static class AiDoorPlacementPlanner
         return options;
     }
 
-    private static bool ClearOfStairs(BuildingDocument source,
-        int floorIndex, Point2 centre)
+    internal static bool ClearOfStairs(BuildingDocument source,
+        int floorIndex, Point2 centre, double width = Width)
     {
         // Check the entire potentially affected landing/flight area,
         // not just whether the door centre falls inside a staircase.
@@ -148,7 +148,7 @@ public static class AiDoorPlacementPlanner
             {
                 if (PolygonGeometry.ClosestPointOnSegment(centre, shape[i],
                         shape[(i + 1) % shape.Count])
-                    .DistanceTo(centre) < Width / 2 + 0.1)
+                    .DistanceTo(centre) < width / 2 + 0.1)
                     return false;
             }
         }
