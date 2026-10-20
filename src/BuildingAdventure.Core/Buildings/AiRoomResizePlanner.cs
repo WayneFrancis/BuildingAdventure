@@ -19,7 +19,8 @@ public static class AiRoomResizePlanner
     private static readonly double[] Steps = [0.3, 0.6, 0.9, 1.2];
 
     public static IReadOnlyList<AiRoomResizeCandidate> FindCandidates(
-        BuildingDocument source, int floorIndex, int maxResults = 12)
+        BuildingDocument source, int floorIndex, int maxResults = 12,
+        Guid? gainingRoomId = null, bool moveSharedDoors = false)
     {
         if (!BuildingStoreys.HasFloor(source, floorIndex) || maxResults <= 0)
             return [];
@@ -59,8 +60,10 @@ public static class AiRoomResizePlanner
                 if (!OtherEdgesAxisAligned(first.Outline, a) ||
                     !OtherEdgesAxisAligned(second.Outline, b))
                     continue;
-                if (floor.Doors.Any(d => OnSegment(d.Centre, start, end)))
-                    continue; // never relocate a door on the shared partition
+                var partitionDoors = floor.Doors.Where(d =>
+                    OnSegment(d.Centre, start, end)).ToArray();
+                if (partitionDoors.Length > 0 && !moveSharedDoors)
+                    continue; // generic improvements never move existing doors
 
                 foreach (double delta in Steps)
                 foreach (int sign in new[] { -1, 1 })
@@ -79,6 +82,22 @@ public static class AiRoomResizePlanner
                         movement);
                     bRoom.Outline = MoveEndpoints(second.Outline, start, end,
                         movement);
+                    // For an explicitly requested enlargement, the door
+                    // remains in the same relative position on its shifted
+                    // partition, retaining its ID, width and visibility.
+                    if (partitionDoors.Length > 0)
+                    {
+                        foreach (var old in partitionDoors)
+                        {
+                            var relocated = level.Doors.Single(d => d.Id == old.Id);
+                            relocated.Centre = new Point2(old.Centre.X + movement.X,
+                                old.Centre.Y + movement.Y);
+                            if (!AiDoorPlacementPlanner.ClearOfStairs(
+                                    candidate, floorIndex, relocated.Centre,
+                                    relocated.Width))
+                                goto NextMove;
+                        }
+                    }
 
                     // Judge dimensions AFTER the proposed improvement.
                     // The existing 1.5m room in example13 can now gain
@@ -99,6 +118,9 @@ public static class AiRoomResizePlanner
                     if (Math.Abs(changeFirst + changeSecond) > 0.001 ||
                         Math.Abs(changeFirst) < 0.25)
                         continue;
+                    var gainId = changeFirst > 0 ? first.Id : second.Id;
+                    if (gainingRoomId.HasValue && gainId != gainingRoomId.Value)
+                        continue;
                     if (Math.Abs(RoomLayoutPlanner.UnassignedArea(floor) -
                         RoomLayoutPlanner.UnassignedArea(level)) > 0.01)
                         continue;
@@ -113,6 +135,7 @@ public static class AiRoomResizePlanner
                     options.Add(new AiRoomResizeCandidate(draft,
                         gained.Name, lost.Name, areaGained, beforeArea,
                         beforeArea + areaGained));
+                    NextMove: ;
                 }
             }
         }
