@@ -161,6 +161,15 @@ public static class AiRoomOperationPlanner
                                        Rect(x0, cut, x1, y1);
                 if (!Usable(left) || !Usable(right)) continue;
 
+                // A split line must not intersect the FULL existing doorway
+                // span, including a safety margin at the new T junction.
+                // Checking just the door centre incorrectly let both rooms
+                // claim a single doorway when the divider cut through it.
+                if (floor.Doors.Any(d => OnOutline(d.Centre, original.Outline) &&
+                    Math.Abs((vertical ? d.Centre.X : d.Centre.Y) - cut) <
+                        d.Width / 2 + 0.1))
+                    continue;
+
                 // Existing doors must remain supported by an actual wall,
                 // not end up at the new partition junction.
                 bool firstHasDoor = floor.Doors.Any(d => OnOutline(d.Centre, left));
