@@ -66,13 +66,13 @@ public static class AiRoomOperationPlanner
     private static bool Mentions(string text, string name) =>
         MatchIndex(text, name) >= 0;
 
-    private static int MatchIndex(string text, string name) =>
-        Regex.Match(text,
+    private static int MatchIndex(string text, string name)
+    {
+        var match = Regex.Match(text,
             @"(?<![\p{L}\p{N}])" + Regex.Escape(name) + @"(?![\p{L}\p{N}])",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Index is var i &&
-        Regex.IsMatch(text,
-            @"(?<![\p{L}\p{N}])" + Regex.Escape(name) + @"(?![\p{L}\p{N}])",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) ? i : -1;
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success ? match.Index : -1;
+    }
 
     private static IReadOnlyList<AiLayoutOption> Merge(
         BuildingDocument source, int floorIndex,
