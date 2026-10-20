@@ -8827,10 +8827,13 @@ Check("Specific AI split creates two accessible pantries without moving existing
         "Splitting may not delete or invalidate an exterior window.");
 });
 
-Check("Explicit Pantry enlargement relocates shared door and never enlarges Study", () =>
+Check("Pantry enlargement never moves its wall into the Kitchen doorway", () =>
 {
     List<Point2> Rect(double x0, double y0, double x1, double y1) =>
         [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    // Ground-floor coordinates and door positions from the supplied
+    // example12_bedroom3_nook(2).json. The doorway at (5.6,2.25)
+    // belongs to Living room <-> Kitchen, NOT Pantry.
     var pantry = new RoomDefinition
     {
         Name="Pantry",Type="Pantry",Outline=Rect(5.6,0,10.5,1.4)
@@ -8839,19 +8842,36 @@ Check("Explicit Pantry enlargement relocates shared door and never enlarges Stud
     {
         Name="Kitchen",Type="Kitchen",Outline=Rect(5.6,1.4,10.5,6)
     };
+    var living = new RoomDefinition
+    {
+        Name="Living room",Type="Living room",
+        Outline=[new(0,0),new(5.6,0),new(5.6,3.85),
+                 new(4.2,3.85),new(4.2,6),new(0,6)]
+    };
     var study = new RoomDefinition
     {
         Name="Study",Type="Study",Outline=Rect(0,6,4.2,10)
     };
-    var door = new DoorDefinition
+    var hall = new RoomDefinition
     {
-        Centre = new Point2(8.05,1.4), Width=0.9
+        Name="Short entry passage",Type="Hallway",
+        Outline=Rect(4.2,3.85,5.6,10)
+    };
+    var pantryKitchenDoor = new DoorDefinition
+    {
+        Centre=new Point2(8.05,1.4),Width=0.9
+    };
+    var livingKitchenDoor = new DoorDefinition
+    {
+        Centre=new Point2(5.6,2.25),Width=0.8
     };
     var building = new BuildingDocument
     {
-        Perimeter=Rect(0,0,10.5,10),
-        Rooms=[pantry,kitchen,study],
-        Doors=[door],
+        SchemaVersion=2,
+        Perimeter=[new(0,0),new(10.5,0),new(10.5,6),
+                   new(12.5,6),new(12.5,10),new(0,10)],
+        Rooms=[pantry,kitchen,living,study,hall],
+        Doors=[pantryKitchenDoor,livingKitchenDoor],
         Chimneys=[new ChimneyDefinition
         {
             Centre=new Point2(10.13,3),
@@ -8859,31 +8879,72 @@ Check("Explicit Pantry enlargement relocates shared door and never enlarges Stud
             HearthFloorIndex=0,HearthRoomIds=[kitchen.Id]
         }]
     };
-    Assert(BuildingStoreys.Validate(building,out var reason), reason);
-    string goal="increase the size of the pantry";
+    Assert(BuildingStoreys.Validate(building,out var reason),reason);
+    string goal="Increase the size of Pantry";
     Assert(AiRoomOperationPlanner.EnlargementTarget(building,0,goal)?.Id==
         pantry.Id,"The receiver must be the named Pantry.");
+
+    // Reproduce the actual bug: shift pantry/kitchen partition by 0.9m,
+    // producing a T-junction at (5.6,2.3) in the MIDDLE of the existing
+    // 0.8m wide Kitchen doorway at (5.6,2.25).
+    var obstructed = BuildingStoreys.Copy(building);
+    var obstructedFloor = BuildingStoreys.GetFloor(obstructed,0);
+    obstructedFloor.Rooms.Single(r => r.Id==pantry.Id).Outline =
+        Rect(5.6,0,10.5,2.3);
+    obstructedFloor.Rooms.Single(r => r.Id==kitchen.Id).Outline =
+        Rect(5.6,2.3,10.5,6);
+    obstructedFloor.Doors.Single(d => d.Id==pantryKitchenDoor.Id).Centre =
+        new Point2(8.05,2.3);
+    BuildingStoreys.SetFloor(obstructed,0,obstructedFloor);
+    Assert(!AiOpeningProtection.PreservesExistingDoorAccess(
+        building,obstructed,0),
+        "A partition ending inside a perpendicular doorway must be rejected, " +
+        "even if ordinary wall validity permits it.");
+
     var candidates = AiLayoutRecommendationPlanner.FindOptions(
         building,0,20,goal);
     Assert(candidates.Count>0,
-        "The current narrow Pantry must get a safe full-partition growth option.");
+        "A small 0.3m Pantry expansion is safe even though the " +
+        "larger 0.6m/0.9m/1.2m shifts would obstruct the Kitchen door.");
     Assert(candidates.All(c => AiLayoutSpatialIntent.TryGainedFootprint(
         building,0,c,out var room,out _) && room.Id==pantry.Id),
         "Every offered edit must grow Pantry, never Study or Kitchen.");
-    var chosen=candidates[0].Suggestion.Building;
-    Assert(BuildingStoreys.Validate(chosen,out reason),reason);
-    Assert(PolygonGeometry.Area(chosen.Rooms.Single(r=>r.Id==pantry.Id).Outline)>
-        PolygonGeometry.Area(pantry.Outline));
-    Assert(chosen.Doors.Any(d => d.Id==door.Id &&
-        d.Centre.Y > door.Centre.Y + 0.6),
-        "Retain original door ID while moving its centre with the shared wall.");
-    Assert(chosen.Rooms.Single(r=>r.Id==study.Id).Outline.SequenceEqual(
-        study.Outline),"The study must not change.");
-    Assert(building.Doors[0].Centre.DistanceTo(door.Centre)<1e-7);
+    foreach(var option in candidates)
+    {
+        var changed=option.Suggestion.Building;
+        Assert(BuildingStoreys.Validate(changed,out reason),reason);
+        Assert(AiOpeningProtection.PreservesExistingDoorAccess(
+            building,changed,0),
+            "AI candidate must preserve the Kitchen/Living room doorway.");
+        var afterPantry=changed.Rooms.Single(r=>r.Id==pantry.Id);
+        double bottom=afterPantry.Outline.Max(p=>p.Y);
+        Assert(bottom<=1.75,
+            "Do not end the new Pantry wall within the Kitchen doorway span.");
+        Assert(bottom>1.4,
+            "Offer a safe small increase rather than doing nothing.");
+        Assert(changed.Doors.Any(d=>d.Id==pantryKitchenDoor.Id &&
+            Math.Abs(d.Centre.Y-bottom)<1e-6),
+            "Pantry/Kitchen doorway must move with its shared partition.");
+        Assert(changed.Doors.Any(d=>d.Id==livingKitchenDoor.Id &&
+            d.Centre.DistanceTo(livingKitchenDoor.Centre)<1e-7),
+            "Kitchen/Living doorway must stay at its original position.");
+        Assert(changed.Rooms.Single(r=>r.Id==study.Id).Outline.SequenceEqual(
+            study.Outline),"The Study must not change.");
+    }
+
+    var first=candidates[0];
+    string answer=System.Text.Json.JsonSerializer.Serialize(new {
+        candidateId=first.Id,reason="Small safe Pantry enlargement"
+    });
+    Assert(AiLayoutRecommendationPlanner.TryApplySelection(
+        building,0,answer,candidates,out var selected,out reason),reason);
+    Assert(AiOpeningProtection.PreservesExistingDoorAccess(
+        building,selected.Building,0));
+    Assert(building.Doors.Single(d=>d.Id==pantryKitchenDoor.Id).Centre.Y==1.4,
+        "Preview must leave the original door untouched.");
     Assert(AiLayoutRecommendationPlanner.FindOptions(building,0,20,
-        "increase the size of the library").All(o=>
-            !o.Summary.Contains("Study")),
-        "An unknown explicit room may not result in enlarging Study.");
+        "increase the size of the library").Count==0,
+        "Unknown explicit room may not result in enlarging the Study.");
 });
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
