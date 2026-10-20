@@ -4,6 +4,48 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.58 — Named-room intent and structural AI edits (development)
+
+This release addresses wrong-room proposals from requests such as
+"Combine the study and living room into one room", "convert the pantry
+into 2 seperate pantries", and "increase the size of the pantry".
+
+- **Operation routing precedes Ollama.** "Combine", "split", "add doorway"
+  and specific room-enlargement requests are distinct edit types. An
+  unsupported split/merge returns **no matching candidate**, never an
+  unrelated resize.
+- **Combine adjacent rooms:** use the existing wall-union/partition-removal
+  engine. The larger room retains its name/identity, and any doorway on
+  the eliminated partition disappears. Unrelated openings, staircases,
+  chimneys and other floors remain intact.
+- **Split rectangular rooms into two:** preserve the existing room's
+  geometry, opening IDs and exterior. Try validated interior partitions
+  away from existing doorway spans. A separate second room gets a
+  suitable new name (e.g. Pantry 2) and, when necessary, a new valid
+  access doorway. Reject layouts where both new rooms cannot be safely
+  accessed.
+- **Grow explicitly named rooms:** the first named receiver following
+  "increase", "make larger", "enlarge" and related verbs is a hard
+  constraint. Candidate generation keeps proposals for that room
+  rather than truncating them in favour of unrelated Study edits.
+  Full shared-wall shifts may move an existing partition door along
+  with the wall, retaining its identity and width, only after whole-
+  building geometry validation and stair-clearance checks.
+- **Improved previews:** absorbed rooms are marked, newly created
+  rooms/doors remain highlighted, and relocated doors have a new
+  ghost position. Accept All, Discard Preview and undo retain their
+  normal non-destructive behaviour.
+- Regression tests cover the Study/Living room geometry, narrow Pantry
+  and original Pantry/Kitchen doorway from the supplied building, plus
+  the real kitchen fireplace obstruction. Generic improvement prompts
+  continue to use the previous best-effort planning workflow.
+
+Current limits: a structural merge needs two actual adjacent rooms;
+the room splitter currently supports **two rectangular subrooms**, not
+arbitrary room counts, irregular original shapes, or automatic multi-room
+hallway replanning. A request that cannot be safely performed is
+reported instead of silently modifying a different room.
+
 ## v0.57 — AI-assisted doorway placement (development)
 
 AI Improve Layout now supports explicit opening requests, in addition to
