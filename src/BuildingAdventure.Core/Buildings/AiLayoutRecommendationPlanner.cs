@@ -190,6 +190,14 @@ public static class AiLayoutRecommendationPlanner
             reason="Candidate failed revalidation: "+reason;
             return false;
         }
+        if (option.Kind is not ("Combine rooms" or "Split room") &&
+            !AiOpeningProtection.PreservesExistingDoorAccess(
+                source, option.Suggestion.Building, floorIndex))
+        {
+            reason = "The proposal obstructs an existing doorway or changes " +
+                "the rooms it connects.";
+            return false;
+        }
         // SameRoomLayout intentionally ignores doors and windows (it is
         // used by room regeneration). A doorway-only AI edit must not be
         // discarded simply because its room outlines remain unchanged.
