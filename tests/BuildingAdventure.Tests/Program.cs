@@ -8838,7 +8838,13 @@ Check("Explicit Pantry enlargement relocates shared door and never enlarges Stud
     {
         Perimeter=Rect(0,0,10.5,10),
         Rooms=[pantry,kitchen,study],
-        Doors=[door]
+        Doors=[door],
+        Chimneys=[new ChimneyDefinition
+        {
+            Centre=new Point2(10.13,3),
+            Width=0.7,Depth=1.4,Exterior=true,
+            HearthFloorIndex=0,HearthRoomIds=[kitchen.Id]
+        }]
     };
     Assert(BuildingStoreys.Validate(building,out var reason), reason);
     string goal="increase the size of the pantry";
