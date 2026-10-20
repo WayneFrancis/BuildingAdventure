@@ -33,6 +33,8 @@ public static class AiLayoutRecommendationPlanner
 
         var target = AiRoomOperationPlanner.EnlargementTarget(
             source, floorIndex, goal);
+        if (target is null && AiRoomOperationPlanner.IsSpecificEnlargementGoal(goal))
+            return []; // An unknown named room must never turn into Study.
         var options=new List<AiLayoutOption>();
         // Preserve hallway dead-end recovery from the existing prototype.
         foreach (var corner in AiLayoutCandidatePlanner.FindCandidates(
