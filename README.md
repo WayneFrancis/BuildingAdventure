@@ -4,6 +4,35 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.59 — Protect existing doorways when AI enlarges rooms (development)
+
+Fixes the reported **Increase the size of Pantry** bug on the supplied
+building: moving the Pantry/Kitchen shared wall to approximately y=2.3 m
+placed a new perpendicular wall junction inside the existing **0.8 m
+Kitchen/Living room doorway** at (5.6, 2.25 m). A door-centre-on-wall
+check was not sufficient to detect that interruption.
+
+- AI wall shifts and rectangular room transfers now check **existing
+  doorway access** before offering a proposal and again before accepting
+  the model's selection. Every existing door must still connect the
+  **same room IDs**; changing a Kitchen doorway into a Pantry doorway
+  is not acceptable.
+- New room-wall corners must not end within an existing door's opening
+  span, including a 0.1 m corner clearance. This prevents a T-junction
+  from cutting through a doorway even when the door's centre still lies
+  on a continuous collinear wall.
+- When the named recipient room starts narrower than the usual 2.1 m
+  target, a smaller, safe improvement is allowed as long as the room
+  gets wider and the donor still meets its width limit. In this example
+  a 0.3 m extension may be valid; 0.6, 0.9 and 1.2 m proposals near
+  the Kitchen doorway are disallowed. The validator may still reject
+  candidates due to other obstructions.
+- Regression tests reproduce the actual Pantry/Kitchen/Living room door
+  positions and fireplace and verify previews don't alter source doors.
+
+This protects AI layout editing; it does not change unrelated building
+editor behaviour or automatically move obstructing Kitchen doors.
+
 ## v0.58 — Named-room intent and structural AI edits (development)
 
 This release addresses wrong-room proposals from requests such as
