@@ -104,8 +104,12 @@ public static class AiRoomResizePlanner
                     // Judge dimensions AFTER the proposed improvement.
                     // The existing 1.5m room in example13 can now gain
                     // width instead of being excluded at the outset.
-                    if (BoundingShortSide(aRoom.Outline) < MinResultWidth ||
-                        BoundingShortSide(bRoom.Outline) < MinResultWidth)
+                    // A named room may ALREADY be narrow. Allow a modest
+                    // safe increase to improve it even if the full 2.1 m
+                    // target isn't achievable without blocking a nearby door.
+                    // The donor and all other rooms must still meet 2.1 m.
+                    if (!AcceptableWidth(first, aRoom, gainingRoomId) ||
+                        !AcceptableWidth(second, bRoom, gainingRoomId))
                         continue;
                     BuildingStoreys.SetFloor(candidate, floorIndex, level);
                     if (!BuildingStoreys.Validate(candidate, out _) ||
@@ -171,6 +175,16 @@ public static class AiRoomResizePlanner
                 return false;
         }
         return true;
+    }
+
+    private static bool AcceptableWidth(
+        RoomDefinition before, RoomDefinition after, Guid? requestedReceiver)
+    {
+        double original = BoundingShortSide(before.Outline);
+        double changed = BoundingShortSide(after.Outline);
+        return changed >= MinResultWidth ||
+            (requestedReceiver == before.Id &&
+             changed >= 1.2 && changed > original + Eps);
     }
 
     private static double BoundingShortSide(IReadOnlyList<Point2> outline) =>
