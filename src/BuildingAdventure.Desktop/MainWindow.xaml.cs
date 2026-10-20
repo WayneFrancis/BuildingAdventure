@@ -945,11 +945,20 @@ public partial class MainWindow : Window
             ? "No safe doorway matches the requested rooms. The rooms must " +
               "share a sufficiently long wall with room for an opening " +
               "clear of existing doors, windows, stairs and landings."
-            : "No safe room improvement was found on this floor. Supported edits " +
-              "include hallway corner transfers, simple shared-wall moves, " +
-              "and rectangular patches exchanged across partial or L-shaped " +
-              "orthogonal room boundaries. Existing doors, stairs, insufficient " +
-              "space and angled walls may prevent an edit.";
+            : AiRoomOperationPlanner.IsStructuralGoal(goal)
+                ? "No safe merge or split matches the named room(s). " +
+                  "Merging requires adjacent rooms with a valid combined outline; " +
+                  "splitting currently requires a rectangular room, exactly two " +
+                  "usable parts and safe access to both. No substitute " +
+                  "room-resizing operation will be offered."
+                : AiRoomOperationPlanner.IsSpecificEnlargementGoal(goal)
+                    ? "No safe enlargement was found for the named room. " +
+                      "Check the room name, shared partitions, stair or hearth " +
+                      "clearances and existing door positions; another room " +
+                      "will not be enlarged instead."
+                    : "No safe room improvement was found on this floor. " +
+                      "Supported edits include hallway corner transfers and " +
+                      "resizing along full, partial and L-shaped shared walls.";
 
     private async void AiPreviewValidated_Click(object sender, RoutedEventArgs e)
     {
@@ -1392,8 +1401,14 @@ public partial class MainWindow : Window
                     : aiImprovement
                         ? _pendingSuggestion.Description.Contains("Add doorway",
                             StringComparison.OrdinalIgnoreCase)
-                            ? "Accepting the AI improvement ADDS one doorway on the current floor. Existing room walls, stairs, doors and other floors are preserved."
-                            : "Accepting the AI improvement changes the two room boundaries on the current floor. Existing staircases, doors, other rooms and floors are preserved."
+                            ? "Accepting the AI improvement ADDS a doorway on this floor. Existing walls and openings remain."
+                            : _pendingSuggestion.Description.Contains("Split room",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? "Accepting this draft SPLITS the named room in two. An additional connecting doorway may be added for access. Existing openings remain."
+                                : _pendingSuggestion.Description.Contains("Combine rooms",
+                                    StringComparison.OrdinalIgnoreCase)
+                                    ? "Accepting this draft REMOVES the partition between the named rooms and absorbs one room into the other. Any doorway in that removed partition also disappears."
+                                    : "Accepting this draft resizes the named room. A doorway on a moved partition may move with the wall, retaining its identity; stairs and other floors remain unchanged."
                         : "The building changed since this suggestion was saved. Applying it will REPLACE the current building with the saved candidate.";
             if (MessageBox.Show(this, explanation +
                     "\n\nThe current design can be restored with Ctrl+Z. Continue?",
