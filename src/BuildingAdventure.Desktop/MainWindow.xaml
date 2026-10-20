@@ -203,7 +203,7 @@
                                        Margin="0,0,0,5"/>
                             <TextBlock TextWrapping="Wrap" Foreground="#566579"
                                        Margin="0,0,0,7"
-                                       Text="Ask Ollama or OpenAI to choose from C#-validated changes on the CURRENT floor: reclaim hallway corners, resize adjacent rooms, reshape L-shaped rooms, or add a doorway between named rooms. For example: Add a door between Kitchen and Dining room. Preview first; only Accept All changes your building."/>
+                                       Text="Ask for a change on the CURRENT floor: combine two named rooms, split one rectangular room into two, enlarge a named room, reclaim hallway corners, resize L-shaped rooms, or add a doorway. C# validates every option before Ollama chooses. Examples: Combine Study and Living room; Split Pantry into two rooms; Increase the size of Pantry. Preview first; only Accept All changes your building."/>
                             <TextBlock Text="What should improve?" Margin="0,0,0,4"/>
                             <TextBox x:Name="AiGoalBox" Margin="0,0,0,8" Padding="5"
                                      AcceptsReturn="True" TextWrapping="Wrap"
