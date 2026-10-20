@@ -12,6 +12,14 @@ public static class AiRoomOperationPlanner
 {
     private const double Eps = 0.001;
 
+    public static bool IsStructuralGoal(string? goal) =>
+        !string.IsNullOrWhiteSpace(goal) &&
+        (Regex.IsMatch(goal, @"\b(?:combine|merge|join|split|divide|subdivide)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) ||
+         Regex.IsMatch(goal,
+            @"\bconvert\b.{0,100}?\b(?:into|to)\s+(?:2|two)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
+
     public static bool TryPlan(BuildingDocument building, int floorIndex,
         string? goal, int maxResults, out IReadOnlyList<AiLayoutOption> options)
     {
