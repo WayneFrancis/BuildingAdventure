@@ -8692,5 +8692,179 @@ Check("AI door placement never substitutes an adjacent room", () =>
         "Only the requested adjacent pair may receive a doorway.");
 });
 
+Check("Specific AI merge joins Study and Living room, never resizes Study", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0), new(x1,y0), new(x1,y1), new(x0,y1)];
+    // The exact Study/Living shared boundary and L-shaped living space from
+    // example12_bedroom3_nook(2).json supplied for this regression.
+    var living = new RoomDefinition
+    {
+        Name = "Living room", Type = "Living room",
+        Outline = [new(0,0),new(5.6,0),new(5.6,3.85),new(4.2,3.85),
+                   new(4.2,6),new(0,6)]
+    };
+    var study = new RoomDefinition
+    {
+        Name = "Study", Type = "Study", Outline = Rect(0,6,4.2,10)
+    };
+    var hall = new RoomDefinition
+    {
+        Name = "Short entry passage", Type = "Hallway",
+        Outline = Rect(4.2,3.85,5.6,10)
+    };
+    var building = new BuildingDocument
+    {
+        SchemaVersion = 2, Perimeter =
+            [new(0,0),new(10.5,0),new(10.5,6),
+             new(12.5,6),new(12.5,10),new(0,10)],
+        Rooms = [living, study, hall],
+        Doors = [
+            new DoorDefinition { Centre = new Point2(4.2,8) },
+            new DoorDefinition { Centre = new Point2(4.2,4.55) }
+        ]
+    };
+    Assert(BuildingStoreys.Validate(building, out var reason), reason);
+    var options = AiLayoutRecommendationPlanner.FindOptions(
+        building, 0, 20, "Combine the study and living room into one room");
+    Assert(options.Count == 1 && options[0].Kind == "Combine rooms",
+        "Merge intent must offer only an actual merge, not a resize.");
+    var merged = options[0].Suggestion.Building;
+    Assert(BuildingStoreys.Validate(merged, out reason), reason);
+    Assert(merged.Rooms.Count == 2 && merged.Rooms.All(r => r.Id != study.Id),
+        "Study must be absorbed, and the hall remains distinct.");
+    var combined = merged.Rooms.Single(r => r.Id == living.Id);
+    Equal(PolygonGeometry.Area(combined.Outline),
+        PolygonGeometry.Area(living.Outline) + PolygonGeometry.Area(study.Outline));
+    Assert(merged.Doors.Count == building.Doors.Count &&
+        merged.Doors.Select(d => d.Id).Order().SequenceEqual(
+            building.Doors.Select(d => d.Id).Order()),
+        "Unrelated doors must not be removed.");
+    Assert(building.Rooms.Count == 3,
+        "Merge preview must not mutate the source.");
+    Assert(AiLayoutRecommendationPlanner.FindOptions(
+        building, 0, 20, "Combine the study and bedroom into one room").Count == 0,
+        "Unknown room may not be replaced by some other candidate.");
+});
+
+Check("Specific AI split creates two accessible pantries without moving existing doors", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var pantry = new RoomDefinition
+    {
+        Name = "Pantry", Type = "Pantry", Outline = Rect(5.6,0,10.5,1.4)
+    };
+    var kitchen = new RoomDefinition
+    {
+        Name = "Kitchen", Type = "Kitchen", Outline = Rect(5.6,1.4,10.5,6)
+    };
+    var study = new RoomDefinition
+    {
+        Name = "Study", Type = "Study", Outline = Rect(0,0,5.6,6)
+    };
+    var existing = new DoorDefinition
+    {
+        Centre = new Point2(8.05,1.4), Width = 0.9
+    };
+    var building = new BuildingDocument
+    {
+        Perimeter = Rect(0,0,10.5,6),
+        Rooms = [study, pantry, kitchen], Doors = [existing]
+    };
+    Assert(BuildingStoreys.Validate(building, out var reason), reason);
+    foreach (string prompt in new[]
+    {
+        "convert the pantry into 2 seperate pantries.",
+        "Split the Pantry into two smaller rooms."
+    })
+    {
+        var options = AiLayoutRecommendationPlanner.FindOptions(
+            building, 0, 20, prompt);
+        Assert(options.Count > 0 && options.All(o => o.Kind == "Split room"),
+            "Split intent must only offer valid split plans.");
+        foreach (var option in options)
+        {
+            var changed = option.Suggestion.Building;
+            Assert(BuildingStoreys.Validate(changed, out reason), reason);
+            Assert(changed.Rooms.Count == 4 &&
+                changed.Rooms.Count(r => r.Type == "Pantry") == 2,
+                "The original Pantry must become two separate rooms.");
+            Assert(changed.Doors.Count >= 2 &&
+                changed.Doors.Any(d => d.Id == existing.Id &&
+                    d.Centre.DistanceTo(existing.Centre) < 1e-7),
+                "An extra doorway should make both rooms accessible, " +
+                "while the existing one must stay put.");
+            var parts = changed.Rooms.Where(r => r.Type == "Pantry").ToArray();
+            Assert(parts.All(room => changed.Doors.Any(d =>
+                Enumerable.Range(0, room.Outline.Count).Any(i =>
+                    PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                        room.Outline[i], room.Outline[(i+1)%room.Outline.Count])
+                        .DistanceTo(d.Centre) < 0.001))),
+                "Both new pantries must have a doorway.");
+            Equal(parts.Sum(r => PolygonGeometry.Area(r.Outline)),
+                PolygonGeometry.Area(pantry.Outline));
+            Assert(changed.Rooms.Single(r => r.Id == study.Id)
+                .Outline.SequenceEqual(study.Outline),
+                "A split request must never resize an unrelated Study.");
+        }
+    }
+    Assert(AiLayoutRecommendationPlanner.FindOptions(
+        building, 0, 20, "Split the Study into 20 rooms").Count == 0,
+        "An unsupported requested number of rooms must fail closed.");
+});
+
+Check("Explicit Pantry enlargement relocates shared door and never enlarges Study", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var pantry = new RoomDefinition
+    {
+        Name="Pantry",Type="Pantry",Outline=Rect(5.6,0,10.5,1.4)
+    };
+    var kitchen = new RoomDefinition
+    {
+        Name="Kitchen",Type="Kitchen",Outline=Rect(5.6,1.4,10.5,6)
+    };
+    var study = new RoomDefinition
+    {
+        Name="Study",Type="Study",Outline=Rect(0,6,4.2,10)
+    };
+    var door = new DoorDefinition
+    {
+        Centre = new Point2(8.05,1.4), Width=0.9
+    };
+    var building = new BuildingDocument
+    {
+        Perimeter=Rect(0,0,10.5,10),
+        Rooms=[pantry,kitchen,study],
+        Doors=[door]
+    };
+    Assert(BuildingStoreys.Validate(building,out var reason), reason);
+    string goal="increase the size of the pantry";
+    Assert(AiRoomOperationPlanner.EnlargementTarget(building,0,goal)?.Id==
+        pantry.Id,"The receiver must be the named Pantry.");
+    var candidates = AiLayoutRecommendationPlanner.FindOptions(
+        building,0,20,goal);
+    Assert(candidates.Count>0,
+        "The current narrow Pantry must get a safe full-partition growth option.");
+    Assert(candidates.All(c => AiLayoutSpatialIntent.TryGainedFootprint(
+        building,0,c,out var room,out _) && room.Id==pantry.Id),
+        "Every offered edit must grow Pantry, never Study or Kitchen.");
+    var chosen=candidates[0].Suggestion.Building;
+    Assert(BuildingStoreys.Validate(chosen,out reason),reason);
+    Assert(PolygonGeometry.Area(chosen.Rooms.Single(r=>r.Id==pantry.Id).Outline)>
+        PolygonGeometry.Area(pantry.Outline));
+    Assert(chosen.Doors.Any(d => d.Id==door.Id &&
+        d.Centre.Y > door.Centre.Y + 0.6),
+        "Retain original door ID while moving its centre with the shared wall.");
+    Assert(chosen.Rooms.Single(r=>r.Id==study.Id).Outline.SequenceEqual(
+        study.Outline),"The study must not change.");
+    Assert(building.Doors[0].Centre.DistanceTo(door.Centre)<1e-7);
+    Assert(AiLayoutRecommendationPlanner.FindOptions(building,0,20,
+        "increase the size of the library").All(o=>
+            !o.Summary.Contains("Study")),
+        "An unknown explicit room may not result in enlarging Study.");
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
