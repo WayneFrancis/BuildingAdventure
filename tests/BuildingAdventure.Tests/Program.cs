@@ -8812,6 +8812,19 @@ Check("Specific AI split creates two accessible pantries without moving existing
     Assert(AiLayoutRecommendationPlanner.FindOptions(
         building, 0, 20, "Split the Study into 20 rooms").Count == 0,
         "An unsupported requested number of rooms must fail closed.");
+
+    var windowed = BuildingStoreys.Copy(building);
+    windowed.Windows.Add(new WindowDefinition
+    {
+        Centre = new Point2(7.462, 0), Width = 1.2
+    });
+    Assert(BuildingStoreys.Validate(windowed, out reason), reason);
+    var safeWithWindow = AiLayoutRecommendationPlanner.FindOptions(
+        windowed, 0, 20, "Split Pantry into two pantries.");
+    Assert(safeWithWindow.Count > 0 && safeWithWindow.All(o =>
+        BuildingStoreys.Validate(o.Suggestion.Building, out _) &&
+        o.Suggestion.Building.Windows[0].Id == windowed.Windows[0].Id),
+        "Splitting may not delete or invalidate an exterior window.");
 });
 
 Check("Explicit Pantry enlargement relocates shared door and never enlarges Study", () =>
