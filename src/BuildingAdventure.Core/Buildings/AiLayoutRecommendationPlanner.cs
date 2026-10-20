@@ -24,11 +24,20 @@ public static class AiLayoutRecommendationPlanner
         if (AiDoorPlacementPlanner.IsDoorwayGoal(goal))
             return AiDoorPlacementPlanner.FindOptions(
                 source, floorIndex, goal!, maxResults);
+        // Explicit split/merge requests are not requests to resize a wall.
+        // An impossible operation returns no candidates instead of choosing
+        // a different type of improvement.
+        if (AiRoomOperationPlanner.TryPlan(source, floorIndex, goal,
+                maxResults, out var roomOperation))
+            return roomOperation;
 
+        var target = AiRoomOperationPlanner.EnlargementTarget(
+            source, floorIndex, goal);
         var options=new List<AiLayoutOption>();
         // Preserve hallway dead-end recovery from the existing prototype.
         foreach (var corner in AiLayoutCandidatePlanner.FindCandidates(
-                     source,floorIndex,Math.Min(6,maxResults)))
+                     source,floorIndex,target is null ? Math.Min(6,maxResults)
+                         : 40))
         {
             if (!AiLayoutImprover.TryApply(source,floorIndex,
                 JsonSerializer.Serialize(corner.Transfer),out var plan,out _))
@@ -41,7 +50,8 @@ public static class AiLayoutRecommendationPlanner
         // Additional option type: a partition separating two rectangular
         // rooms can be nudged without relocating any existing doorway.
         foreach (var resize in AiRoomResizePlanner.FindCandidates(
-                     source,floorIndex,Math.Min(7,maxResults)))
+                     source,floorIndex,target is null ? Math.Min(7,maxResults)
+                         : 80, target?.Id, target is not null))
         {
             options.Add(new AiLayoutOption(options.Count+1,
                 "Resize adjacent rooms",
@@ -59,6 +69,7 @@ public static class AiLayoutRecommendationPlanner
         // alphabetical/small-area truncation hid the upper bedroom strip.
         int partialLimit = string.IsNullOrWhiteSpace(goal)
             ? Math.Min(7, maxResults)
+            : target is not null ? 120
             : Math.Min(48, Math.Max(24, maxResults * 2));
         foreach (var partial in AiPartialRoomResizePlanner.FindCandidates(
                      source, floorIndex, partialLimit))
@@ -71,10 +82,17 @@ public static class AiLayoutRecommendationPlanner
                 $"{partial.GainingAreaAfter:0.#} m²)",
                 partial.AreaSquareMetres, partial.Suggestion));
         }
+        // Hard identity check: never offer "grow Study" when the user
+        // explicitly asked to grow Pantry. This also handles wording like
+        // "increase the size of the Pantry", which the old regex missed.
+        var correctlyTargeted = target is null ? options :
+            options.Where(o => AiLayoutSpatialIntent.TryGainedFootprint(
+                source, floorIndex, o, out var receiver, out _) &&
+                receiver.Id == target.Id).ToList();
         var relevant = string.IsNullOrWhiteSpace(goal)
-            ? options
-            : AiLayoutSpatialIntent.Filter(source, floorIndex, goal, options)
-                .ToList();
+            ? correctlyTargeted
+            : AiLayoutSpatialIntent.Filter(
+                source, floorIndex, goal, correctlyTargeted).ToList();
         // Renumber AFTER narrowing the shortlist. The IDs offered to the
         // model must match the final geometrically valid selection list.
         return relevant.Take(maxResults).Select((o, i) =>
@@ -116,6 +134,8 @@ public static class AiLayoutRecommendationPlanner
             "between two rooms (including L-shaped rooms). "+
             "For a doorway request, candidates add a safe new doorway on "+
             "an existing shared partition without moving any room walls. "+
+            "For split/merge requests, the candidates change the NUMBER of "+
+            "rooms and preserve validated access, not merely room size. "+
             "A named room, relative direction (ABOVE/BELOW/LEFT/RIGHT), "+
             "and words such as ALL or ENTIRE are mandatory spatial "+
             "constraints, not optional suggestions. ABOVE means smaller "+
