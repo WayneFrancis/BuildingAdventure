@@ -1086,6 +1086,21 @@ public sealed class FloorPlanSurface : FrameworkElement
             DrawText(dc, "+ " + room.Name, at, 12, Brushes.DarkGreen);
         }
 
+        // Merging absorbs one room and removes its internal partition.
+        // Make that explicit instead of leaving the old room label looking
+        // as if it would survive the preview.
+        var proposedIds = proposed.Rooms.Select(room => room.Id).ToHashSet();
+        foreach (var removed in _rooms.Where(room => !proposedIds.Contains(room.Id)))
+        {
+            dc.DrawGeometry(
+                new SolidColorBrush(Color.FromArgb(32, 220, 125, 30)),
+                new Pen(Brushes.DarkOrange, 2.5) { DashStyle = DashStyles.Dash },
+                BuildGeometry(removed.Outline, true));
+            Point at = ToScreen(FindRoomLabelPoint(removed.Outline));
+            DrawText(dc, "MERGE / REMOVE: " + removed.Name,
+                new Point(at.X, at.Y + 28), 12, Brushes.DarkOrange);
+        }
+
         // AI resizes and shape transfers preserve existing room IDs.
         // Compare outlines to make their proposed changes visible on the
         // floor plan, without editing the working document.
@@ -1152,6 +1167,31 @@ public sealed class FloorPlanSurface : FrameworkElement
                     door.Centre.Y - uy * door.Width / 2)),
                 ToScreen(new Point2(door.Centre.X + ux * door.Width / 2,
                     door.Centre.Y + uy * door.Width / 2)));
+        }
+
+        // Door IDs survive a targeted partition shift. Unlike new doors,
+        // these need an explicit ghost at the PROPOSED centre, or the
+        // preview would falsely suggest that the original opening stays.
+        foreach (var door in proposed.Doors.Where(d =>
+            _doors.Any(old => old.Id == d.Id &&
+                old.Centre.DistanceTo(d.Centre) > 0.01)))
+        {
+            if (!FloorGeometry.TryFindDoorWall(door, previewWalls,
+                    out var wall) || wall is null || wall.Length < 1e-6)
+                continue;
+            double ux = (wall.B.X - wall.A.X) / wall.Length;
+            double uy = (wall.B.Y - wall.A.Y) / wall.Length;
+            var first = ToScreen(new Point2(
+                door.Centre.X - ux * door.Width / 2,
+                door.Centre.Y - uy * door.Width / 2));
+            var last = ToScreen(new Point2(
+                door.Centre.X + ux * door.Width / 2,
+                door.Centre.Y + uy * door.Width / 2));
+            dc.DrawLine(new Pen(Brushes.ForestGreen, 5)
+                { DashStyle = DashStyles.Dash }, first, last);
+            DrawText(dc, "DOOR MOVES HERE",
+                new Point((first.X + last.X) / 2, (first.Y + last.Y) / 2 - 15),
+                11, Brushes.DarkGreen);
         }
 
         foreach (var window in proposed.Windows.Where(w =>
