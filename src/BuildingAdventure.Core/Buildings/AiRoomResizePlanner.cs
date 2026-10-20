@@ -85,19 +85,21 @@ public static class AiRoomResizePlanner
                     // For an explicitly requested enlargement, the door
                     // remains in the same relative position on its shifted
                     // partition, retaining its ID, width and visibility.
-                    if (partitionDoors.Length > 0)
+                    bool relocatedDoorsClear = true;
+                    foreach (var old in partitionDoors)
                     {
-                        foreach (var old in partitionDoors)
+                        var relocated = level.Doors.Single(d => d.Id == old.Id);
+                        relocated.Centre = new Point2(old.Centre.X + movement.X,
+                            old.Centre.Y + movement.Y);
+                        if (!AiDoorPlacementPlanner.ClearOfStairs(
+                                candidate, floorIndex, relocated.Centre,
+                                relocated.Width))
                         {
-                            var relocated = level.Doors.Single(d => d.Id == old.Id);
-                            relocated.Centre = new Point2(old.Centre.X + movement.X,
-                                old.Centre.Y + movement.Y);
-                            if (!AiDoorPlacementPlanner.ClearOfStairs(
-                                    candidate, floorIndex, relocated.Centre,
-                                    relocated.Width))
-                                goto NextMove;
+                            relocatedDoorsClear = false;
+                            break;
                         }
                     }
+                    if (!relocatedDoorsClear) continue;
 
                     // Judge dimensions AFTER the proposed improvement.
                     // The existing 1.5m room in example13 can now gain
@@ -135,7 +137,6 @@ public static class AiRoomResizePlanner
                     options.Add(new AiRoomResizeCandidate(draft,
                         gained.Name, lost.Name, areaGained, beforeArea,
                         beforeArea + areaGained));
-                    NextMove: ;
                 }
             }
         }
