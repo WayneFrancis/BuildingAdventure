@@ -108,7 +108,9 @@ public static class AiRoomResizePlanner
                         BoundingShortSide(bRoom.Outline) < MinResultWidth)
                         continue;
                     BuildingStoreys.SetFloor(candidate, floorIndex, level);
-                    if (!BuildingStoreys.Validate(candidate, out _))
+                    if (!BuildingStoreys.Validate(candidate, out _) ||
+                        !AiOpeningProtection.PreservesExistingDoorAccess(
+                            source, candidate, floorIndex))
                         continue;
 
                     double areaFirstBefore = PolygonGeometry.Area(first.Outline);
