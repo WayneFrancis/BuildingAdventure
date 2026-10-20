@@ -188,6 +188,13 @@ public static class AiLayoutImprover
             reason = "The proposed change breaks the building: " + validation;
             return false;
         }
+        if (!AiOpeningProtection.PreservesExistingDoorAccess(
+                source, candidate, activeFloor))
+        {
+            reason = "The wall edit would block an existing doorway or " +
+                "change which rooms it connects.";
+            return false;
+        }
         // Geometry must remain completely allocated, not create a sliver or
         // secretly discard a piece of the old floor plan.
         double before = RoomLayoutPlanner.UnassignedArea(originalFloor);
