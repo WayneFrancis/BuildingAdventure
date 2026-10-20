@@ -175,9 +175,14 @@ public static class AiRoomOperationPlanner
                 // claim a single doorway when the divider cut through it.
                 if (floor.Doors.Any(d => OnOutline(d.Centre, original.Outline) &&
                     Math.Abs((vertical ? d.Centre.X : d.Centre.Y) - cut) <
-                        d.Width / 2 + 0.1))
+                        d.Width / 2 + 0.1) ||
+                    floor.Windows.Any(w => OnOutline(w.Centre, original.Outline) &&
+                    Math.Abs((vertical ? w.Centre.X : w.Centre.Y) - cut) <
+                        w.Width / 2 + 0.1))
                     continue;
 
+                // Existing doors and exterior windows must remain on their
+                // physical walls without a new partition ending inside them.
                 // Existing doors must remain supported by an actual wall,
                 // not end up at the new partition junction.
                 bool firstHasDoor = floor.Doors.Any(d => OnOutline(d.Centre, left));
