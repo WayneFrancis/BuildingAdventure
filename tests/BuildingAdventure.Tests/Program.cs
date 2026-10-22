@@ -8946,5 +8946,82 @@ Check("Pantry enlargement never moves its wall into the Kitchen doorway", () =>
         "increase the size of the library").Count==0,
         "Unknown explicit room may not result in enlarging the Study.");
 });
+
+Check("AI room enlargement protects exterior windows and their room assignment", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0), new(x1,y0), new(x1,y1), new(x0,y1)];
+    var living = new RoomDefinition
+    {
+        Name = "Living room", Type = "Living room",
+        Outline = Rect(0,0,6,8)
+    };
+    var kitchen = new RoomDefinition
+    {
+        Name = "Kitchen", Type = "Kitchen",
+        Outline = Rect(6,0,12,8)
+    };
+    var window = new WindowDefinition
+    {
+        Centre = new Point2(4.5,0), Width = 1.2
+    };
+    var building = new BuildingDocument
+    {
+        Perimeter = Rect(0,0,12,8),
+        Rooms = [living,kitchen], Windows = [window]
+    };
+    Assert(BuildingStoreys.Validate(building, out var reason), reason);
+
+    // The window is on a continuous exterior wall. Ordinary building
+    // validation cannot detect an interior T-junction within its glazing.
+    var obstructed = BuildingStoreys.Copy(building);
+    obstructed.Rooms.Single(r => r.Id == living.Id).Outline =
+        Rect(0,0,5.1,8);
+    obstructed.Rooms.Single(r => r.Id == kitchen.Id).Outline =
+        Rect(5.1,0,12,8);
+    Assert(BuildingStoreys.Validate(obstructed, out reason), reason);
+    Assert(!AiOpeningProtection.PreservesExistingDoorAccess(
+        building, obstructed, 0),
+        "A new partition must not end inside an existing window opening.");
+
+    // Even if the new junction is well clear of the glazing, silently
+    // changing which room owns the existing window is not a resize.
+    var reassigned = BuildingStoreys.Copy(building);
+    reassigned.Rooms.Single(r => r.Id == living.Id).Outline =
+        Rect(0,0,3,8);
+    reassigned.Rooms.Single(r => r.Id == kitchen.Id).Outline =
+        Rect(3,0,12,8);
+    Assert(BuildingStoreys.Validate(reassigned, out reason), reason);
+    Assert(!AiOpeningProtection.PreservesExistingDoorAccess(
+        building, reassigned, 0),
+        "Existing exterior windows must retain their original room.");
+
+    // A safe 0.3 or 0.6 metre enlargement still exists. Larger proposed
+    // shifts would put the partition within the 1.2m window's glazing.
+    var candidates = AiLayoutRecommendationPlanner.FindOptions(
+        building, 0, 20, "Enlarge Kitchen");
+    Assert(candidates.Count > 0,
+        "The new window guard should still permit safe small improvements.");
+    foreach (var option in candidates)
+    {
+        var changed = option.Suggestion.Building;
+        Assert(BuildingStoreys.Validate(changed, out reason), reason);
+        Assert(AiOpeningProtection.PreservesExistingDoorAccess(
+            building, changed, 0),
+            "All proposed enlargements must preserve window access.");
+        Assert(changed.Windows.Count == 1 &&
+            changed.Windows[0].Id == window.Id &&
+            changed.Windows[0].Centre.DistanceTo(window.Centre) < 1e-6,
+            "AI previews must never move or remove the exterior window.");
+        double partition = changed.Rooms.Single(r => r.Id == kitchen.Id)
+            .Outline.Min(p => p.X);
+        Assert(partition >= 5.2 - 1e-6 && partition < 6,
+            "The window must prevent large leftward shifts, not all growth.");
+    }
+    Assert(building.Rooms.Single(r => r.Id == kitchen.Id)
+        .Outline.Min(p => p.X) == 6,
+        "Generating AI previews must leave the source building unchanged.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

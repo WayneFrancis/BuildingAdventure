@@ -4,6 +4,22 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.60 — Preserve exterior windows during AI room edits (development)
+
+The AI room-resizing engine now protects **windows as well as doors**.
+A partition moved into an exterior window's glazing can pass ordinary wall
+validation, because the external wall remains continuous. These AI proposals
+are now rejected before preview and again at selection time.
+
+- Reject new room-wall junctions within an existing window's width plus
+  0.1 m clearance.
+- Preserve each window's identity, location, width and adjacent room IDs:
+  an enlargement cannot silently reassign a Living room window to Kitchen.
+- Keep smaller safe room enlargements available when larger moves would
+  obstruct a window. The building geometry and JSON format are unchanged.
+- Add regression tests proving the obstructed and reassigned cases can
+  otherwise pass general building validation.
+
 ## v0.59 — Protect existing doorways when AI enlarges rooms (development)
 
 Fixes the reported **Increase the size of Pantry** bug on the supplied
