@@ -11,10 +11,11 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
   Their shared wall must contain a validated **direct serving door**.
 - A seeded choice swaps which rear bay houses Kitchen or Dining, adding
   an architectural variation without breaking hall access.
-- The larger balanced L-shaped layout moves Pantry to the FRONT of its
-  service zone, leaving Kitchen against the Dining wall. It requires
-  direct Kitchen–Dining and Kitchen–Pantry doors; food service no
-  longer takes a detour through the hall or a storage space.
+- The larger balanced L-shaped layout tucks the Pantry into one
+  rear corner of the Kitchen and gives the Kitchen an L-shaped serving
+  return to the Dining wall. Both Kitchen–Dining and Kitchen–Pantry
+  doors are required; the main front-wall Kitchen and its existing
+  fireplace remain in place rather than being relocated.
 - These checks run on detached candidate buildings. Failed door
   geometry rejects a proposed variant without changing accepted plans.
 - Tests cover room adjacency, door links, seeded assignments,
