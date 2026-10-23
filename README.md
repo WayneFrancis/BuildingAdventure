@@ -4,6 +4,27 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.64 — Reclaim upstairs stair passage and reject incomplete cottages (development)
+
+- In the **stepped/L-shaped two-storey RPG residence**, the ground
+  stair passage retains its wide approach behind the flight, but the
+  upper floor now keeps only the physical stair/landing reservation and
+  the corridor beside the upstairs exit landing. The remaining band
+  belongs to the Master Bedroom, not an identical overlarge hall.
+- The stair position, opening, physical end landings and original
+  downstairs approach remain unchanged, with independent upper-floor
+  room polygons and door placement.
+- Small, rectangular one-storey residences can use a dedicated
+  **living room + kitchen + bedroom** cottage archetype. Each room
+  is accessible without a gratuitous hallway, and the living room
+  has an exterior door.
+- Fully equipped whole-building one-storey residential suggestions
+  must have a kitchen, bedroom and exterior door. If no complete plan
+  fits, up to four seeded candidates are tried rather than presenting
+  the uploaded unusable hall-plus-living-room draft.
+- Regression tests cover the accepted L-shaped plan's reclaimed
+  upstairs space and the 7.5 m × 6.5 m single-storey example.
+
 ## v0.63 — Wall-side staircase in rectangular two-storey residences (development)
 
 - Corrected the compact **rectangular** RPG house planner, which still

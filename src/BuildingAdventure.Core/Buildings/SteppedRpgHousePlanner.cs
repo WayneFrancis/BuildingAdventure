@@ -171,7 +171,18 @@ public static class SteppedRpgHousePlanner
                 < minimumBypassWidth-Epsilon)
             return false;
         if(capDepth>cutY-2.3) return false;
+        // Upstairs the stair ascends to the right-hand landing beside
+        // the continuous passage. It does NOT need the ground floor's
+        // 1.1m bypass behind the opposite end of the flight. Keep every
+        // tread, slab opening and end landing physically unobstructed,
+        // but give the upper bedroom the unused floor beyond them.
+        // The ground-level stair approach retains the full old clearance.
+        double upperCapDepth=Math.Max(1.0,
+            stairEnvelope.SelectMany(r=>r).Max(V)+0.1);
+        if(upperCapDepth>capDepth-Epsilon)
+            return false;
         var cap=Rect(0,0,coreWidth,capDepth);
+        var upperCap=Rect(0,0,coreWidth,upperCapDepth);
         var approach=Rect(coreWidth-approachWidth,capDepth,
             coreWidth,cutY);
         var cross=Rect(0,cutY,width,cutY+crossDepth);
@@ -190,8 +201,20 @@ public static class SteppedRpgHousePlanner
             P(0,cutY),P(coreWidth-approachWidth,cutY),
             P(coreWidth-approachWidth,capDepth),P(0,capDepth)
         };
+        var upperHall=new List<Point2>
+        {
+            P(0,0),P(coreWidth,0),
+            P(coreWidth,cutY),P(width,cutY),
+            P(width,cutY+crossDepth),P(0,cutY+crossDepth),
+            P(0,cutY),P(coreWidth-approachWidth,cutY),
+            P(coreWidth-approachWidth,upperCapDepth),
+            P(0,upperCapDepth)
+        };
         if(!PolygonGeometry.IsValidOutline(hall,out _) ||
-           !FloorGeometry.IsWithinPolygon(hall,footprint))
+           !PolygonGeometry.IsValidOutline(upperHall,out _) ||
+           !FloorGeometry.IsWithinPolygon(hall,footprint) ||
+           !FloorGeometry.IsWithinPolygon(upperHall,footprint) ||
+           !stairEnvelope.All(poly=>FloorGeometry.IsWithinPolygon(poly,upperCap)))
             return false;
         var pockets=new[]
         {
@@ -205,11 +228,19 @@ public static class SteppedRpgHousePlanner
             return false;
         double accounted=PolygonGeometry.Area(hall)+
             pockets.Sum(PolygonGeometry.Area);
-        if(Math.Abs(accounted-PolygonGeometry.Area(footprint))>0.01)
+        double reclaimed=PolygonGeometry.Area(
+            Rect(0,upperCapDepth,coreWidth-approachWidth,capDepth));
+        if(Math.Abs(accounted-PolygonGeometry.Area(footprint))>0.01 ||
+           reclaimed<=0)
             return false;
 
         for(int index=0;index<=1;index++)
         {
+            var roomShapes=index==0 ? pockets : new[]
+            {
+                Rect(0,upperCapDepth,coreWidth-approachWidth,cutY),
+                pockets[1],pockets[2],pockets[3]
+            };
             var roomRoles = index==0
                 ? new[] {"Living room","Kitchen","Dining room","Study"}
                 : new[] {"Bedroom","Bedroom","Bedroom","Bathroom"};
@@ -217,9 +248,9 @@ public static class SteppedRpgHousePlanner
             floor.Rooms.Add(new RoomDefinition
             {
                 Type="Hallway",Name=index==0?"Stair passage":"Upper landing",
-                Outline=hall.ToList()
+                Outline=(index==0 ? hall : upperHall).ToList()
             });
-            for(int i=0;i<pockets.Length;i++)
+            for(int i=0;i<roomShapes.Length;i++)
             {
                 string type=roomRoles[i];
                 floor.Rooms.Add(new RoomDefinition
@@ -227,7 +258,7 @@ public static class SteppedRpgHousePlanner
                     Type=type,Name=index==1 && i==0
                         ? "Master Bedroom"
                         : RoomLayoutPlanner.NextRoomName(type,floor.Rooms),
-                    Outline=pockets[i].ToList()
+                    Outline=roomShapes[i].ToList()
                 });
             }
             BuildingStoreys.SetFloor(result,index,floor);

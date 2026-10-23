@@ -9357,5 +9357,115 @@ Check("Rectangular house auto glazing stays clear of flights and stair landings"
         }
     }
 });
+
+Check("Stepped upper floor gives unused stair-side area to the Master Bedroom", () =>
+{
+    // AI 2storygenresidence4(1): the old upper Hallway duplicated the
+    // ground-level 2.25m stair approach even though upstairs the exit
+    // landing opens straight into the right-hand passage.
+    var ring = new List<Point2>
+    {
+        new(0,0),new(9.5,0),new(9.5,6),
+        new(11.5,6),new(11.5,10),new(0,10)
+    };
+    var source=new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    Assert(SteppedRpgHousePlanner.TryGenerate(source,23,
+        out var proposed,out var reason),reason);
+    Assert(BuildingStoreys.Validate(proposed,out reason),reason);
+    var lower=BuildingStoreys.GetFloor(proposed,0);
+    var upper=BuildingStoreys.GetFloor(proposed,1);
+    var groundHall=lower.Rooms.Single(r=>r.Type=="Hallway");
+    var upstairsHall=upper.Rooms.Single(r=>r.Type=="Hallway");
+    var master=upper.Rooms.Single(r=>r.Name=="Master Bedroom");
+    Assert(PolygonGeometry.Area(upstairsHall.Outline) <
+           PolygonGeometry.Area(groundHall.Outline)-3.0,
+        "Upstairs should reclaim several square metres of unnecessary passage.");
+    var stair=proposed.Staircases.Single();
+    var groundLiving=lower.Rooms.Single(r=>r.Type=="Living room");
+    Assert(PolygonGeometry.Area(master.Outline) >
+        PolygonGeometry.Area(groundLiving.Outline)+3.0 &&
+        upper.Rooms.Count(r=>r.Type=="Bedroom")==3,
+        "The upstairs Master Bedroom should absorb 3+ square metres of " +
+        "ground-only stair passage without eliminating other bedrooms.");
+    Assert(BuildingStoreys.StairLandings(stair).All(poly=>
+        FloorGeometry.IsWithinPolygon(poly,upstairsHall.Outline)),
+        "Both physical landing envelopes stay clear of new walls.");
+    Assert(lower.Rooms.Where(r=>r.Type!="Hallway").All(room=>
+        lower.Doors.Any(d=>Enumerable.Range(0,room.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                room.Outline[i],room.Outline[(i+1)%room.Outline.Count])
+                    .DistanceTo(d.Centre)<1e-5))),
+        "Ground floor access must be preserved.");
+    Assert(source.Rooms.Count==0 && source.Staircases.Count==0);
+});
+
+Check("Small one-storey cottage has useful rooms and no purposeless hallway", () =>
+{
+    var original=new BuildingDocument
+    {
+        SchemaVersion=1,
+        Perimeter=[new(0,0),new(7.5,0),new(7.5,6.5),new(0,6.5)]
+    };
+    Assert(SmallCottagePlanner.TryGenerate(original,74,
+        out var cottage,out var reason),reason);
+    Assert(BuildingStoreys.Validate(cottage,out reason),reason);
+    Assert(cottage.Rooms.Count==3 &&
+        cottage.Rooms.All(r=>r.Type!="Hallway"),
+        "A 7.5 x 6.5m house should not waste 15m2 on an inaccessible corridor.");
+    var living=cottage.Rooms.Single(r=>r.Type=="Living room");
+    var kitchen=cottage.Rooms.Single(r=>r.Type=="Kitchen");
+    var bedroom=cottage.Rooms.Single(r=>r.Type=="Bedroom");
+    bool On(Point2 pt,RoomDefinition r)=>
+        Enumerable.Range(0,r.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(pt,
+                r.Outline[i],r.Outline[(i+1)%r.Outline.Count])
+                .DistanceTo(pt)<1e-5);
+    Assert(cottage.Doors.Any(d=>On(d.Centre,living) &&
+        Enumerable.Range(0,cottage.Perimeter.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(d.Centre,
+                cottage.Perimeter[i],
+                cottage.Perimeter[(i+1)%cottage.Perimeter.Count])
+                .DistanceTo(d.Centre)<1e-5)),
+        "The living room requires a usable exterior entrance.");
+    Assert(cottage.Doors.Any(d=>On(d.Centre,living)&&On(d.Centre,kitchen)) &&
+        cottage.Doors.Any(d=>On(d.Centre,living)&&On(d.Centre,bedroom)),
+        "Kitchen and bedroom must have direct access from the living area.");
+    Assert(Math.Abs(cottage.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))-
+        PolygonGeometry.Area(cottage.Perimeter))<0.01,
+        "The cottage should assign all floor area to useful rooms.");
+    Assert(original.Rooms.Count==0,"Suggestion may not modify source.");
+});
+
+Check("Whole-building one-storey residence never offers hall plus one room", () =>
+{
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Windows=true,Fireplaces=true,HallHouseLayout=false
+    };
+    foreach(int seed in new[]{14,37,74})
+    {
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(1,seed,
+            options,out var suggestion,out var reason,0),
+            "One-storey residence seed "+seed+": "+reason);
+        var house=suggestion.Building;
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        Assert(house.Rooms.Count>=3 &&
+            house.Rooms.Any(r=>r.Type=="Living room" ||
+                r.Type=="Common room") &&
+            house.Rooms.Any(r=>r.Type=="Kitchen") &&
+            house.Rooms.Any(r=>r.Type=="Bedroom"),
+            "A home must provide a kitchen and a place to sleep.");
+        Assert(house.Doors.Count>0 &&
+            house.Rooms.Count(r=>r.Type=="Hallway")<2,
+            "Do not generate an isolated hall-plus-one-room residence.");
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

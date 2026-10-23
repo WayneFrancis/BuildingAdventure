@@ -64,15 +64,15 @@ public static class BuildingGenerator
         GenerationOptions options, out BuildingSuggestion suggestion, out string reason,
         int gridFeet = 0)
     {
-        // Only the complete, fully equipped two-storey RPG residential
-        // archetype gets automatic retries. A failed architectural layout
-        // should not silently become a hall and two arbitrary rooms.
-        bool retryResidence = floorCount == 2 && options is
+        // Incomplete residential drafts must not turn a reroll into
+        // a room plus purposeless hallway. Try alternative footprints
+        // and plans while keeping all source geometry detached.
+        bool retryResidence = options is
         {
-            Purpose: BuildingUse.Residence,
-            CompactRpgHouseLayout: true,
-            Rooms: true, Corridors: true, Doors: true, Stairs: true
-        };
+            Purpose: BuildingUse.Residence, Rooms: true, Doors: true
+        } && (floorCount == 1 ||
+            (floorCount == 2 && options.CompactRpgHouseLayout &&
+             options.Corridors && options.Stairs));
         int attempts = retryResidence ? 4 : 1;
         string lastError = "";
         for (int attempt = 0; attempt < attempts; attempt++)
@@ -86,7 +86,7 @@ public static class BuildingGenerator
         suggestion = new BuildingSuggestion(
             new BuildingDocument { GridFeet = gridFeet }, seed, [], "");
         reason = retryResidence
-            ? "No complete two-storey residence fitted after " +
+            ? "No complete residence fitted after " +
               $"{attempts} alternate layouts. No sparse or inaccessible " +
               "building was offered. Last reason: " + lastError
             : lastError;
@@ -268,6 +268,38 @@ public static class BuildingGenerator
                     $"Medieval residence layout. Whole building (1 floor), seed {seed}: " +
                     $"{directHallHouse.Rooms.Count} rooms, {directHallHouse.Doors.Count} doors, " +
                     $"{hearthCount} chimney stack(s)");
+                return true;
+            }
+        }
+
+        // A small one-level residence does not need a hallway if its
+        // living room provides direct access to the kitchen and bedroom.
+        // In the uploaded 7.5 x 6.5m example the legacy fallback created
+        // a 15m² dead-end corridor and not a single place to sleep.
+        // This compact plan deliberately assigns *all* floor area.
+        if (floorCount == 1 && options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Doors &&
+            SmallCottagePlanner.TryGenerate(blank,seed,
+                out var cottage,out _))
+        {
+            int hearthCount=0;
+            if(options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(cottage,
+                    out var heated,options.Purpose))
+            {
+                cottage=heated;
+                hearthCount=1;
+            }
+            if(options.Windows)
+            {
+                BuildingConnectivity.AddWindows(cottage,0,out var glazed);
+                cottage=glazed;
+            }
+            if(BuildingStoreys.Validate(cottage,out reason))
+            {
+                suggestion=new BuildingSuggestion(cottage,seed,[0],
+                    $"Compact single-storey cottage. Seed {seed}: " +
+                    $"living room, kitchen, bedroom, {hearthCount} hearth(s)");
                 return true;
             }
         }
@@ -515,6 +547,30 @@ public static class BuildingGenerator
                 "generation style. No incomplete residence was proposed.";
             return false;
         }
+        // All furnished single-storey residences must have actual
+        // bedroom/kitchen accommodation and a street entrance. A valid
+        // polygon with a hall, a living room and no bedroom is not a
+        // usable house, regardless of whether historic style is enabled.
+        if (floorCount==1 && options.Purpose==BuildingUse.Residence &&
+            options.Rooms && options.Doors)
+        {
+            var exterior=FloorGeometry.BuildWalls(
+                result.Perimeter,result.Rooms).Where(w=>w.IsExterior);
+            bool hasEntrance=result.Doors.Any(d=>exterior.Any(w=>
+                PolygonGeometry.ClosestPointOnSegment(
+                    d.Centre,w.A,w.B).DistanceTo(d.Centre)<0.001));
+            if(result.Rooms.Count<3 ||
+                !result.Rooms.Any(r=>r.Type=="Kitchen") ||
+                !result.Rooms.Any(r=>r.Type=="Bedroom") ||
+                !hasEntrance)
+            {
+                reason="A one-storey residence needs a living area, " +
+                    "a kitchen, at least one bedroom and a usable exterior " +
+                    "entrance. No hall-plus-one-room draft was offered.";
+                return false;
+            }
+        }
+
         // Do not present a supposedly complete two-storey home with
         // only a giant hall, one living room and a utility room. That was
         // the failed uploaded AI 2storygenresidence example. A retry will
