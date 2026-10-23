@@ -83,6 +83,35 @@ public static class AiRoomOperationPlanner
             .Select(x => x.Room).FirstOrDefault();
     }
 
+
+    /// <summary>
+    /// Resolve descriptive requests by actual facade adjacency, not by
+    /// hallucinating a literal room named "room next to a window".
+    /// </summary>
+    public static bool IsWindowAdjacentEnlargementGoal(string? goal) =>
+        !string.IsNullOrWhiteSpace(goal) &&
+        Regex.IsMatch(goal,
+            @"\b(?:increase|enlarge|expand|grow|widen|extend|make)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) &&
+        Regex.IsMatch(goal,
+            @"\broom\s+(?:next\s+to|adjacent\s+to|beside|by|near|with)\s+(?:an?\s+|the\s+)?(?:exterior\s+|outside\s+)?window\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    public static HashSet<Guid> WindowAdjacentRoomIds(
+        BuildingDocument building, int floorIndex)
+    {
+        if (!BuildingStoreys.HasFloor(building, floorIndex))
+            return [];
+        var floor = BuildingStoreys.GetFloor(building, floorIndex);
+        return floor.Rooms.Where(room => floor.Windows.Any(window =>
+            Enumerable.Range(0, room.Outline.Count).Any(i =>
+                PolygonGeometry.ClosestPointOnSegment(window.Centre,
+                    room.Outline[i],
+                    room.Outline[(i + 1) % room.Outline.Count])
+                    .DistanceTo(window.Centre) < Eps)))
+            .Select(room => room.Id).ToHashSet();
+    }
+
     private static bool Mentions(string text, string name) =>
         MatchIndex(text, name) >= 0;
 

@@ -951,7 +951,11 @@ public partial class MainWindow : Window
                   "splitting currently requires a rectangular room, exactly two " +
                   "usable parts and safe access to both. No substitute " +
                   "room-resizing operation will be offered."
-                : AiRoomOperationPlanner.IsSpecificEnlargementGoal(goal)
+                : AiRoomOperationPlanner.IsWindowAdjacentEnlargementGoal(goal)
+                     ? "No safe enlargement was found for a room bordering an " +
+                       "exterior window on this floor. Try naming a specific room " +
+                       "or adjusting obstructed geometry."
+                 : AiRoomOperationPlanner.IsSpecificEnlargementGoal(goal)
                     ? "No safe enlargement was found for the named room. " +
                       "Check the room name, shared partitions, stair or hearth " +
                       "clearances and existing door positions; another room " +

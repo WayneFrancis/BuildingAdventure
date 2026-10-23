@@ -112,6 +112,10 @@ public static class AiRoomResizePlanner
                         !AcceptableWidth(second, bRoom, gainingRoomId))
                         continue;
                     BuildingStoreys.SetFloor(candidate, floorIndex, level);
+                    if (moveSharedDoors &&
+                        !AiDoorRelocationPlanner.TryRelocateObstructedDoors(
+                            source, candidate, floorIndex))
+                        continue;
                     if (!BuildingStoreys.Validate(candidate, out _) ||
                         !AiOpeningProtection.PreservesExistingDoorAccess(
                             source, candidate, floorIndex))

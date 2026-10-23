@@ -9023,5 +9023,131 @@ Check("AI room enlargement protects exterior windows and their room assignment",
         "Generating AI previews must leave the source building unchanged.");
 });
 
+
+Check("AI enlargement relocates Kitchen doorway to allow Pantry growth", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var pantry = new RoomDefinition
+    {
+        Name="Pantry", Type="Pantry", Outline=Rect(5.6,0,10.5,1.4)
+    };
+    var kitchen = new RoomDefinition
+    {
+        Name="Kitchen", Type="Kitchen", Outline=Rect(5.6,1.4,10.5,6)
+    };
+    var living = new RoomDefinition
+    {
+        Name="Living room", Type="Living room",
+        Outline=[new(0,0),new(5.6,0),new(5.6,3.85),
+            new(4.2,3.85),new(4.2,6),new(0,6)]
+    };
+    var hall = new RoomDefinition
+    {
+        Name="Passage", Type="Hallway", Outline=Rect(4.2,3.85,5.6,10)
+    };
+    var study = new RoomDefinition
+    {
+        Name="Study", Type="Study", Outline=Rect(0,6,4.2,10)
+    };
+    var pantryDoor = new DoorDefinition
+    {
+        Centre=new Point2(8.05,1.4), Width=0.9
+    };
+    var kitchenDoor = new DoorDefinition
+    {
+        Centre=new Point2(5.6,2.25), Width=0.8
+    };
+    var original = new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=[new(0,0),new(10.5,0),new(10.5,6),
+            new(12.5,6),new(12.5,10),new(0,10)],
+        Rooms=[pantry,kitchen,living,study,hall],
+        Doors=[pantryDoor,kitchenDoor],
+        Chimneys=[new ChimneyDefinition
+        {
+            Centre=new Point2(10.13,3),Width=0.7,Depth=1.4,
+            Exterior=true,HearthFloorIndex=0,HearthRoomIds=[kitchen.Id]
+        }]
+    };
+    Assert(BuildingStoreys.Validate(original, out var reason),reason);
+    var options = AiLayoutRecommendationPlanner.FindOptions(
+        original,0,20,"Increase the size of Pantry");
+    Assert(options.Count>0,"Pantry should still have safe enlargement options.");
+    var large = options.FirstOrDefault(option =>
+        option.Suggestion.Building.Rooms.Single(r => r.Id==pantry.Id)
+            .Outline.Max(p => p.Y) >= 2.29);
+    Assert(large is not null,
+        "Relocating the Kitchen/Living door should allow a 0.9m Pantry expansion.");
+    var candidate = large!.Suggestion.Building;
+    Assert(BuildingStoreys.Validate(candidate,out reason),reason);
+    Assert(AiOpeningProtection.PreservesExistingDoorAccess(
+        original,candidate,0),"Door IDs and room connections must survive.");
+    var relocatedKitchenDoor = candidate.Doors.Single(d=>d.Id==kitchenDoor.Id);
+    Assert(Math.Abs(relocatedKitchenDoor.Centre.X-5.6)<0.01 &&
+        relocatedKitchenDoor.Centre.Y > 2.75 &&
+        relocatedKitchenDoor.Centre.Y < 3.35,
+        "The Kitchen/Living door must move below the new partition.");
+    Assert(candidate.Doors.Single(d=>d.Id==pantryDoor.Id).Centre.Y>=2.29,
+        "The Pantry/Kitchen partition door must follow the moved wall.");
+    Assert(original.Doors.Single(d=>d.Id==kitchenDoor.Id).Centre.Y==2.25,
+        "Preview generation must not change the original doorway.");
+
+    var kitchenOptions=AiLayoutRecommendationPlanner.FindOptions(
+        original,0,20,"Enlarge Kitchen");
+    Assert(kitchenOptions.Count>0,
+        "Kitchen should offer a valid enlargement rather than a no-op.");
+    Assert(kitchenOptions.All(o=>AiLayoutSpatialIntent.TryGainedFootprint(
+        original,0,o,out var receiver,out _) && receiver.Id==kitchen.Id),
+        "Kitchen enlargement must never expand a different named room.");
+    Assert(kitchenOptions.All(o =>
+        BuildingStoreys.Validate(o.Suggestion.Building,out _) &&
+        AiOpeningProtection.PreservesExistingDoorAccess(
+            original,o.Suggestion.Building,0)),
+        "All Kitchen proposals must preserve existing doors and windows.");
+});
+
+Check("AI window-adjacent enlargement resolves the correct room", () =>
+{
+    List<Point2> Rect(double x0, double y0, double x1, double y1) =>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var living = new RoomDefinition
+    {
+        Name="Living room",Type="Living room",Outline=Rect(0,0,6,8)
+    };
+    var kitchen = new RoomDefinition
+    {
+        Name="Kitchen",Type="Kitchen",Outline=Rect(6,0,12,8)
+    };
+    var original = new BuildingDocument
+    {
+        Perimeter=Rect(0,0,12,8),Rooms=[living,kitchen],
+        Windows=[new WindowDefinition
+        {
+            Centre=new Point2(4.5,0),Width=1.2
+        }]
+    };
+    Assert(BuildingStoreys.Validate(original,out var reason),reason);
+    const string goal="Increase the size of the room next to an exterior window";
+    Assert(AiRoomOperationPlanner.IsWindowAdjacentEnlargementGoal(goal),
+        "A spatial window reference should be recognized.");
+    var candidates=AiLayoutRecommendationPlanner.FindOptions(
+        original,0,20,goal);
+    Assert(candidates.Count>0,
+        "An exterior-window room should have safe enlargement candidates.");
+    Assert(candidates.All(option=>AiLayoutSpatialIntent.TryGainedFootprint(
+        original,0,option,out var room,out _) && room.Id==living.Id),
+        "Only Living room borders this window; never resize Kitchen.");
+    Assert(candidates.All(c=>AiOpeningProtection.PreservesExistingDoorAccess(
+        original,c.Suggestion.Building,0)),
+        "Window-related enlargement must preserve its glazing.");
+    var withoutWindows=BuildingStoreys.Copy(original);
+    withoutWindows.Windows.Clear();
+    Assert(AiLayoutRecommendationPlanner.FindOptions(
+        withoutWindows,0,20,goal).Count==0,
+        "Without a window, never resize an arbitrary room.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

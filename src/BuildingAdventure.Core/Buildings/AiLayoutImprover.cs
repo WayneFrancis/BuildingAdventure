@@ -89,7 +89,7 @@ public static class AiLayoutImprover
 
     public static bool TryApply(BuildingDocument source, int activeFloor,
         string modelJson, out BuildingSuggestion suggestion, out string reason) =>
-        TryApplyCore(source, activeFloor, modelJson, true,
+        TryApplyCore(source, activeFloor, modelJson, true, false,
             out suggestion, out reason);
 
     // Only call this with C#-generated, prevalidated candidate rectangles.
@@ -97,12 +97,13 @@ public static class AiLayoutImprover
     // rooms; an L-shaped outline is permitted when its edges are orthogonal.
     internal static bool TryApplyRoomTransfer(BuildingDocument source,
         int activeFloor, AiRoomTransfer edit,
-        out BuildingSuggestion suggestion, out string reason) =>
+        out BuildingSuggestion suggestion, out string reason,
+        bool relocateDoors = false) =>
         TryApplyCore(source, activeFloor, JsonSerializer.Serialize(edit),
-            false, out suggestion, out reason);
+            false, relocateDoors, out suggestion, out reason);
 
     private static bool TryApplyCore(BuildingDocument source, int activeFloor,
-        string modelJson, bool hallwaySource,
+        string modelJson, bool hallwaySource, bool relocateDoors,
         out BuildingSuggestion suggestion, out string reason)
     {
         suggestion = new BuildingSuggestion(BuildingStoreys.Copy(source),
@@ -183,6 +184,14 @@ public static class AiLayoutImprover
         floor.Rooms.Single(r => r.Id == edit.FromRoomId).Outline = smallerHall;
         floor.Rooms.Single(r => r.Id == edit.ToRoomId).Outline = largerRoom;
         BuildingStoreys.SetFloor(candidate, activeFloor, floor);
+        if (relocateDoors &&
+            !AiDoorRelocationPlanner.TryRelocateObstructedDoors(
+                source, candidate, activeFloor))
+        {
+            reason = "The edit would require a door move with no safe " +
+                "location on the original adjoining rooms.";
+            return false;
+        }
         if (!BuildingStoreys.Validate(candidate, out var validation))
         {
             reason = "The proposed change breaks the building: " + validation;

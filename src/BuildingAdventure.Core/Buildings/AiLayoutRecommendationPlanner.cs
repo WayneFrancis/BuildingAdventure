@@ -33,8 +33,16 @@ public static class AiLayoutRecommendationPlanner
 
         var target = AiRoomOperationPlanner.EnlargementTarget(
             source, floorIndex, goal);
-        if (target is null && AiRoomOperationPlanner.IsSpecificEnlargementGoal(goal))
-            return []; // An unknown named room must never turn into Study.
+        bool windowGoal = AiRoomOperationPlanner.IsWindowAdjacentEnlargementGoal(goal);
+        var eligible = target is not null ? new HashSet<Guid> { target.Id } :
+            windowGoal ? AiRoomOperationPlanner.WindowAdjacentRoomIds(
+                source, floorIndex) : null;
+        if (target is null && AiRoomOperationPlanner.IsSpecificEnlargementGoal(goal) &&
+            eligible is null)
+            return []; // Unknown named room: never substitute another one.
+        if (windowGoal && eligible?.Count == 0)
+            return []; // No windows: no invented target.
+        bool explicitEnlargement = eligible is not null;
         var options=new List<AiLayoutOption>();
         // Preserve hallway dead-end recovery from the existing prototype.
         foreach (var corner in AiLayoutCandidatePlanner.FindCandidates(
@@ -51,9 +59,12 @@ public static class AiLayoutRecommendationPlanner
 
         // Additional option type: a partition separating two rectangular
         // rooms can be nudged without relocating any existing doorway.
+        var requestedRooms = eligible?.ToArray() ?? [Guid.Empty];
+        foreach (var roomId in requestedRooms)
         foreach (var resize in AiRoomResizePlanner.FindCandidates(
-                     source,floorIndex,target is null ? Math.Min(7,maxResults)
-                         : 80, target?.Id, target is not null))
+                     source,floorIndex, explicitEnlargement ? 80 :
+                     Math.Min(7,maxResults),
+                     explicitEnlargement ? roomId : null, explicitEnlargement))
         {
             options.Add(new AiLayoutOption(options.Count+1,
                 "Resize adjacent rooms",
@@ -71,10 +82,11 @@ public static class AiLayoutRecommendationPlanner
         // alphabetical/small-area truncation hid the upper bedroom strip.
         int partialLimit = string.IsNullOrWhiteSpace(goal)
             ? Math.Min(7, maxResults)
-            : target is not null ? 120
+            : explicitEnlargement ? 120
             : Math.Min(48, Math.Max(24, maxResults * 2));
         foreach (var partial in AiPartialRoomResizePlanner.FindCandidates(
-                     source, floorIndex, partialLimit))
+                     source, floorIndex, partialLimit, eligible,
+                     explicitEnlargement))
         {
             options.Add(new AiLayoutOption(options.Count + 1,
                 "Resize partial / L-shaped rooms",
@@ -87,17 +99,22 @@ public static class AiLayoutRecommendationPlanner
         // Hard identity check: never offer "grow Study" when the user
         // explicitly asked to grow Pantry. This also handles wording like
         // "increase the size of the Pantry", which the old regex missed.
-        var correctlyTargeted = target is null ? options :
+        var correctlyTargeted = eligible is null ? options :
             options.Where(o => AiLayoutSpatialIntent.TryGainedFootprint(
                 source, floorIndex, o, out var receiver, out _) &&
-                receiver.Id == target.Id).ToList();
+                eligible.Contains(receiver.Id)).ToList();
         var relevant = string.IsNullOrWhiteSpace(goal)
             ? correctlyTargeted
             : AiLayoutSpatialIntent.Filter(
                 source, floorIndex, goal, correctlyTargeted).ToList();
         // Renumber AFTER narrowing the shortlist. The IDs offered to the
         // model must match the final geometrically valid selection list.
-        return relevant.Take(maxResults).Select((o, i) =>
+        // Named/description-based enlargements show significant validated
+        // gains before tiny wall nudges.
+        var ranked = explicitEnlargement
+            ? relevant.OrderByDescending(o => o.AreaSquareMetres)
+            : relevant;
+        return ranked.Take(maxResults).Select((o, i) =>
             o with { Id = i + 1 }).ToArray();
     }
 
@@ -138,6 +155,8 @@ public static class AiLayoutRecommendationPlanner
             "an existing shared partition without moving any room walls. "+
             "For split/merge requests, the candidates change the NUMBER of "+
             "rooms and preserve validated access, not merely room size. "+
+            "Some resizing candidates safely MOVE an existing interior door "+
+            "along a wall while retaining the same connected rooms. "+
             "A named room, relative direction (ABOVE/BELOW/LEFT/RIGHT), "+
             "and words such as ALL or ENTIRE are mandatory spatial "+
             "constraints, not optional suggestions. ABOVE means smaller "+

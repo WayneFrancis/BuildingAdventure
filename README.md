@@ -4,6 +4,24 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.61 — Relocate obstructed interior doors and resolve window-adjacent rooms (development)
+
+- Specific room enlargements can now offer C#-validated previews that
+  **relocate an obstructed interior doorway** to a nearby safe position
+  between the *same two rooms*. The existing door ID, width, and secret
+  properties are preserved. Exterior entrances never move. All proposals
+  still require Accept; the source layout is not changed while previewing.
+- Full shared-wall moves and partial orthogonal room transfers can both
+  propose safe door relocation; chimney, stair and window validation still
+  apply.
+- Requests such as **"Increase the size of the room next to an exterior
+  window"** now resolve rooms actually adjacent to windows instead of
+  incorrectly treating the phrase as an unknown room name.
+- Specific enlargement options prioritize meaningful safe area gains,
+  while never replacing a requested room with an unrelated one.
+- Regression coverage includes the Pantry/Kitchen/Living room doorway
+  from the supplied building and window-based room descriptions.
+
 ## v0.60 — Preserve exterior windows during AI room edits (development)
 
 The AI room-resizing engine now protects **windows as well as doors**.

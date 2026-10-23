@@ -14,7 +14,8 @@ public static class AiPartialRoomResizePlanner
     private const double MaximumTransferArea = 12;
 
     public static IReadOnlyList<AiRoomResizeCandidate> FindCandidates(
-        BuildingDocument source, int floorIndex, int maxResults = 8)
+        BuildingDocument source, int floorIndex, int maxResults = 8,
+        IReadOnlySet<Guid>? gainingRoomIds = null, bool relocateDoors = false)
     {
         if (!BuildingStoreys.HasFloor(source, floorIndex) || maxResults < 1)
             return [];
@@ -30,7 +31,9 @@ public static class AiPartialRoomResizePlanner
         foreach (var donor in rooms)
         foreach (var receiver in rooms)
         {
-            if (donor.Id == receiver.Id) continue;
+            if (donor.Id == receiver.Id ||
+                (gainingRoomIds is not null &&
+                 !gainingRoomIds.Contains(receiver.Id))) continue;
             if (PolygonGeometry.Area(donor.Outline) < 8) continue;
             foreach (var from in Edges(donor.Outline))
             foreach (var to in Edges(receiver.Outline))
@@ -69,7 +72,8 @@ public static class AiPartialRoomResizePlanner
                     : new Point2(from.A.X, hi);
 
                 // No implicit door removal, movement or ownership changes.
-                if (floor.Doors.Any(d => OnSegment(d.Centre, wallA, wallB)))
+                if (!relocateDoors &&
+                    floor.Doors.Any(d => OnSegment(d.Centre, wallA, wallB)))
                     continue;
 
                 foreach (int sign in new[] { -1, 1 })
@@ -124,7 +128,8 @@ public static class AiPartialRoomResizePlanner
                             Reason = "Resize rooms along a partial or irregular shared wall"
                         };
                         if (!AiLayoutImprover.TryApplyRoomTransfer(
-                            source, floorIndex, edit, out var suggestion, out _))
+                            source, floorIndex, edit, out var suggestion, out _,
+                            relocateDoors))
                             continue;
                         var proposedFloor = BuildingStoreys.GetFloor(
                             suggestion.Building, floorIndex);
