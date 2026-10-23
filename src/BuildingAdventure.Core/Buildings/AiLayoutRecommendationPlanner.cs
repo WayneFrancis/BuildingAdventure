@@ -111,7 +111,7 @@ public static class AiLayoutRecommendationPlanner
         // model must match the final geometrically valid selection list.
         // Named/description-based enlargements show significant validated
         // gains before tiny wall nudges.
-        var ranked = explicitEnlargement
+        IEnumerable<AiLayoutOption> ranked = explicitEnlargement
             ? relevant.OrderByDescending(o => o.AreaSquareMetres)
             : relevant;
         return ranked.Take(maxResults).Select((o, i) =>
