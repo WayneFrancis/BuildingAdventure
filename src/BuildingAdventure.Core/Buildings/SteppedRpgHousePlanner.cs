@@ -177,9 +177,16 @@ public static class SteppedRpgHousePlanner
         // tread, slab opening and end landing physically unobstructed,
         // but give the upper bedroom the unused floor beyond them.
         // The ground-level stair approach retains the full old clearance.
-        double upperCapDepth=Math.Max(1.0,
-            stairEnvelope.SelectMany(r=>r).Max(V)+0.1);
-        if(upperCapDepth>capDepth-Epsilon)
+        // Only reclaim when the *upstairs exit* is the right-hand
+        // landing next to our continuous approach corridor. A legacy
+        // stair ascending toward the left-hand landing still needs the
+        // full bypass upstairs and must not be boxed into a dead end.
+        var arrow=BuildingStoreys.StairTravelArrow(stair,0);
+        bool upperExitAtPassage=U(arrow.Tip)>U(arrow.Start)+Epsilon;
+        double upperCapDepth=upperExitAtPassage
+            ? Math.Max(1.0,stairEnvelope.SelectMany(r=>r).Max(V)+0.1)
+            : capDepth;
+        if(upperCapDepth>capDepth+Epsilon)
             return false;
         var cap=Rect(0,0,coreWidth,capDepth);
         var upperCap=Rect(0,0,coreWidth,upperCapDepth);
@@ -231,7 +238,7 @@ public static class SteppedRpgHousePlanner
         double reclaimed=PolygonGeometry.Area(
             Rect(0,upperCapDepth,coreWidth-approachWidth,capDepth));
         if(Math.Abs(accounted-PolygonGeometry.Area(footprint))>0.01 ||
-           reclaimed<=0)
+           (upperExitAtPassage && reclaimed<=0))
             return false;
 
         for(int index=0;index<=1;index++)
