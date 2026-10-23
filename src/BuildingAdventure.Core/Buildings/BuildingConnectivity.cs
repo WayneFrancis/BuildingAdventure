@@ -242,8 +242,13 @@ public static class BuildingConnectivity
                         other.Type is "Kitchen" or "Workshop" or "Bakehouse" or
                             "Brewery" or "Brewhouse" or "Scullery")) return 0;
                     if (neighbours.Any(other => other.Id == hall?.Id)) return 1;
+                    // A landing sitting room is public circulation,
+                    // not a private room. Without this preference an
+                    // upstairs bedroom can be given a door into the
+                    // Bathroom simply because that shared wall is longer.
                     if (neighbours.Any(other => other.Type is "Living room" or
-                            "Dining room" or "Great hall" or "Common room")) return 2;
+                            "Dining room" or "Great hall" or "Common room" or
+                            "Sitting room")) return 2;
                     if (neighbours.Any(other => IsServiceStore(other))) return 4;
                     if (neighbours.Any(other => other.Type is "Bedroom" or
                             "Guest room" or "Suite")) return 6;
