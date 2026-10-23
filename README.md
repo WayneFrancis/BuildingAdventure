@@ -4,6 +4,22 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.62 — Wall-side stairs and safer entrances in two-storey residences (development)
+
+- Stair passages in stepped RPG residences now place new stair flights
+  against the exterior wall, not 0.65m away from it. A 1.1m bypass
+  remains beyond the flight and both landing envelopes.
+- These residences explicitly enter through the living room instead
+  of allowing the automatic midpoint entrance in front of the stairs.
+  General auto-placement adds stronger exterior-door stair clearance
+  and refuses openings that straddle an exterior room-wall junction.
+- Small 5-foot-grid stepped footprints reserve useful rear-room depth
+  beyond the cross-passage. Where a 10-foot grid cannot fit a proper
+  rear wing, the generator chooses a clean rectangular perimeter.
+- Added regression tests based on the two uploaded 2-storey residence
+  sizes and rotations, without adding the private saved floor plans
+  to the repository.
+
 ## v0.61 — Relocate obstructed interior doors and resolve window-adjacent rooms (development)
 
 - Specific room enlargements can now offer C#-validated previews that

@@ -9157,5 +9157,86 @@ Check("AI window-adjacent enlargement resolves the correct room", () =>
         "Without a window, never resize an arbitrary room.");
 });
 
+
+Check("Whole-building stepped residence avoids stair-front entrance in both uploaded proportions", () =>
+{
+    List<Point2> Shape(double front, double depth, double wing) =>
+        [new(0,0),new(front,0),new(front,depth==9.144?4.572:6.096),
+         new(front+wing,depth==9.144?4.572:6.096),
+         new(front+wing,depth),new(0,depth)];
+    foreach (var ring in new[]
+    {
+        // The first uploaded 9.144m-deep plan could not fit its rear
+        // rooms at the old step y=6.096. The corrected 5-foot step is
+        // y=4.572 and retains adequate room depth behind the corridor.
+        Shape(9.144,9.144,1.524),
+        // The more useful second uploaded residence, original footprint.
+        Shape(9.144,10.668,1.524)
+    })
+    {
+        var blank = new BuildingDocument
+        {
+            SchemaVersion=2,GridFeet=5,Perimeter=ring.ToList(),
+            UpperFloors=[new StoreyDefinition { Perimeter=ring.ToList() }]
+        };
+        Assert(SteppedRpgHousePlanner.TryGenerate(blank,23,
+            out var house,out var reason),
+            "A complete 2-storey stepped residence must fit: "+reason);
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        Assert(house.Rooms.Count==5 &&
+            house.UpperFloors[0].Rooms.Count==5,
+            "Do not regress to three rooms and an overgrown hallway.");
+
+        var stair = house.Staircases.Single();
+        var footprint = BuildingStoreys.StairFootprint(stair);
+        var exteriorWalls = FloorGeometry.BuildWalls(
+            house.Perimeter,house.Rooms).Where(w=>w.IsExterior).ToArray();
+        bool WallSide(Point2 a,Point2 b) => exteriorWalls.Any(w=>
+            PolygonGeometry.ClosestPointOnSegment(a,w.A,w.B)
+                .DistanceTo(a)<0.001 &&
+            PolygonGeometry.ClosestPointOnSegment(b,w.A,w.B)
+                .DistanceTo(b)<0.001);
+        Assert(WallSide(footprint[0],footprint[3]) ||
+            WallSide(footprint[1],footprint[2]),
+            "A long side of the generated staircase must abut a wall.");
+        var lower=BuildingStoreys.GetFloor(house,0);
+        var entry=lower.Doors.Where(d => exteriorWalls.Any(w =>
+            PolygonGeometry.ClosestPointOnSegment(
+                d.Centre,w.A,w.B).DistanceTo(d.Centre)<0.001)).ToArray();
+        Assert(entry.Length==1,"A residence needs exactly one street entrance.");
+        var living=lower.Rooms.Single(r=>r.Type=="Living room");
+        Assert(Enumerable.Range(0,living.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(entry[0].Centre,
+                living.Outline[i],
+                living.Outline[(i+1)%living.Outline.Count])
+                .DistanceTo(entry[0].Centre)<0.001),
+            "The exterior entrance should open into Living room, not the flight.");
+        var reserved = new[]{footprint}
+            .Concat(BuildingStoreys.StairLandings(stair));
+        double nearest=reserved.Min(poly=>
+            poly.Select((a,i)=>PolygonGeometry.ClosestPointOnSegment(
+                entry[0].Centre,a,poly[(i+1)%poly.Count])
+                .DistanceTo(entry[0].Centre)).Min());
+        Assert(nearest>=1.0,
+            "An exterior door must be at least 1m from the stairs and landings.");
+    }
+});
+
+Check("5-foot two-storey residence wings leave enough room past their cross-passage", () =>
+{
+    for(int seed=0;seed<150;seed++)
+    foreach(int grid in new[]{0,5,10})
+    {
+        var ring=BuildingGenerator.MedievalFootprint(
+            BuildingUse.Residence,2,grid,new Random(seed));
+        if(ring.Count!=6) continue;
+        double depth=ring.Max(p=>p.Y);
+        double step=ring[2].Y;
+        Assert(step>=4.5-1e-6 && depth-step>=3.65-1e-6,
+            "A residence wing must not force the generator to make " +
+            "tiny rear rooms or return a hall-dominated fallback.");
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

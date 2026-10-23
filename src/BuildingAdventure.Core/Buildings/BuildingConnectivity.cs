@@ -296,11 +296,19 @@ public static class BuildingConnectivity
         bool TryPlaceDoor(IEnumerable<WallSegment> candidates, double width)
         {
             foreach (var wall in candidates)
-            foreach (double t in new[] { 0.5, 0.32, 0.68, 0.2, 0.8 })
+            foreach (double t in new[] { 0.5, 0.32, 0.68, 0.2, 0.8, 0.85, 0.15 })
             {
                 var centre = new Point2(wall.A.X + (wall.B.X - wall.A.X) * t,
                     wall.A.Y + (wall.B.Y - wall.A.Y) * t);
                 if (floor.Doors.Any(d => d.Centre.DistanceTo(centre) < 0.5))
+                    continue;
+                // An exterior door must not straddle the junction of two
+                // rooms on an otherwise continuous facade. Conventional
+                // wall validation cannot see this doorway obstruction.
+                if (wall.IsExterior && floor.Rooms
+                    .SelectMany(r => r.Outline)
+                    .Any(corner => corner.DistanceTo(centre) <
+                        width / 2 + 0.1))
                     continue;
                 // Stair reservations are placed before interior doors.
                 // A doorway touching a flight or landing would otherwise
@@ -315,7 +323,8 @@ public static class BuildingConnectivity
                                 PolygonGeometry.ClosestPointOnSegment(
                                     centre, shape[i],
                                     shape[(i + 1) % shape.Count])
-                                    .DistanceTo(centre) < width / 2 + 0.1))))
+                                    .DistanceTo(centre) <
+                                        (wall.IsExterior ? 1.0 : width / 2 + 0.1)))))
                     continue;
                 var trial = BuildingStoreys.Copy(working);
                 var edited = BuildingStoreys.GetFloor(trial, floorIndex);

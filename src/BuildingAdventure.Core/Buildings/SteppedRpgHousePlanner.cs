@@ -142,11 +142,11 @@ public static class SteppedRpgHousePlanner
             stair=new StaircaseDefinition
             {
                 LowerFloorIndex=0,
-                // Keep the tread away from the outer wall, making
-                // enough space for a full-width route behind BOTH
-                // landings. The ascent points inward to the house's
-                // cross-passage, independent of rotation/reflection.
-                Centre=P(coreWidth/2,1.1),
+                // The long side of the flight sits against the outside
+                // wall. The clear 1.1m bypass belongs BEHIND its opposite
+                // edge, not in a narrow unused strip next to the facade.
+                // The ascent still points into the cross-passage.
+                Centre=P(coreWidth/2,0.45),
                 Length=2.8,Width=0.9,LandingLength=1,
                 RotationDegrees=v.Swap
                     ? (v.FlipU ? 180 : 0)
@@ -165,7 +165,7 @@ public static class SteppedRpgHousePlanner
         // lets both landings reach the approach on BOTH floors without
         // stepping through the flight or falling into the upper void.
         const double minimumBypassWidth=1.1;
-        double capDepth=Math.Max(2.3,
+        double capDepth=Math.Max(2.25,
             stairEnvelope.SelectMany(r=>r).Max(V)+minimumBypassWidth);
         if (capDepth - stairEnvelope.SelectMany(r=>r).Max(V)
                 < minimumBypassWidth-Epsilon)
@@ -239,6 +239,19 @@ public static class SteppedRpgHousePlanner
                 out var placed,out reason)) return false;
             result=placed;
         }
+        // The hall's front facade is directly beside the staircase. Do
+        // NOT put an entrance in that wall (the previous midpoint door
+        // opened directly into the side of the flight). Enter through the
+        // living room's exterior wall instead, with a full room-width
+        // approach before encountering any stairs or landing.
+        var entryFloor = BuildingStoreys.GetFloor(result, 0);
+        entryFloor.Doors.Add(new DoorDefinition
+        {
+            Centre = P(0, (capDepth + cutY) / 2), Width = 0.9
+        });
+        BuildingStoreys.SetFloor(result, 0, entryFloor);
+        if (!BuildingStoreys.Validate(result, out reason)) return false;
+
         BuildingConnectivity.AddDoors(result,0,out var doorGround);
         BuildingConnectivity.AddDoors(doorGround,1,out var doorUpper);
         if(!BuildingStoreys.Validate(doorUpper,out reason)) return false;

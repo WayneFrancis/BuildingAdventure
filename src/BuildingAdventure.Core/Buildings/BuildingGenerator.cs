@@ -541,6 +541,26 @@ public static class BuildingGenerator
             Math.Max(cell, Math.Round(2.0 / cell) * cell);
         double wingStart = Math.Round(depth * 0.6 / cell) * cell;
         wingStart = Math.Clamp(wingStart, cell, depth - cell);
+
+        // A two-storey stepped residence needs actual depth for the two
+        // rear rooms AFTER its cross-passage. The old 5-foot grid could
+        // generate y=6.096 on a 9.144m-deep house, leaving only 3.048m
+        // behind the step: the proper RPG planner then failed and an
+        // unfinished hall-plus-two-rooms fallback was shown instead.
+        if (use == BuildingUse.Residence && floors == 2)
+        {
+            const double minimumRearWing = 3.65;
+            const double minimumFrontWing = 4.5;
+            while (depth - wingStart < minimumRearWing - 1e-6 &&
+                   wingStart - cell >= minimumFrontWing - 1e-6)
+                wingStart -= cell;
+            // On a coarse 10-foot grid no useful step may fit. In that
+            // case a rectangle is preferable to a misleading tiny wing.
+            if (depth - wingStart < minimumRearWing - 1e-6 ||
+                wingStart < minimumFrontWing - 1e-6)
+                return [new(0, 0), new(width, 0),
+                        new(width, depth), new(0, depth)];
+        }
         return
         [
             new(0, 0), new(width, 0),
