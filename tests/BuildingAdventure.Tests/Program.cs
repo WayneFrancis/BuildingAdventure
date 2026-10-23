@@ -9608,5 +9608,90 @@ Check("Balanced L-shaped kitchen serves Dining directly with Pantry at front", (
     }
 });
 
+
+Check("Small L residence no longer returns uploaded 39-percent hall", () =>
+{
+    var ring=new List<Point2>
+    {
+        new(0,0),new(8.5,0),new(8.5,4.5),
+        new(10.5,4.5),new(10.5,8.5),new(0,8.5)
+    };
+    var source=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    static bool On(Point2 point,IReadOnlyList<Point2> outline)=>
+        Enumerable.Range(0,outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(point,outline[i],
+                outline[(i+1)%outline.Count]).DistanceTo(point)<1e-5);
+    foreach(int seed in new[]{1,7,21,41,77,123})
+    {
+        Assert(CompactSteppedRpgHousePlanner.TryGenerate(source,seed,
+            out var house,out var reason),$"Small L seed={seed}: {reason}");
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        var upper=BuildingStoreys.GetFloor(house,1);
+        var kitchen=house.Rooms.Single(r=>r.Type=="Kitchen");
+        var dining=house.Rooms.Single(r=>r.Type=="Dining room");
+        Assert(house.Doors.Any(d=>On(d.Centre,kitchen.Outline) &&
+            On(d.Centre,dining.Outline)),
+            "Kitchen and Dining must share a serving door.");
+        Assert(house.Rooms.Count==5 && upper.Rooms.Count==6 &&
+            upper.Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(house.Rooms.Where(r=>r.Type=="Hallway")
+            .Sum(r=>PolygonGeometry.Area(r.Outline))<9 &&
+            upper.Rooms.Where(r=>r.Type=="Hallway")
+                .Sum(r=>PolygonGeometry.Area(r.Outline))<9,
+            "The uploaded hall used 31.38m2 per floor; keep the new hall <9m2.");
+        Assert(house.Rooms.Where(r=>r.Type is "Study" or "Dining room")
+            .All(r=>PolygonGeometry.Area(r.Outline)>10),
+            "Ground rooms need useful area, not 1.75m-deep bands.");
+        var stair=house.Staircases.Single();
+        Assert(FloorGeometry.IsWithinPolygon(
+            BuildingStoreys.StairFootprint(stair),
+            house.Rooms.Single(r=>r.Type=="Living room").Outline) &&
+            FloorGeometry.IsWithinPolygon(
+            BuildingStoreys.StairFootprint(stair),
+            upper.Rooms.Single(r=>r.Type=="Sitting room").Outline));
+        Assert(source.Rooms.Count==0 && source.Staircases.Count==0,
+            "Generating drafts cannot modify source.");
+    }
+});
+
+Check("Small stepped room-first plan supports rotations and mirrors", () =>
+{
+    List<Point2> original=[
+        new(0,0),new(8.5,0),new(8.5,4.5),
+        new(10.5,4.5),new(10.5,8.5),new(0,8.5)
+    ];
+    foreach(int rotation in new[]{0,1,2,3})
+    foreach(bool mirror in new[]{false,true})
+    {
+        Point2 Transform(Point2 p)
+        {
+            double x=mirror?-p.X:p.X, y=p.Y;
+            return rotation switch
+            {
+                1=>new Point2(-y,x),
+                2=>new Point2(-x,-y),
+                3=>new Point2(y,-x),
+                _=>new Point2(x,y)
+            };
+        }
+        var shape=original.Select(Transform).ToList();
+        var source=new BuildingDocument
+        {
+            SchemaVersion=2,Perimeter=shape.ToList(),
+            UpperFloors=[new StoreyDefinition{Perimeter=shape.ToList()}]
+        };
+        Assert(CompactSteppedRpgHousePlanner.TryGenerate(source,42,
+            out var built,out var reason),
+            $"Rotation {rotation} / mirror {mirror}: {reason}");
+        Assert(BuildingStoreys.Validate(built,out reason),reason);
+        Assert(built.Rooms.Count(r=>r.Type=="Kitchen")==1 &&
+            built.UpperFloors[0].Rooms.Count(r=>r.Type=="Bedroom")==3);
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

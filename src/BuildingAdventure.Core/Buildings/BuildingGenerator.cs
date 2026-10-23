@@ -162,6 +162,43 @@ public static class BuildingGenerator
             }
         }
 
+        // Shallow-front L homes do not have the extra 2.3m of front
+        // depth needed by the stair-cap/passage stepped archetype.
+        // Their dedicated room-first plan puts stairs in the Living room,
+        // connects Kitchen to Dining and gives the upper floor different
+        // partitions. This also covers the uploaded 8.5/10.5 x 8.5m L.
+        if (floorCount==2 && options.CompactRpgHouseLayout &&
+            options.Purpose==BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors && options.Stairs &&
+            BuildingStoreys.TryAddFloor(blank,out var smallBasis,out _) &&
+            CompactSteppedRpgHousePlanner.TryGenerate(smallBasis,seed,
+                out var small,out _))
+        {
+            int hearths=0;
+            if(options.Fireplaces &&
+                BuildingConnectivity.TryAddChimney(small,
+                    out var heated,options.Purpose))
+            {
+                small=heated;
+                hearths=1;
+            }
+            if(options.Windows)
+                foreach(int level in new[]{0,1})
+                {
+                    BuildingConnectivity.AddWindows(small,level,
+                        out var glazed);
+                    small=glazed;
+                }
+            if(BuildingStoreys.Validate(small,out reason))
+            {
+                suggestion=new BuildingSuggestion(small,seed,[0,1],
+                    $"Compact L-shaped two-storey RPG house. Seed {seed}: " +
+                    $"staircase in living/sitting space, short rear passage, "+
+                    $"direct Kitchen-Dining doorway, {hearths} hearth(s)");
+                return true;
+            }
+        }
+
         // Simple six-corner stepped homes should be built as complete
         // RPG plans too. A rectangle-only template cannot fill their L
         // wings, and corridor-first planning could waste 77% of the floor.
@@ -580,13 +617,29 @@ public static class BuildingGenerator
             options.Rooms && options.Corridors && options.Doors && options.Stairs)
         {
             var upstairs = BuildingStoreys.GetFloor(result, 1);
+            double hallRatio(int index)
+            {
+                var floor=BuildingStoreys.GetFloor(result,index);
+                return floor.Rooms.Where(r=>r.Type=="Hallway")
+                    .Sum(r=>PolygonGeometry.Area(r.Outline)) /
+                    PolygonGeometry.Area(floor.Perimeter);
+            }
+            bool tooThin=BuildingStoreys.FloorIndexes(result).Any(index=>
+                BuildingStoreys.GetFloor(result,index).Rooms.Any(r=>
+                r.Type is "Living room" or "Dining room" or "Study" or
+                    "Bedroom" &&
+                Math.Min(
+                    r.Outline.Max(p=>p.X)-r.Outline.Min(p=>p.X),
+                    r.Outline.Max(p=>p.Y)-r.Outline.Min(p=>p.Y)) < 2.5));
             if (result.Rooms.Count < 5 || upstairs.Rooms.Count < 5 ||
                 !result.Rooms.Any(r => r.Type == "Kitchen") ||
-                upstairs.Rooms.Count(r => r.Type == "Bedroom") < 2)
+                upstairs.Rooms.Count(r => r.Type == "Bedroom") < 2 ||
+                hallRatio(0)>0.32 || hallRatio(1)>0.32 || tooThin)
             {
-                reason = "The draft is not a complete two-storey residence: " +
-                    "a usable kitchen, at least two upstairs bedrooms " +
-                    "and five defined rooms per floor are required.";
+                reason = "The draft is not a practical two-storey residence: " +
+                    "kitchen, bedrooms, appropriately proportioned rooms and " +
+                    "hallways under 32% of floor area are required. " +
+                    "A sparse or thin-room legacy fallback was rejected.";
                 return false;
             }
         }

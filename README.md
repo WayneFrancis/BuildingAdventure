@@ -4,6 +4,21 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.66 — Compact shallow L-shaped houses without giant mirrored halls (development)
+
+- Added a distinct **room-first compact L-shaped two-storey residence**
+  template for front sections roughly 4.5m deep, including the uploaded
+  8.5 / 10.5 × 8.5m example. Stairs occupy a living/sitting room, with
+  a short rear passage instead of the 31.38m² (39%) hallway on both floors.
+- Kitchen and Dining directly share a serving wall. Study, bedrooms and
+  Bathroom have separate access, and first-floor partitioning differs
+  from the ground floor instead of cloning it.
+- The whole-building generator prefers this template when larger L-house
+  planners cannot fit, and retries instead of accepting the old generic
+  fallback with 1.75m-deep rooms or over-32% hall coverage.
+- Regression tests use the saved accepted footprint and mirrored/rotated
+  variants, verifying accessible doors and functional room sizes.
+
 ## v0.65 — Functional Kitchen–Dining circulation in L-shaped houses (development)
 
 - The smaller stepped two-storey residence now places Kitchen and Dining
