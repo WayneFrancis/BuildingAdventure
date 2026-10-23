@@ -9467,5 +9467,59 @@ Check("Whole-building one-storey residence never offers hall plus one room", () 
     }
 });
 
+
+Check("Rectangular RPG houses vary foyer and Kitchen-Dining topology across seeds", () =>
+{
+    var ring=new List<Point2>
+    {
+        new(0,0),new(9.0,0),new(9.0,10),new(0,10)
+    };
+    var blank=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    var layouts=new List<BuildingDocument>();
+    var relativeKitchenPositions=new HashSet<bool>();
+    var foyerWidths=new HashSet<int>();
+    foreach(int seed in Enumerable.Range(11,18))
+    {
+        Assert(CompactRpgHousePlanner.TryGenerate(blank,seed,
+            out var layout,out var reason),
+            $"Rectangular seed {seed}: {reason}");
+        Assert(BuildingStoreys.Validate(layout,out reason),reason);
+        if(!layouts.Any(other=>BuildingGenerator.SameRoomLayout(
+            layout,other,[0,1])))
+            layouts.Add(layout);
+        var lobby=layout.Rooms.Single(r=>r.Name=="Entrance lobby");
+        foyerWidths.Add((int)Math.Round(
+            100*lobby.Outline.Min(p=>p.X)+100*lobby.Outline.Max(p=>p.X)));
+        var kitchen=layout.Rooms.Single(r=>r.Type=="Kitchen");
+        var dining=layout.Rooms.Single(r=>r.Type=="Dining room");
+        Point2 Mid(RoomDefinition room)=>new(
+            room.Outline.Average(p=>p.X),
+            room.Outline.Average(p=>p.Y));
+        bool OnRoom(RoomDefinition room,Point2 point)=>
+            Enumerable.Range(0,room.Outline.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(point,
+                    room.Outline[i],room.Outline[(i+1)%room.Outline.Count])
+                .DistanceTo(point)<1e-5);
+        var entry=layout.Doors.First(d=>OnRoom(lobby,d.Centre) &&
+            Enumerable.Range(0,layout.Perimeter.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(
+                    d.Centre,layout.Perimeter[i],
+                    layout.Perimeter[(i+1)%layout.Perimeter.Count])
+                .DistanceTo(d.Centre)<1e-5));
+        relativeKitchenPositions.Add(
+            Mid(kitchen).DistanceTo(entry.Centre) <
+            Mid(dining).DistanceTo(entry.Centre));
+    }
+    Assert(layouts.Count>=6,
+        "Seed changes should alter actual room footprints, not only mirrors.");
+    Assert(relativeKitchenPositions.Count==2,
+        "Both front-Kitchen/rear-Dining and rear-Kitchen/front-Dining " +
+        "configurations should be generated.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

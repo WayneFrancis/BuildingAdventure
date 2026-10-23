@@ -6,6 +6,10 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
 
 ## v0.64 — Reclaim upstairs stair passage and reject incomplete cottages (development)
 
+- Rectangular two-storey RPG homes now sample off-centre entrance
+  lobbies and two different Kitchen/Dining zones. This changes actual
+  room proportions and circulation, not merely the mirrored facade;
+  existing stair-wall, door, and room-validity rules still apply.
 - In the **stepped/L-shaped two-storey RPG residence**, the ground
   stair passage retains its wide approach behind the flight, but the
   upper floor now keeps only the physical stair/landing reservation and

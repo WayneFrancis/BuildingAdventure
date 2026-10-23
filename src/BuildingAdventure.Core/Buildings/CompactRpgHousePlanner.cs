@@ -71,6 +71,7 @@ public static class CompactRpgHousePlanner
         var random = new Random(seed);
         var variations = new List<(bool Mirror, bool Reverse,
             double Front, double Back, double Split, double Entry,
+            double LobbyBias, bool KitchenAtRear,
             bool GuestLeft, bool BackDoor)>();
         foreach (bool mirror in new[] { false, true })
         foreach (bool reverse in new[] { false, true })
@@ -78,9 +79,12 @@ public static class CompactRpgHousePlanner
         foreach (double back in new[] { 0.29, 0.32 })
         foreach (double split in new[] { 0.60, 0.64 })
         foreach (double entry in new[] { 1.35, 1.55 })
+        foreach (double lobbyBias in new[] { -0.55, 0.0, 0.35 })
+        foreach (bool kitchenAtRear in new[] { true, false })
         {
             variations.Add((mirror, reverse, front, back, split,
-                entry, random.Next(2) == 0, random.Next(3) == 0));
+                entry, lobbyBias, kitchenAtRear,
+                random.Next(2) == 0, random.Next(3) == 0));
         }
         for (int i = variations.Count - 1; i > 0; i--)
         {
@@ -107,7 +111,8 @@ public static class CompactRpgHousePlanner
         bool deepAlongX, double minX, double maxX, double minY, double maxY,
         double width, double depth,
         (bool Mirror, bool Reverse, double Front, double Back,
-            double Split, double Entry, bool GuestLeft, bool BackDoor) variant,
+            double Split, double Entry, double LobbyBias,
+            bool KitchenAtRear, bool GuestLeft, bool BackDoor) variant,
         out BuildingDocument proposed, out string reason)
     {
         proposed = BuildingStoreys.Copy(source);
@@ -116,7 +121,10 @@ public static class CompactRpgHousePlanner
         double frontEnd = Math.Clamp(depth * variant.Front, 2.6, 3.4);
         double rearStart = depth - Math.Clamp(depth * variant.Back, 2.3, 3.3);
         double splitX = Math.Clamp(width * variant.Split, 5.12, width - 2.7);
-        double lobbyLeft = (width - variant.Entry) / 2;
+        // A central entrance is not the only viable configuration.
+        // Shift the actual foyer partition, changing front-room sizes.
+        double lobbyLeft = (width - variant.Entry) / 2 +
+            variant.LobbyBias;
         double lobbyRight = lobbyLeft + variant.Entry;
         if (rearStart - frontEnd < 2.4 ||
             lobbyLeft < 2.6 || width - lobbyRight < 2.6 ||
@@ -148,9 +156,11 @@ public static class CompactRpgHousePlanner
                 Rect(lobbyRight,0,width,frontEnd)),
             Room("Living room","Living room",
                 Rect(0,frontEnd,splitX,depth)),
-            Room("Dining room","Dining room",
+            Room(variant.KitchenAtRear?"Dining room":"Kitchen",
+                variant.KitchenAtRear?"Dining room":"Kitchen",
                 Rect(splitX,frontEnd,width,rearStart)),
-            Room("Kitchen","Kitchen",
+            Room(variant.KitchenAtRear?"Kitchen":"Dining room",
+                variant.KitchenAtRear?"Kitchen":"Dining room",
                 Rect(splitX,rearStart,width,depth))
         ];
         // If we swap the guest and study, also swap their actual roles.
@@ -254,10 +264,14 @@ public static class CompactRpgHousePlanner
             OnWall(entry.Outline,d.Centre)))
             return false;
 
-        // Optional second entrance from the kitchen to the back garden.
+        // Optional second entrance on the Kitchen's outside wall:
+        // the rear facade for the rear-kitchen archetype, or the side
+        // facade when Kitchen and Dining have exchanged zones.
         if (variant.BackDoor)
         {
-            var back=World((splitX+width)/2,depth);
+            var back=variant.KitchenAtRear
+                ? World((splitX+width)/2,depth)
+                : World(width,(frontEnd+rearStart)/2);
             var candidate=BuildingStoreys.Copy(proposed);
             var edited=BuildingStoreys.GetFloor(candidate,0);
             edited.Doors.Add(new DoorDefinition { Centre=back,Width=0.9 });
