@@ -41,7 +41,8 @@ public static class SteppedRpgHousePlanner
         // Test each transpose/mirror transform, allowing the staircase
         // to identify the end of the house to use as its private bay.
         var variants=new List<(bool Swap,bool FlipU,bool FlipV,
-            double StairWidth,double CrossWidth,double SplitShift)>();
+            double StairWidth,double CrossWidth,double SplitShift,
+            bool RearKitchenLeft)>();
         foreach(bool swap in new[]{false,true})
         foreach(bool flipU in new[]{false,true})
         foreach(bool flipV in new[]{false,true})
@@ -50,8 +51,9 @@ public static class SteppedRpgHousePlanner
         foreach(double stairWidth in new[]{5.6,5.75,5.8})
         foreach(double crossWidth in new[]{1.4,1.6})
         foreach(double splitShift in new[]{-0.35,0.0,0.35})
+        foreach(bool rearKitchenLeft in new[]{false,true})
             variants.Add((swap,flipU,flipV,stairWidth,
-                crossWidth,splitShift));
+                crossWidth,splitShift,rearKitchenLeft));
         var rng=new Random(seed);
         for(int i=variants.Count-1;i>0;i--)
         {
@@ -71,7 +73,8 @@ public static class SteppedRpgHousePlanner
 
     private static bool TryVariant(BuildingDocument source,
         (bool Swap,bool FlipU,bool FlipV,
-            double StairWidth,double CrossWidth,double SplitShift) v,
+            double StairWidth,double CrossWidth,double SplitShift,
+            bool RearKitchenLeft) v,
         out BuildingDocument result,out string reason)
     {
         result=BuildingStoreys.Copy(source);
@@ -248,8 +251,14 @@ public static class SteppedRpgHousePlanner
                 Rect(0,upperCapDepth,coreWidth-approachWidth,cutY),
                 pockets[1],pockets[2],pockets[3]
             };
+            // The older version put the Kitchen above the cross-passage
+            // and Dining below it: they could never share a serving door.
+            // Put the two food rooms in the adjacent rear bays instead.
+            // Seeds may swap their sides without breaking the hall route.
             var roomRoles = index==0
-                ? new[] {"Living room","Kitchen","Dining room","Study"}
+                ? new[] {"Living room","Study",
+                    v.RearKitchenLeft ? "Kitchen" : "Dining room",
+                    v.RearKitchenLeft ? "Dining room" : "Kitchen"}
                 : new[] {"Bedroom","Bedroom","Bedroom","Bathroom"};
             var floor=BuildingStoreys.GetFloor(result,index);
             floor.Rooms.Add(new RoomDefinition
@@ -294,6 +303,20 @@ public static class SteppedRpgHousePlanner
         BuildingConnectivity.AddDoors(doorGround,1,out var doorUpper);
         if(!BuildingStoreys.Validate(doorUpper,out reason)) return false;
         result=doorUpper;
+
+        var serviced=BuildingStoreys.GetFloor(result,0);
+        var kitchen=serviced.Rooms.Single(r=>r.Type=="Kitchen");
+        var dining=serviced.Rooms.Single(r=>r.Type=="Dining room");
+        static bool OnOutline(Point2 p,IReadOnlyList<Point2> poly)=>
+            Enumerable.Range(0,poly.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(p,poly[i],
+                    poly[(i+1)%poly.Count]).DistanceTo(p)<Epsilon);
+        if(!serviced.Doors.Any(d=>OnOutline(d.Centre,kitchen.Outline) &&
+            OnOutline(d.Centre,dining.Outline)))
+        {
+            reason="The rear Kitchen and Dining room need a direct serving doorway.";
+            return false;
+        }
 
         // Every private room must have direct hall access; a bedroom
         // may never act as the only route to another bedroom.

@@ -4,6 +4,22 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.65 — Functional Kitchen–Dining circulation in L-shaped houses (development)
+
+- The smaller stepped two-storey residence now places Kitchen and Dining
+  in the adjacent rear bays, rather than on opposite sides of a cross-hall.
+  Their shared wall must contain a validated **direct serving door**.
+- A seeded choice swaps which rear bay houses Kitchen or Dining, adding
+  an architectural variation without breaking hall access.
+- The larger balanced L-shaped layout moves Pantry to the FRONT of its
+  service zone, leaving Kitchen against the Dining wall. It requires
+  direct Kitchen–Dining and Kitchen–Pantry doors; food service no
+  longer takes a detour through the hall or a storage space.
+- These checks run on detached candidate buildings. Failed door
+  geometry rejects a proposed variant without changing accepted plans.
+- Tests cover room adjacency, door links, seeded assignments,
+  independent upstairs bedrooms, and preserved source drawings.
+
 ## v0.64 — Reclaim upstairs stair passage and reject incomplete cottages (development)
 
 - Rectangular two-storey RPG homes now sample off-centre entrance

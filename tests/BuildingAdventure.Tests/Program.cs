@@ -9521,5 +9521,92 @@ Check("Rectangular RPG houses vary foyer and Kitchen-Dining topology across seed
         "configurations should be generated.");
 });
 
+
+Check("Stepped L-shaped residences put Kitchen and Dining beside each other", () =>
+{
+    var original=new List<Point2>
+    {
+        new(0,0),new(9.5,0),new(9.5,6),
+        new(11.5,6),new(11.5,10),new(0,10)
+    };
+    static bool On(Point2 point,RoomDefinition room)=>
+        Enumerable.Range(0,room.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(point,
+                room.Outline[i],room.Outline[(i+1)%room.Outline.Count])
+                .DistanceTo(point)<1e-5);
+    var assignments=new HashSet<bool>();
+    foreach(int seed in new[]{1,7,23,42,77,112,179,280})
+    {
+        var basis=new BuildingDocument
+        {
+            SchemaVersion=2,Perimeter=original.ToList(),
+            UpperFloors=[new StoreyDefinition
+            {
+                Perimeter=original.ToList()
+            }]
+        };
+        Assert(SteppedRpgHousePlanner.TryGenerate(basis,seed,
+            out var proposal,out var reason),$"Seed {seed}: {reason}");
+        Assert(BuildingStoreys.Validate(proposal,out reason),reason);
+        var kitchen=proposal.Rooms.Single(r=>r.Type=="Kitchen");
+        var dining=proposal.Rooms.Single(r=>r.Type=="Dining room");
+        var study=proposal.Rooms.Single(r=>r.Type=="Study");
+        Assert(proposal.Doors.Any(door=>
+            On(door.Centre,kitchen) && On(door.Centre,dining)),
+            "Kitchen and Dining need a direct serving door, not a hall detour.");
+        var hallway=proposal.Rooms.Single(r=>r.Type=="Hallway");
+        Assert(new[]{kitchen,dining,study}.All(room=>
+            proposal.Doors.Any(d=>On(d.Centre,room) &&
+                On(d.Centre,hallway))),
+            "Independent rooms must remain accessible from the hall.");
+        assignments.Add(kitchen.Outline.Average(p=>p.X) <
+            dining.Outline.Average(p=>p.X));
+        Assert(proposal.UpperFloors[0].Rooms.Count(r=>
+            r.Type=="Bedroom")==3);
+        Assert(basis.Rooms.Count==0 &&
+            basis.Staircases.Count==0,"Only propose detached drafts.");
+    }
+    Assert(assignments.Count==2,
+        "Different seeds should alternate the rear Kitchen and Dining bays.");
+});
+
+Check("Balanced L-shaped kitchen serves Dining directly with Pantry at front", () =>
+{
+    var ring=new List<Point2>
+    {
+        new(0,0),new(11,0),new(11,5),
+        new(13,5),new(13,8.5),new(0,8.5)
+    };
+    var source=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    static bool On(Point2 point,RoomDefinition room)=>
+        Enumerable.Range(0,room.Outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(point,
+                room.Outline[i],room.Outline[(i+1)%room.Outline.Count])
+                .DistanceTo(point)<1e-5);
+    foreach(int seed in new[]{7,11,26,41,71,101})
+    {
+        Assert(BalancedSteppedRpgHousePlanner.TryGenerate(source,seed,
+            out var layout,out var reason),$"Seed {seed}: {reason}");
+        Assert(BuildingStoreys.Validate(layout,out reason),reason);
+        var kitchen=layout.Rooms.Single(r=>r.Type=="Kitchen");
+        var dining=layout.Rooms.Single(r=>r.Type=="Dining room");
+        var pantry=layout.Rooms.Single(r=>r.Type=="Pantry");
+        Assert(layout.Doors.Any(d=>On(d.Centre,kitchen) &&
+            On(d.Centre,dining)),
+            "A pantry cannot be between the kitchen and dining room.");
+        Assert(layout.Doors.Any(d=>On(d.Centre,kitchen) &&
+            On(d.Centre,pantry)),
+            "Pantry must open from the Kitchen, not require a hall detour.");
+        Assert(layout.UpperFloors[0].Rooms.Count(r=>
+            r.Type=="Bedroom")==3,
+            "Ground-floor kitchen reallocation may not affect upper bedrooms.");
+        Assert(source.Rooms.Count==0,"Do not modify source.");
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

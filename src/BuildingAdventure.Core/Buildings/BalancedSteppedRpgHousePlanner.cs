@@ -118,6 +118,7 @@ public static class BalancedSteppedRpgHousePlanner
         const double stairRoomWidth=5.0;
         double hallRight=stairRoomWidth+v.SpineWidth;
         double kitchenDepth=stepY*v.KitchenDepth;
+        double pantryEnd=stepY-kitchenDepth;
         double bedroomDepth=stepY*v.BedroomDepth;
         double rearHeight=depth-stepY;
         double rightFrontWidth=stepX-hallRight;
@@ -169,8 +170,11 @@ public static class BalancedSteppedRpgHousePlanner
         var groundRooms=new[]
         {
             ("Living room","Living room",Rect(0,0,stairRoomWidth,stepY)),
-            ("Kitchen","Kitchen",Rect(hallRight,0,stepX,kitchenDepth)),
-            ("Pantry","Pantry",Rect(hallRight,kitchenDepth,stepX,stepY)),
+            // Pantry is at the far/front end. Previously it occupied
+            // the entire wall between Kitchen and Dining, forcing meals
+            // to be carried via the passage or through a store room.
+            ("Kitchen","Kitchen",Rect(hallRight,pantryEnd,stepX,stepY)),
+            ("Pantry","Pantry",Rect(hallRight,0,stepX,pantryEnd)),
             ("Study","Study",Rect(0,stepY,stairRoomWidth,depth)),
             ("Dining room","Dining room",Rect(hallRight,stepY,width,depth))
         };
@@ -248,6 +252,24 @@ public static class BalancedSteppedRpgHousePlanner
                 chimney.HearthRoomIds.Clear();
         }
         if(!BuildingStoreys.Validate(result,out reason)) return false;
+
+        var serviced=BuildingStoreys.GetFloor(result,0);
+        var kitchen=serviced.Rooms.Single(r=>r.Type=="Kitchen");
+        var dining=serviced.Rooms.Single(r=>r.Type=="Dining room");
+        var pantry=serviced.Rooms.Single(r=>r.Type=="Pantry");
+        static bool OnShared(Point2 point,IReadOnlyList<Point2> outline)=>
+            Enumerable.Range(0,outline.Count).Any(i=>
+                PolygonGeometry.ClosestPointOnSegment(point,outline[i],
+                    outline[(i+1)%outline.Count]).DistanceTo(point)<Eps);
+        bool Linked(RoomDefinition first,RoomDefinition second)=>
+            serviced.Doors.Any(d=>OnShared(d.Centre,first.Outline) &&
+                OnShared(d.Centre,second.Outline));
+        if(!Linked(kitchen,dining) || !Linked(kitchen,pantry))
+        {
+            reason="Kitchen needs direct doors to Dining and Pantry, " +
+                "without routing service through the passage.";
+            return false;
+        }
 
         // A ground-floor living space can safely contain the stairs,
         // but each upstairs bedroom must have an independent door
