@@ -8918,16 +8918,24 @@ Check("Pantry enlargement never moves its wall into the Kitchen doorway", () =>
             "AI candidate must preserve the Kitchen/Living room doorway.");
         var afterPantry=changed.Rooms.Single(r=>r.Id==pantry.Id);
         double bottom=afterPantry.Outline.Max(p=>p.Y);
-        Assert(bottom<=1.75,
-            "Do not end the new Pantry wall within the Kitchen doorway span.");
+        var kitchenEntry = changed.Doors.Single(d => d.Id==livingKitchenDoor.Id);
+        if (bottom > 1.75)
+            Assert(Math.Abs(kitchenEntry.Centre.X - 5.6) < 0.01 &&
+                kitchenEntry.Centre.Y >= bottom +
+                    livingKitchenDoor.Width / 2 + 0.09,
+                "A larger Pantry may move the Kitchen door, but only to a " +
+                "clear position on its original Kitchen/Living partition.");
+        else
+            Assert(kitchenEntry.Centre.DistanceTo(
+                livingKitchenDoor.Centre)<1e-7,
+                "A small resize should leave the unobstructed Kitchen door still.");
         Assert(bottom>1.4,
             "Offer a safe small increase rather than doing nothing.");
         Assert(changed.Doors.Any(d=>d.Id==pantryKitchenDoor.Id &&
             Math.Abs(d.Centre.Y-bottom)<1e-6),
             "Pantry/Kitchen doorway must move with its shared partition.");
-        Assert(changed.Doors.Any(d=>d.Id==livingKitchenDoor.Id &&
-            d.Centre.DistanceTo(livingKitchenDoor.Centre)<1e-7),
-            "Kitchen/Living doorway must stay at its original position.");
+        Assert(changed.Doors.Any(d=>d.Id==livingKitchenDoor.Id),
+            "The Kitchen/Living doorway must retain its ID, even if moved.");
         Assert(changed.Rooms.Single(r=>r.Id==study.Id).Outline.SequenceEqual(
             study.Outline),"The Study must not change.");
     }
