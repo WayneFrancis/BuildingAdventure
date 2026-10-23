@@ -16,6 +16,11 @@ requirements, draw one by hand, or combine manual rooms with procedural design.
 - Small 5-foot-grid stepped footprints reserve useful rear-room depth
   beyond the cross-passage. Where a 10-foot grid cannot fit a proper
   rear wing, the generator chooses a clean rectangular perimeter.
+- Complete two-storey residential suggestions now retry up to four
+  seeded variants if a draft is incomplete. In particular, fallback
+  layouts must have a kitchen, at least two upstairs bedrooms, and
+  at least five rooms per floor rather than silently offering a sparse
+  hall-dominated plan.
 - Added regression tests based on the two uploaded 2-storey residence
   sizes and rotations, without adding the private saved floor plans
   to the repository.

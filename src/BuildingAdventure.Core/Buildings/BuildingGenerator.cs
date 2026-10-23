@@ -64,6 +64,39 @@ public static class BuildingGenerator
         GenerationOptions options, out BuildingSuggestion suggestion, out string reason,
         int gridFeet = 0)
     {
+        // Only the complete, fully equipped two-storey RPG residential
+        // archetype gets automatic retries. A failed architectural layout
+        // should not silently become a hall and two arbitrary rooms.
+        bool retryResidence = floorCount == 2 && options is
+        {
+            Purpose: BuildingUse.Residence,
+            CompactRpgHouseLayout: true,
+            Rooms: true, Corridors: true, Doors: true, Stairs: true
+        };
+        int attempts = retryResidence ? 4 : 1;
+        string lastError = "";
+        for (int attempt = 0; attempt < attempts; attempt++)
+        {
+            int trialSeed = unchecked(seed + attempt * 7919);
+            if (TrySuggestWholeBuildingAttempt(floorCount, trialSeed,
+                    options, out suggestion, out reason, gridFeet))
+                return true;
+            lastError = reason;
+        }
+        suggestion = new BuildingSuggestion(
+            new BuildingDocument { GridFeet = gridFeet }, seed, [], "");
+        reason = retryResidence
+            ? "No complete two-storey residence fitted after " +
+              $"{attempts} alternate layouts. No sparse or inaccessible " +
+              "building was offered. Last reason: " + lastError
+            : lastError;
+        return false;
+    }
+
+    private static bool TrySuggestWholeBuildingAttempt(int floorCount, int seed,
+        GenerationOptions options, out BuildingSuggestion suggestion, out string reason,
+        int gridFeet)
+    {
         var blank = new BuildingDocument { GridFeet = gridFeet };
         suggestion = new BuildingSuggestion(blank, seed, [], "");
         if (floorCount is < 1 or > 4)
@@ -482,6 +515,26 @@ public static class BuildingGenerator
                 "generation style. No incomplete residence was proposed.";
             return false;
         }
+        // Do not present a supposedly complete two-storey home with
+        // only a giant hall, one living room and a utility room. That was
+        // the failed uploaded AI 2storygenresidence example. A retry will
+        // sample another footprint rather than return misleading output.
+        if (floorCount == 2 && options.CompactRpgHouseLayout &&
+            options.Purpose == BuildingUse.Residence &&
+            options.Rooms && options.Corridors && options.Doors && options.Stairs)
+        {
+            var upstairs = BuildingStoreys.GetFloor(result, 1);
+            if (result.Rooms.Count < 5 || upstairs.Rooms.Count < 5 ||
+                !result.Rooms.Any(r => r.Type == "Kitchen") ||
+                upstairs.Rooms.Count(r => r.Type == "Bedroom") < 2)
+            {
+                reason = "The draft is not a complete two-storey residence: " +
+                    "a usable kitchen, at least two upstairs bedrooms " +
+                    "and five defined rooms per floor are required.";
+                return false;
+            }
+        }
+
         string label = (options.CompactRpgHouseLayout &&
             options.Purpose == BuildingUse.Residence && floorCount == 2
                 ? "Compact RPG floor plan was not geometrically feasible; " +

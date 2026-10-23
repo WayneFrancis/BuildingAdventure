@@ -9238,5 +9238,31 @@ Check("5-foot two-storey residence wings leave enough room past their cross-pass
     }
 });
 
+
+Check("Whole-building RPG residence retries instead of returning sparse hallway plans", () =>
+{
+    var options = new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,CompactRpgHouseLayout=true,
+        HallHouseLayout=true,Rooms=true,Corridors=true,Doors=true,
+        Stairs=true,Windows=false,Fireplaces=false
+    };
+    foreach(int seed in new[]{23,61})
+    {
+        Assert(BuildingGenerator.TrySuggestWholeBuilding(2,seed,
+            options,out var suggested,out var reason,5),
+            "An alternative two-storey residence should be found: "+reason);
+        var house=suggested.Building;
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        var upstairs=BuildingStoreys.GetFloor(house,1);
+        Assert(house.Rooms.Count>=5 && upstairs.Rooms.Count>=5 &&
+            house.Rooms.Any(r=>r.Type=="Kitchen") &&
+            upstairs.Rooms.Count(r=>r.Type=="Bedroom")>=2,
+            "Never return the original unfinished hall-plus-two-rooms layout.");
+        Assert(house.Staircases.Count==1,
+            "The completed residence must connect its levels.");
+    }
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
