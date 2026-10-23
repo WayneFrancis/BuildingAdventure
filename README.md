@@ -4,6 +4,20 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.63 — Wall-side staircase in rectangular two-storey residences (development)
+
+- Corrected the compact **rectangular** RPG house planner, which still
+  centred its rear stair between the living-area boundary and exterior
+  wall. The long edge of automatically generated flights now sits flush
+  against the rear perimeter on **all mirrored and rotated variants**.
+- Preserve both level connections, the complete stair opening, upper
+  sitting room and end landing clearances. User-positioned stairs are
+  still retained rather than moved without consent.
+- Automatic exterior windows are checked against actual stair flight and
+  landing footprints, not just a centre-to-centre separation.
+- Added regression tests for the uploaded 8.5 x 8.5m rectangular house,
+  rotated/wide variants and window clearance.
+
 ## v0.62 — Wall-side stairs and safer entrances in two-storey residences (development)
 
 - Stair passages in stepped RPG residences now place new stair flights

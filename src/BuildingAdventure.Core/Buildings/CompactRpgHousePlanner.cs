@@ -180,14 +180,18 @@ public static class CompactRpgHousePlanner
 
         if (proposed.Staircases.Count == 0)
         {
-            // A single straight flight and both 1m landings fit inside
-            // living-room space downstairs and sitting space upstairs.
-            // Their centre/rotation coincide on the two levels.
+            // Place a LONG EDGE flush against the rear exterior wall,
+            // regardless of plan rotation/mirroring. The old formula
+            // (rearStart + depth) / 2 left approximately one full stair
+            // width of inaccessible floor between the flight and wall.
+            // All landing envelopes remain on the room's long axis,
+            // and both levels share the same stair geometry.
+            const double stairWidth = 0.9;
             var stair = new StaircaseDefinition
             {
                 LowerFloorIndex = 0,
-                Centre=World(2.55,(rearStart+depth)/2),
-                Length=2.8, Width=0.9, LandingLength=1,
+                Centre=World(2.55, depth - stairWidth / 2),
+                Length=2.8, Width=stairWidth, LandingLength=1,
                 RotationDegrees=deepAlongX ? 0 : 90
             };
             if (!BuildingStoreys.TryAddStaircase(proposed,stair,

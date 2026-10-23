@@ -385,10 +385,12 @@ public static class BuildingConnectivity
                             r.Outline[i], r.Outline[(i + 1) % r.Outline.Count])
                             .DistanceTo(location) < 1.5)))
                     continue;
-                if (updated.Staircases.Any(s =>
-                    (s.LowerFloorIndex == floorIndex ||
-                     s.LowerFloorIndex + 1 == floorIndex) &&
-                    s.Centre.DistanceTo(location) < 2.3))
+                // A centre-to-centre distance can overlook a window
+                // immediately beside a long stair or its end landing.
+                // Check glazing against the actual flight/landing outlines.
+                if (!AiDoorPlacementPlanner.ClearOfStairs(
+                        updated, floorIndex, location,
+                        Math.Min(1.2, wall.Length - 0.4)))
                     continue;
                 var proposedWindow = new WindowDefinition
                 {

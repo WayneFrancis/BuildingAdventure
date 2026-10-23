@@ -9264,5 +9264,98 @@ Check("Whole-building RPG residence retries instead of returning sparse hallway 
     }
 });
 
+
+Check("Rectangular two-storey RPG houses anchor stair long edges to perimeter", () =>
+{
+    // AI 2storygenresidence3.json: 8.5 x 8.5m, rear stair centred at
+    // (5.95, 7.14), width 0.9m, angle 90. The flight's near exterior
+    // edge was y=7.59, leaving a 0.91m waste strip to wall y=8.5.
+    // Cover its square shape, deep and wide rectangles, plus variants
+    // with reversed and mirrored floor plan orientations.
+    foreach (var (width, depth) in new[]
+    {
+        (8.5,8.5), (9.0,10.0), (10.0,9.0)
+    })
+    foreach (int seed in new[]{1,11,37,77,131})
+    {
+        var ring=new List<Point2>
+        {
+            new(0,0),new(width,0),new(width,depth),new(0,depth)
+        };
+        var blank=new BuildingDocument
+        {
+            SchemaVersion=2,
+            Perimeter=ring.ToList(),
+            UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+        };
+        Assert(CompactRpgHousePlanner.TryGenerate(blank,seed,
+            out var house,out var reason),
+            $"Compact {width}x{depth} seed={seed}: {reason}");
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        var stair=house.Staircases.Single();
+        var points=BuildingStoreys.StairFootprint(stair);
+        var walls=FloorGeometry.BuildWalls(house.Perimeter,house.Rooms)
+            .Where(w=>w.IsExterior).ToArray();
+        bool OnExterior(Point2 p)=>walls.Any(w=>
+            PolygonGeometry.ClosestPointOnSegment(p,w.A,w.B)
+                .DistanceTo(p)<1e-5);
+        Assert((OnExterior(points[0]) && OnExterior(points[3])) ||
+               (OnExterior(points[1]) && OnExterior(points[2])),
+            $"The full long edge of the {width}x{depth} seed={seed} " +
+            "staircase must abut its exterior wall.");
+        var lower=BuildingStoreys.GetFloor(house,0);
+        var upper=BuildingStoreys.GetFloor(house,1);
+        var living=lower.Rooms.Single(r=>r.Type=="Living room");
+        var sitting=upper.Rooms.Single(r=>r.Type=="Sitting room");
+        var reserved=new[]{BuildingStoreys.StairFootprint(stair),
+            BuildingStoreys.StairOpeningFootprint(stair)}
+            .Concat(BuildingStoreys.StairLandings(stair));
+        Assert(reserved.All(p=>
+            FloorGeometry.IsWithinPolygon(p,living.Outline) &&
+            FloorGeometry.IsWithinPolygon(p,sitting.Outline)),
+            "Wall alignment must preserve both floors' landings and void.");
+        Assert(blank.Staircases.Count==0,
+            "Previewing a compact house may not modify its source.");
+    }
+});
+
+Check("Rectangular house auto glazing stays clear of flights and stair landings", () =>
+{
+    var ring=new List<Point2>
+    {
+        new(0,0),new(8.5,0),new(8.5,8.5),new(0,8.5)
+    };
+    var blank=new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    Assert(CompactRpgHousePlanner.TryGenerate(blank,77,
+        out var house,out var reason),reason);
+    foreach(int index in new[]{0,1})
+    {
+        BuildingConnectivity.AddWindows(house,index,out var glazed);
+        house=glazed;
+    }
+    Assert(BuildingStoreys.Validate(house,out var validation),validation);
+    foreach(int index in new[]{0,1})
+    {
+        var floor=BuildingStoreys.GetFloor(house,index);
+        foreach(var window in floor.Windows)
+        foreach(var stair in house.Staircases.Where(s =>
+            s.LowerFloorIndex==index || s.LowerFloorIndex+1==index))
+        foreach(var shape in new[]{BuildingStoreys.StairFootprint(stair)}
+            .Concat(BuildingStoreys.StairLandings(stair)))
+        {
+            Assert(!PolygonGeometry.ContainsPoint(shape,window.Centre) &&
+                Enumerable.Range(0,shape.Count).All(i =>
+                    PolygonGeometry.ClosestPointOnSegment(window.Centre,
+                        shape[i],shape[(i+1)%shape.Count])
+                        .DistanceTo(window.Centre)>=window.Width/2+0.1-1e-6),
+                "Exterior glazing must not intersect any stair or landing.");
+        }
+    }
+});
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;
