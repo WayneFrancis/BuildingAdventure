@@ -48,13 +48,21 @@ public static class CompactSteppedRpgHousePlanner
             int j=rng.Next(i+1);
             (variants[i],variants[j])=(variants[j],variants[i]);
         }
+        var failures=new Dictionary<string,int>();
         foreach(var variant in variants)
-            if(TryVariant(source,variant,out var proposed,out reason))
+        {
+            if(TryVariant(source,variant,out var proposed,out var why))
             {
                 updated=proposed;
                 reason="";
                 return true;
             }
+            failures.TryGetValue(why,out int count);
+            failures[why]=count+1;
+        }
+        reason="Compact stepped house rejected: "+
+            string.Join(" | ",failures.OrderByDescending(p=>p.Value)
+                .Take(8).Select(p=>$"{p.Value}: {p.Key}"));
         return false;
     }
 
@@ -136,7 +144,10 @@ public static class CompactSteppedRpgHousePlanner
             .Concat(BuildingStoreys.StairLandings(stair));
         if(!reserved.All(shape=>
             FloorGeometry.IsWithinPolygon(shape,stairRoom)))
+        {
+            reason="Stair flight or landing outside living room.";
             return false;
+        }
 
         static RoomDefinition Room(string type,string name,List<Point2> outline)=>
             new(){Type=type,Name=name,Outline=outline};
@@ -227,9 +238,13 @@ public static class CompactSteppedRpgHousePlanner
             r.Type is "Bedroom" or "Bathroom"))
         {
             if(!b.Doors.Any(d=>On(d.Centre,room.Outline) &&
-                b.Rooms.Any(shared=>shared.Type is "Hallway" or "Sitting room" &&
+                b.Rooms.Any(shared=>
+                    (shared.Type is "Hallway" or "Sitting room") &&
                     On(d.Centre,shared.Outline))))
+            {
+                reason=room.Name+" has no public sitting-room or hall doorway.";
                 return false;
+            }
         }
         reason="";
         return true;
