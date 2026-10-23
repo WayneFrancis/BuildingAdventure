@@ -118,13 +118,18 @@ public static class BalancedSteppedRpgHousePlanner
         const double stairRoomWidth=5.0;
         double hallRight=stairRoomWidth+v.SpineWidth;
         double kitchenDepth=stepY*v.KitchenDepth;
-        double pantryEnd=stepY-kitchenDepth;
+        // A narrow Kitchen return runs alongside the Pantry so that the
+        // Kitchen can serve Dining directly, while keeping a preserved
+        // front-wall hearth where it was before regeneration.
+        const double servingReturnWidth=1.6;
+        double pantryRight=stepX-servingReturnWidth;
         double bedroomDepth=stepY*v.BedroomDepth;
         double rearHeight=depth-stepY;
         double rightFrontWidth=stepX-hallRight;
         double rightRearWidth=width-hallRight;
         if(rightFrontWidth<3.5 || rightRearWidth<4.5 ||
             kitchenDepth<3 || stepY-kitchenDepth<1.5 ||
+            pantryRight-hallRight<1.8 ||
             bedroomDepth<3.05 || stepY-bedroomDepth<1.5 ||
             rearHeight<3.1)
             return false;
@@ -170,11 +175,19 @@ public static class BalancedSteppedRpgHousePlanner
         var groundRooms=new[]
         {
             ("Living room","Living room",Rect(0,0,stairRoomWidth,stepY)),
-            // Pantry is at the far/front end. Previously it occupied
-            // the entire wall between Kitchen and Dining, forcing meals
-            // to be carried via the passage or through a store room.
-            ("Kitchen","Kitchen",Rect(hallRight,pantryEnd,stepX,stepY)),
-            ("Pantry","Pantry",Rect(hallRight,0,stepX,pantryEnd)),
+            // The old full-width rear pantry prevented a Kitchen-Dining
+            // door. Keep the main Kitchen on the FRONT wall (including
+            // accepted fireplace locations) and let a 1.6m Kitchen return
+            // reach the shared Dining wall beside a compact Pantry.
+            // This makes a useful L-shaped Kitchen without moving hearths.
+            ("Kitchen","Kitchen",new List<Point2>
+            {
+                P(hallRight,0),P(stepX,0),P(stepX,stepY),
+                P(pantryRight,stepY),P(pantryRight,kitchenDepth),
+                P(hallRight,kitchenDepth)
+            }),
+            ("Pantry","Pantry",Rect(hallRight,kitchenDepth,
+                pantryRight,stepY)),
             ("Study","Study",Rect(0,stepY,stairRoomWidth,depth)),
             ("Dining room","Dining room",Rect(hallRight,stepY,width,depth))
         };
