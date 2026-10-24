@@ -4,6 +4,22 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.69 — Convert unused upstairs passage ends into linen closets (development)
+
+- The compact two-storey L-shaped residence now partitions the blind end
+  of its upstairs cross-passage into a **hallway-accessible Linen closet**.
+  The closet is proportioned to leave a clear 2.8m+ connecting passage.
+- Bedroom 3 no longer gets a narrow, awkward L-shaped nook: it becomes
+  a normal rectangular bedroom, with the former nook and dead-passage
+  space combined into useful storage.
+- The closet receives its own internal door from the Upper passage and
+  no access route through a private bedroom. Existing stairs and the
+  ground-floor entrance are unchanged.
+- Regression tests cover the exact accepted 10/12 x 9m L footprint
+  and several seeds, requiring independent doors to the upper sitting
+  room, bedrooms and closet, no unassigned area, and exterior stair
+  alignment.
+
 ## v0.68 — Stair long edges anchored on exterior walls (development)
 
 - Fixed a remaining **0.40m gap** in the balanced L-shaped residence

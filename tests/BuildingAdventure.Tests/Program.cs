@@ -9694,7 +9694,7 @@ Check("Small stepped room-first plan supports rotations and mirrors", () =>
 });
 
 
-Check("Compact L-house entrance is in front passage and upper dead end is reclaimed", () =>
+Check("Compact L-house front passage and hallway-accessible upper linen closet", () =>
 {
     List<Point2> ring=[
         new(0,0),new(8.5,0),new(8.5,4.5),
@@ -9728,11 +9728,20 @@ Check("Compact L-house entrance is in front passage and upper dead end is reclai
             lower.Rooms.Single(r=>r.Type=="Living room").Outline) &&
             On(d.Centre,lower.Perimeter)),
             "The old front door into the stair Living room should be gone.");
+        var closet=upstairs.Rooms.Single(r=>r.Type=="Closet");
+        Assert(closet.Name=="Linen closet",
+            "The dead corridor end should become useful storage.");
         Assert(PolygonGeometry.Area(upHall.Outline) <
-            PolygonGeometry.Area(entry.Outline)-1.4,
-            "Reclaim the blind left end of Upper passage for Bedroom 3.");
-        Assert(bed3.Outline.Count==6,
-            "Bedroom 3 should receive an L-shaped upper-floor extension.");
+            PolygonGeometry.Area(entry.Outline)-2.0,
+            "Reclaim the blind left end of Upper passage as a closet.");
+        Assert(closet.Outline.Count==4 && bed3.Outline.Count==4,
+            "Make a rectangular linen closet and a normally shaped bedroom.");
+        Assert(upstairs.Doors.Any(d=>On(d.Centre,closet.Outline) &&
+            On(d.Centre,upHall.Outline)),
+            "Linen closet needs its own hall doorway.");
+        Assert(!upstairs.Doors.Any(d=>On(d.Centre,closet.Outline) &&
+            On(d.Centre,bed3.Outline)),
+            "Access to household storage must not go through a bedroom.");
         Assert(upstairs.Doors.Any(d=>
             On(d.Centre,upHall.Outline) && On(d.Centre,bed3.Outline)),
             "Bedroom 3 must retain direct upper passage access.");
@@ -9741,6 +9750,68 @@ Check("Compact L-house entrance is in front passage and upper dead end is reclai
             On(d.Centre,upstairs.Rooms.Single(r=>r.Type=="Sitting room").Outline)),
             "Sitting room must still lead into the shortened upper hall.");
         Assert(source.Rooms.Count==0 && source.Staircases.Count==0);
+    }
+});
+
+Check("Accepted residence9 upstairs corridor becomes functional linen closet", () =>
+{
+    // Exact footprint from AI 2storygenresidence9(1).json: 10x5m
+    // front with a 2m step to 12x9m behind. Upstairs sitting-room,
+    // Master Bedroom and Bedroom 3 doorway geometry is preserved.
+    List<Point2> ring=[
+        new(0,0),new(10,0),new(10,5),
+        new(12,5),new(12,9),new(0,9)
+    ];
+    static bool On(Point2 pt,IReadOnlyList<Point2> outline)=>
+        Enumerable.Range(0,outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(pt,outline[i],
+                outline[(i+1)%outline.Count]).DistanceTo(pt)<1e-5);
+    foreach(int seed in new[]{1,13,21,42,77,109})
+    {
+        var draft=new BuildingDocument
+        {
+            SchemaVersion=2,Perimeter=ring.ToList(),
+            UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+        };
+        Assert(CompactSteppedRpgHousePlanner.TryGenerate(draft,seed,
+            out var built,out var reason),$"Seed {seed}: {reason}");
+        Assert(BuildingStoreys.Validate(built,out reason),reason);
+        var ground=BuildingStoreys.GetFloor(built,0);
+        var upstairs=BuildingStoreys.GetFloor(built,1);
+        var passage=upstairs.Rooms.Single(r=>r.Name=="Upper passage");
+        var linen=upstairs.Rooms.Single(r=>r.Name=="Linen closet");
+        var bedroom=upstairs.Rooms.Single(r=>r.Name=="Bedroom 3");
+        Assert(linen.Type=="Closet" &&
+            PolygonGeometry.Area(linen.Outline)>=2.25,
+            "Use the end of the hall for a practical storage room.");
+        Assert(passage.Outline.Count==4 && bedroom.Outline.Count==4,
+            "Do not produce a second blind hallway or awkward bedroom nook.");
+        Assert(upstairs.Doors.Any(d=>
+            On(d.Centre,linen.Outline)&&On(d.Centre,passage.Outline)),
+            "The linen closet should have its own door from the passage.");
+        foreach(var name in new[]{"Master Bedroom","Bedroom 3"})
+        {
+            var target=upstairs.Rooms.Single(r=>r.Name==name);
+            Assert(upstairs.Doors.Any(d=>On(d.Centre,target.Outline) &&
+                On(d.Centre,passage.Outline)),
+                $"The shortened hall still needs independent access to {name}.");
+        }
+        Assert(upstairs.Doors.Any(d=>
+            On(d.Centre,passage.Outline) &&
+            On(d.Centre,upstairs.Rooms.Single(r=>
+                r.Type=="Sitting room").Outline)),
+            "The upper sitting-room must connect to the passage.");
+        Assert(Math.Abs(upstairs.Rooms.Sum(r=>PolygonGeometry.Area(r.Outline))-
+            PolygonGeometry.Area(upstairs.Perimeter))<0.01,
+            "The new closet must not leave gaps or overlap bedrooms.");
+        Assert(ground.Rooms.Count(r=>r.Type=="Closet")==0,
+            "This correction concerns only unused upstairs circulation.");
+        Assert(BuildingConnectivity.StairLongEdgeOnExterior(built,
+            built.Staircases.Single()),
+            "The exterior-aligned staircase regression must stay fixed.");
+        Assert(draft.UpperFloors[0].Rooms.Count==0 &&
+            draft.Staircases.Count==0,
+            "Generated closet must not mutate the source building.");
     }
 });
 

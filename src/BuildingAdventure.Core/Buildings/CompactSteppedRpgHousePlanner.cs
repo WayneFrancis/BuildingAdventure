@@ -177,30 +177,29 @@ public static class CompactSteppedRpgHousePlanner
         BuildingStoreys.SetFloor(result,0,lower);
 
         var first=BuildingStoreys.GetFloor(result,1);
-        // The left end of the upper cross-passage serves no other room.
-        // Give that unused strip to Bedroom 3 as a small L-shaped nook,
-        // leaving a shorter, fully connected landing passage alongside
-        // the upstairs sitting room and master-bedroom access.
-        const double reclaimedWidth=1.25;
-        if(livingWidth-reclaimedWidth<2.7) return false;
-        var upperBedroom=new List<Point2>
-        {
-            P(0,stepY),P(reclaimedWidth,stepY),
-            P(reclaimedWidth,hallEnd),P(livingWidth,hallEnd),
-            P(livingWidth,depth),P(0,depth)
-        };
+        // The upper passage only needs to connect the sitting area,
+        // Master Bedroom and Bedroom 3 at its right-hand end. The blind
+        // left-hand bay has neither a destination nor a stair landing.
+        // Convert it into a proper linen closet, entered from the hall,
+        // rather than leaving a dead corridor or a narrow bedroom nook.
+        // Keep at least 2.8m of cross-passage beside the door cluster.
+        double closetWidth=Math.Min(2.25,livingWidth-2.8);
+        if(closetWidth<1.8 || v.HallDepth<1.1) return false;
         first.Rooms=
         [
             Room("Sitting room","Upper sitting room",stairRoom.ToList()),
             Room("Hallway","Upper passage",
-                Rect(reclaimedWidth,stepY,livingWidth,hallEnd)),
+                Rect(closetWidth,stepY,livingWidth,hallEnd)),
+            Room("Closet","Linen closet",
+                Rect(0,stepY,closetWidth,hallEnd)),
             Room("Bedroom","Bedroom 2",
                 Rect(livingWidth,0,stepX,bedroomSplit)),
             Room("Bathroom","Bathroom",
                 Rect(livingWidth,bedroomSplit,stepX,stepY)),
             Room("Bedroom","Master Bedroom",
                 Rect(livingWidth,stepY,width,depth)),
-            Room("Bedroom","Bedroom 3",upperBedroom)
+            Room("Bedroom","Bedroom 3",
+                Rect(0,hallEnd,livingWidth,depth))
         ];
         BuildingStoreys.SetFloor(result,1,first);
         if(!BuildingStoreys.Validate(result,out reason)) return false;
@@ -236,6 +235,7 @@ public static class CompactSteppedRpgHousePlanner
             !Linked(a,"Living room","Hallway") ||
             !Linked(a,"Hallway","Study") ||
             !Linked(b,"Sitting room","Hallway") ||
+            !Linked(b,"Closet","Hallway") ||
             !b.Doors.Any(d=>On(d.Centre,b.Rooms.Single(r=>
                 r.Name=="Master Bedroom").Outline) &&
                 On(d.Centre,b.Rooms.Single(r=>
