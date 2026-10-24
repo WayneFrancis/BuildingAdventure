@@ -165,28 +165,42 @@ public static class CompactSteppedRpgHousePlanner
                 Rect(livingWidth,stepY,width,depth)),
             Room("Study","Study",Rect(0,hallEnd,livingWidth,depth))
         ];
-        // The exterior entrance opens into the living area well behind
-        // the stair flight, never across the flight's narrow edge.
+        // The passage is really the FRONT entry hall. Its short exposed
+        // exterior wall gives a safe direct entrance, with an interior
+        // connection to the Living room and Study. Do not force visitors
+        // to walk through the staircase room just to enter the home.
+        lower.Rooms.Single(r=>r.Type=="Hallway").Name="Front passage";
         lower.Doors.Add(new DoorDefinition
         {
-            Centre=P(0,stepY*0.74),Width=0.9
+            Centre=P(0,stepY+v.HallDepth/2),Width=0.9
         });
         BuildingStoreys.SetFloor(result,0,lower);
 
         var first=BuildingStoreys.GetFloor(result,1);
+        // The left end of the upper cross-passage serves no other room.
+        // Give that unused strip to Bedroom 3 as a small L-shaped nook,
+        // leaving a shorter, fully connected landing passage alongside
+        // the upstairs sitting room and master-bedroom access.
+        const double reclaimedWidth=1.25;
+        if(livingWidth-reclaimedWidth<2.7) return false;
+        var upperBedroom=new List<Point2>
+        {
+            P(0,stepY),P(reclaimedWidth,stepY),
+            P(reclaimedWidth,hallEnd),P(livingWidth,hallEnd),
+            P(livingWidth,depth),P(0,depth)
+        };
         first.Rooms=
         [
             Room("Sitting room","Upper sitting room",stairRoom.ToList()),
             Room("Hallway","Upper passage",
-                Rect(0,stepY,livingWidth,hallEnd)),
+                Rect(reclaimedWidth,stepY,livingWidth,hallEnd)),
             Room("Bedroom","Bedroom 2",
                 Rect(livingWidth,0,stepX,bedroomSplit)),
             Room("Bathroom","Bathroom",
                 Rect(livingWidth,bedroomSplit,stepX,stepY)),
             Room("Bedroom","Master Bedroom",
                 Rect(livingWidth,stepY,width,depth)),
-            Room("Bedroom","Bedroom 3",
-                Rect(0,hallEnd,livingWidth,depth))
+            Room("Bedroom","Bedroom 3",upperBedroom)
         ];
         BuildingStoreys.SetFloor(result,1,first);
         if(!BuildingStoreys.Validate(result,out reason)) return false;

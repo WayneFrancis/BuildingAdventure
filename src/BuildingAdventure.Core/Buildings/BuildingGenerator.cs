@@ -80,7 +80,24 @@ public static class BuildingGenerator
             int trialSeed = unchecked(seed + attempt * 7919);
             if (TrySuggestWholeBuildingAttempt(floorCount, trialSeed,
                     options, out suggestion, out reason, gridFeet))
+            {
+                // Whole-building housing has an optional garden/service
+                // exit on the opposite facade. The choice is seeded,
+                // stable, and made AFTER rooms, hearths and glazing are
+                // complete, so we never disrupt a saved component.
+                // No second exit is safer than one obstructed by masonry.
+                if(options.Purpose==BuildingUse.Residence &&
+                    options.Doors && options.Rooms &&
+                    new Random(unchecked(trialSeed*7919+193)).Next(100)<45 &&
+                    BuildingConnectivity.TryAddOptionalRearEntrance(
+                        suggestion.Building,out var withGardenDoor))
+                {
+                    suggestion=new BuildingSuggestion(withGardenDoor,
+                        suggestion.Seed,suggestion.FloorIndexes,
+                        suggestion.Description+" · second garden entrance");
+                }
                 return true;
+            }
             lastError = reason;
         }
         suggestion = new BuildingSuggestion(

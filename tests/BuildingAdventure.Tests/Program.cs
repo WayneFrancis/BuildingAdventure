@@ -9693,5 +9693,124 @@ Check("Small stepped room-first plan supports rotations and mirrors", () =>
     }
 });
 
+
+Check("Compact L-house entrance is in front passage and upper dead end is reclaimed", () =>
+{
+    List<Point2> ring=[
+        new(0,0),new(8.5,0),new(8.5,4.5),
+        new(10.5,4.5),new(10.5,8.5),new(0,8.5)
+    ];
+    var source=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    static bool On(Point2 point,IReadOnlyList<Point2> outline)=>
+        Enumerable.Range(0,outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(point,
+                outline[i],outline[(i+1)%outline.Count])
+                .DistanceTo(point)<1e-5);
+    foreach(int seed in new[]{1,7,21,41,77,123})
+    {
+        Assert(CompactSteppedRpgHousePlanner.TryGenerate(source,seed,
+            out var built,out var reason),$"Seed {seed}: {reason}");
+        Assert(BuildingStoreys.Validate(built,out reason),reason);
+        var lower=BuildingStoreys.GetFloor(built,0);
+        var upstairs=BuildingStoreys.GetFloor(built,1);
+        var entry=lower.Rooms.Single(r=>r.Type=="Hallway");
+        var upHall=upstairs.Rooms.Single(r=>r.Type=="Hallway");
+        var bed3=upstairs.Rooms.Single(r=>r.Name=="Bedroom 3");
+        Assert(entry.Name=="Front passage","Name the hall after its entrance.");
+        Assert(lower.Doors.Any(d=>On(d.Centre,entry.Outline) &&
+            On(d.Centre,lower.Perimeter)),
+            "The exterior front door should open directly into the passage.");
+        Assert(!lower.Doors.Any(d=>On(d.Centre,
+            lower.Rooms.Single(r=>r.Type=="Living room").Outline) &&
+            On(d.Centre,lower.Perimeter)),
+            "The old front door into the stair Living room should be gone.");
+        Assert(PolygonGeometry.Area(upHall.Outline) <
+            PolygonGeometry.Area(entry.Outline)-1.4,
+            "Reclaim the blind left end of Upper passage for Bedroom 3.");
+        Assert(bed3.Outline.Count==6,
+            "Bedroom 3 should receive an L-shaped upper-floor extension.");
+        Assert(upstairs.Doors.Any(d=>
+            On(d.Centre,upHall.Outline) && On(d.Centre,bed3.Outline)),
+            "Bedroom 3 must retain direct upper passage access.");
+        Assert(upstairs.Doors.Any(d=>
+            On(d.Centre,upHall.Outline) &&
+            On(d.Centre,upstairs.Rooms.Single(r=>r.Type=="Sitting room").Outline)),
+            "Sitting room must still lead into the shortened upper hall.");
+        Assert(source.Rooms.Count==0 && source.Staircases.Count==0);
+    }
+});
+
+Check("Optional rear entrance goes on an opposing facade and preserves features", () =>
+{
+    List<Point2> ring=[
+        new(0,0),new(8.5,0),new(8.5,4.5),
+        new(10.5,4.5),new(10.5,8.5),new(0,8.5)
+    ];
+    var source=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    Assert(CompactSteppedRpgHousePlanner.TryGenerate(source,7,
+        out var house,out var reason),reason);
+    BuildingConnectivity.AddWindows(house,0,out house);
+    BuildingConnectivity.AddWindows(house,1,out house);
+    Assert(BuildingConnectivity.TryAddOptionalRearEntrance(house,
+        out var withBack),"A kitchen or dining room should support a back door.");
+    Assert(BuildingStoreys.Validate(withBack,out reason),reason);
+    static bool On(Point2 point,IReadOnlyList<Point2> outline)=>
+        Enumerable.Range(0,outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(point,
+                outline[i],outline[(i+1)%outline.Count])
+                .DistanceTo(point)<1e-5);
+    var exits=withBack.Doors.Where(d=>On(d.Centre,withBack.Perimeter))
+        .ToArray();
+    Assert(exits.Length==2,
+        "The second exit should supplement, not replace, the front door.");
+    Assert(exits.Any(d=>d.Centre.DistanceTo(house.Doors[0].Centre)<1e-7),
+        "Retain the original front entrance.");
+    Assert(withBack.Windows.Count==house.Windows.Count &&
+        withBack.Staircases.Count==house.Staircases.Count &&
+        withBack.UpperFloors[0].Rooms.Count==house.UpperFloors[0].Rooms.Count,
+        "An optional exit must not remove glazing, stairs or rooms.");
+    Assert(house.Doors.Count==withBack.Doors.Count-1,
+        "The candidate must not modify the original building.");
+});
+
+Check("Whole-building houses vary between one and two outside entrances", () =>
+{
+    var options=new GenerationOptions
+    {
+        Purpose=BuildingUse.Residence,Rooms=true,Corridors=true,
+        Doors=true,Stairs=true,CompactRpgHouseLayout=true,
+        HallHouseLayout=true,Windows=false,Fireplaces=false
+    };
+    static bool On(Point2 point,IReadOnlyList<Point2> outline)=>
+        Enumerable.Range(0,outline.Count).Any(i=>
+            PolygonGeometry.ClosestPointOnSegment(point,
+                outline[i],outline[(i+1)%outline.Count])
+                .DistanceTo(point)<1e-5);
+    var sizes=new HashSet<int>();
+    int generated=0;
+    foreach(int seed in Enumerable.Range(10,22))
+    {
+        if(!BuildingGenerator.TrySuggestWholeBuilding(2,seed,
+            options,out var suggestion,out _,0)) continue;
+        generated++;
+        var home=suggestion.Building;
+        Assert(BuildingStoreys.Validate(home,out var reason),reason);
+        var exits=home.Doors.Count(d=>On(d.Centre,home.Perimeter));
+        Assert(exits is 1 or 2,"Houses need one front door, at most one back.");
+        sizes.Add(exits);
+    }
+    Assert(generated>=8,"Need a useful sample of generated homes.");
+    Assert(sizes.SetEquals(new[]{1,2}),
+        "Seeded residences should sometimes have a second garden exit.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

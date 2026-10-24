@@ -4,6 +4,26 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.67 — Front passage entrance, occasional rear door and shorter upper hall (development)
+
+- In compact L-shaped two-storey residences, the main exterior door now
+  opens into the **Front passage**, not the stair-side Living room.
+  Ground floor circulation, the Kitchen–Dining doorway and all upstairs
+  bedroom access remain intact.
+- The upper passage no longer runs needlessly into its left-hand wall:
+  a 1.25 m-wide dead-end strip becomes an L-shaped extension of
+  Bedroom 3. The remaining landing passage still links the upper
+  sitting room, Master Bedroom and Bedroom 3.
+- New whole-building residential suggestions have a seeded ~45% chance
+  to receive a **second garden/service entrance**, when an eligible
+  Kitchen, Dining or common-room exterior wall is on the opposite
+  facade from the existing entrance. This is a **maximum of two**
+  exterior doors, never a forced doorway through windows, stair
+  landings or retained fireplaces.
+- Added regression coverage for the passage entrance, annexed upper
+  bedroom nook, preserved building geometry and single/two-door
+  variation across generation seeds.
+
 ## v0.66 — Compact shallow L-shaped houses without giant mirrored halls (development)
 
 - Added a distinct **room-first compact L-shaped two-storey residence**

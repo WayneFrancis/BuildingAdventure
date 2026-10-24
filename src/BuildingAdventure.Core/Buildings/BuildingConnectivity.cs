@@ -356,6 +356,110 @@ public static class BuildingConnectivity
     /// real wall geometry and opening clearance. Interior and storage rooms
     /// are not assigned fictional exterior windows.
     /// </summary>
+    /// <summary>
+    /// Give a newly generated residence an optional service/garden entrance
+    /// on the facade opposite its existing front door. This is a detached
+    /// post-processing pass: manual openings, stair footprints, windows and
+    /// fireplaces must survive unchanged or no second door is offered.
+    /// Called after all final windows/chimneys have been placed.
+    /// </summary>
+    public static bool TryAddOptionalRearEntrance(BuildingDocument building,
+        out BuildingDocument updated)
+    {
+        updated=BuildingStoreys.Copy(building);
+        if(!BuildingStoreys.HasFloor(building,0)) return false;
+        var floor=BuildingStoreys.GetFloor(building,0);
+        const double doorWidth=0.9;
+        var exterior=FloorGeometry.BuildWalls(floor.Perimeter,floor.Rooms)
+            .Where(w=>w.IsExterior).ToArray();
+        static bool OnSegment(Point2 p,WallSegment w)=>
+            PolygonGeometry.ClosestPointOnSegment(p,w.A,w.B)
+                .DistanceTo(p)<1e-5;
+
+        // Do not add a third exit or guess which door is the main entrance.
+        var frontDoors=floor.Doors.Where(d=>
+            exterior.Any(w=>OnSegment(d.Centre,w))).ToArray();
+        if(frontDoors.Length!=1) return false;
+        var front=frontDoors[0];
+        var facade=exterior.First(w=>OnSegment(front.Centre,w));
+        double fdx=facade.B.X-facade.A.X;
+        double fdy=facade.B.Y-facade.A.Y;
+        double frontLength=Math.Sqrt(fdx*fdx+fdy*fdy);
+        if(frontLength<doorWidth) return false;
+
+        static Point2 Mid(WallSegment wall)=>
+            new((wall.A.X+wall.B.X)/2,(wall.A.Y+wall.B.Y)/2);
+        int Priority(WallSegment wall)
+        {
+            var mid=Mid(wall);
+            if(floor.Rooms.Any(r=>r.Type=="Kitchen" &&
+                OnOutline(mid,r.Outline))) return 0;
+            if(floor.Rooms.Any(r=>r.Type=="Dining room" &&
+                OnOutline(mid,r.Outline))) return 1;
+            if(floor.Rooms.Any(r=>
+                r.Type is "Living room" or "Common room" or "Great hall" &&
+                OnOutline(mid,r.Outline))) return 2;
+            return 10;
+        }
+
+        foreach(var wall in exterior
+            .Where(w=>w.Length>=doorWidth+0.4)
+            .Where(w=>
+            {
+                double dx=w.B.X-w.A.X,dy=w.B.Y-w.A.Y;
+                double cos=Math.Abs((dx*fdx+dy*fdy)/
+                    (w.Length*frontLength));
+                // Genuine opposite facade, not a sideways garden door:
+                // parallel to the front wall and at least 3m behind it.
+                double separation=Math.Abs(
+                    (Mid(w).X-facade.A.X)*fdy-
+                    (Mid(w).Y-facade.A.Y)*fdx)/frontLength;
+                return cos>0.99 && separation>=3.0 &&
+                    Priority(wall: w)<10;
+            })
+            .OrderBy(Priority).ThenByDescending(w=>w.Length))
+        foreach(double fraction in new[]{0.5,0.35,0.65,0.25,0.75})
+        {
+            var centre=new Point2(
+                wall.A.X+(wall.B.X-wall.A.X)*fraction,
+                wall.A.Y+(wall.B.Y-wall.A.Y)*fraction);
+            if(centre.DistanceTo(front.Centre)<4) continue;
+            if(Math.Min(centre.DistanceTo(wall.A),
+                centre.DistanceTo(wall.B))<doorWidth/2+0.1) continue;
+            if(floor.Doors.Any(d=>d.Centre.DistanceTo(centre)<1.25))
+                continue;
+            if(floor.Rooms.SelectMany(r=>r.Outline).Any(corner=>
+                corner.DistanceTo(centre)<doorWidth/2+0.1))
+                continue;
+            // Prevent a garden door from opening into stair landings,
+            // the void above a flight, or a reserved entrance approach.
+            if(building.Staircases.Where(stair=>
+                stair.LowerFloorIndex==0).Any(stair=>
+                new[]{BuildingStoreys.StairFootprint(stair),
+                    BuildingStoreys.StairOpeningFootprint(stair)}
+                    .Concat(BuildingStoreys.StairLandings(stair))
+                    .Any(poly=>
+                        PolygonGeometry.ContainsPoint(poly,centre) ||
+                        Enumerable.Range(0,poly.Count).Any(i=>
+                            PolygonGeometry.ClosestPointOnSegment(
+                                centre,poly[i],poly[(i+1)%poly.Count])
+                                .DistanceTo(centre)<1.0))))
+                continue;
+
+            var draft=BuildingStoreys.Copy(building);
+            var edited=BuildingStoreys.GetFloor(draft,0);
+            edited.Doors.Add(new DoorDefinition
+            {
+                Centre=centre,Width=doorWidth
+            });
+            BuildingStoreys.SetFloor(draft,0,edited);
+            if(!BuildingStoreys.Validate(draft,out _)) continue;
+            updated=draft;
+            return true;
+        }
+        return false;
+    }
+
     public static int AddWindows(BuildingDocument building, int floorIndex,
         out BuildingDocument updated)
     {
