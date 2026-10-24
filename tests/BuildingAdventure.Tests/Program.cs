@@ -9636,8 +9636,10 @@ Check("Small L residence no longer returns uploaded 39-percent hall", () =>
         Assert(house.Doors.Any(d=>On(d.Centre,kitchen.Outline) &&
             On(d.Centre,dining.Outline)),
             "Kitchen and Dining must share a serving door.");
-        Assert(house.Rooms.Count==5 && upper.Rooms.Count==6 &&
-            upper.Rooms.Count(r=>r.Type=="Bedroom")==3);
+        Assert(house.Rooms.Count==5 && upper.Rooms.Count==7 &&
+            upper.Rooms.Count(r=>r.Type=="Bedroom")==3 &&
+            upper.Rooms.Count(r=>r.Type=="Closet")==1,
+            "The upstairs closet is an additional functional room.");
         Assert(house.Rooms.Where(r=>r.Type=="Hallway")
             .Sum(r=>PolygonGeometry.Area(r.Outline))<9 &&
             upper.Rooms.Where(r=>r.Type=="Hallway")
