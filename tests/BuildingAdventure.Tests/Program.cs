@@ -9812,5 +9812,74 @@ Check("Whole-building houses vary between one and two outside entrances", () =>
         "Seeded residences should sometimes have a second garden exit.");
 });
 
+
+Check("Balanced L-shaped generated stairs have their full long edge on exterior", () =>
+{
+    // Before this regression fix, BalancedStepped used P(2.5,0.85)
+    // for a 0.9m-wide stair, leaving a 0.40m strip by the front wall.
+    // Cover all mirrored/rotated orientations AND alternative seeds.
+    var original=new List<Point2>
+    {
+        new(0,0),new(11.5,0),new(11.5,5),
+        new(13.5,5),new(13.5,8.5),new(0,8.5)
+    };
+    foreach(int rotation in new[]{0,1,2,3})
+    foreach(bool mirror in new[]{false,true})
+    {
+        Point2 Transform(Point2 p)
+        {
+            double x=mirror?-p.X:p.X, y=p.Y;
+            return rotation switch
+            {
+                1=>new Point2(-y,x),
+                2=>new Point2(-x,-y),
+                3=>new Point2(y,-x),
+                _=>new Point2(x,y)
+            };
+        }
+        var ring=original.Select(Transform).ToList();
+        var empty=new BuildingDocument
+        {
+            SchemaVersion=2,Perimeter=ring.ToList(),
+            UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+        };
+        foreach(int seed in new[]{7,42,91})
+        {
+            Assert(BalancedSteppedRpgHousePlanner.TryGenerate(empty,seed,
+                out var result,out var reason),
+                $"Balanced L seed {seed}, rotate {rotation}, mirror {mirror}: {reason}");
+            Assert(BuildingStoreys.Validate(result,out reason),reason);
+            var stairs=result.Staircases.Single();
+            Assert(BuildingConnectivity.StairLongEdgeOnExterior(result,stairs),
+                "The entire long edge, not merely a corner or short end, " +
+                "must be flush with an exterior wall.");
+            Assert(empty.Staircases.Count==0,"Keep source unchanged.");
+        }
+    }
+});
+
+Check("Stair wall alignment detects the previous balanced L-house gap", () =>
+{
+    var source=new BuildingDocument
+    {
+        SchemaVersion=2,
+        Perimeter=[
+            new(0,0),new(11.5,0),new(11.5,5),
+            new(13.5,5),new(13.5,8.5),new(0,8.5)]
+    };
+    var offWall=new StaircaseDefinition
+    {
+        LowerFloorIndex=0,Centre=new(2.5,0.85),
+        Width=0.9,Length=2.8,LandingLength=1,
+        RotationDegrees=270
+    };
+    Assert(!BuildingConnectivity.StairLongEdgeOnExterior(source,offWall),
+        "A 40cm offset must not count as flush.");
+    var flush=offWall.Copy();
+    flush.Centre=new Point2(2.5,0.45);
+    Assert(BuildingConnectivity.StairLongEdgeOnExterior(source,flush),
+        "The full long side must coincide with the front perimeter.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

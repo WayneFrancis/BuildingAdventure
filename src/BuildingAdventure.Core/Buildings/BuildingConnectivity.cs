@@ -356,6 +356,37 @@ public static class BuildingConnectivity
     /// real wall geometry and opening clearance. Interior and storage rooms
     /// are not assigned fictional exterior windows.
     /// </summary>
+
+    /// <summary>
+    /// True only when a complete LONG edge of a staircase is coincident
+    /// with one of the actual external perimeter walls. Touching a
+    /// corner or placing a narrow end against the wall is not enough.
+    /// Compare to the perimeter rather than subdivided room walls so
+    /// that a room corner cannot split the supporting exterior segment.
+    /// Used as a generator constraint, not to move existing user stairs.
+    /// </summary>
+    public static bool StairLongEdgeOnExterior(
+        BuildingDocument building, StaircaseDefinition stair)
+    {
+        var footprint=BuildingStoreys.StairFootprint(stair);
+        if(footprint.Count!=4 || building.Perimeter.Count<3)
+            return false;
+        static bool OnSegment(Point2 p,Point2 start,Point2 end)=>
+            PolygonGeometry.ClosestPointOnSegment(p,start,end)
+                .DistanceTo(p)<1e-5;
+        for(int i=0;i<building.Perimeter.Count;i++)
+        {
+            var a=building.Perimeter[i];
+            var b=building.Perimeter[(i+1)%building.Perimeter.Count];
+            if((OnSegment(footprint[0],a,b) &&
+                OnSegment(footprint[3],a,b)) ||
+               (OnSegment(footprint[1],a,b) &&
+                OnSegment(footprint[2],a,b)))
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Give a newly generated residence an optional service/garden entrance
     /// on the facade opposite its existing front door. This is a detached

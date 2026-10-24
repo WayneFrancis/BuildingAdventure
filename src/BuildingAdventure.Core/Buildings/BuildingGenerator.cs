@@ -81,6 +81,22 @@ public static class BuildingGenerator
             if (TrySuggestWholeBuildingAttempt(floorCount, trialSeed,
                     options, out suggestion, out reason, gridFeet))
             {
+                // All newly generated two-storey L residences must put
+                // a long staircase edge flush against the outside wall.
+                // A polygon-valid generic fallback may leave a dead strip
+                // next to its flight. Reject that attempt and reroll,
+                // rather than present another off-wall staircase.
+                if(floorCount==2 && options.Purpose==BuildingUse.Residence &&
+                    options.Stairs && options.CompactRpgHouseLayout &&
+                    suggestion.Building.Perimeter.Count==6 &&
+                    (suggestion.Building.Staircases.Count!=1 ||
+                    !BuildingConnectivity.StairLongEdgeOnExterior(
+                        suggestion.Building,suggestion.Building.Staircases[0])))
+                {
+                    lastError="Two-storey L-shaped residence has a staircase " +
+                        "without a long edge against its exterior wall.";
+                    continue;
+                }
                 // Whole-building housing has an optional garden/service
                 // exit on the opposite facade. The choice is seeded,
                 // stable, and made AFTER rooms, hearths and glazing are

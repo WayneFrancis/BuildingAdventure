@@ -144,12 +144,23 @@ public static class BalancedSteppedRpgHousePlanner
         else
             stair=new StaircaseDefinition
             {
-                LowerFloorIndex=0,Centre=P(2.5,0.85),
+                // Flush the full long edge with the exterior wall.
+                // The old 0.85m centre offset left a 0.40m dead strip
+                // beside the 0.90m-wide stair (unlike our other L plans).
+                LowerFloorIndex=0,Centre=P(2.5,0.9/2),
                 Width=0.9,Length=2.8,LandingLength=1,
                 RotationDegrees=v.Swap
                     ? (v.FlipU?180:0) : (v.FlipU?90:270)
             };
         if(stair.LowerFloorIndex!=0) return false;
+        // A manually placed stair is a hard constraint; never move it.
+        // Automatically generated stairs, however, MUST be anchored.
+        if(source.Staircases.Count==0 &&
+            !BuildingConnectivity.StairLongEdgeOnExterior(result,stair))
+        {
+            reason="New stair long edge is not flush with the exterior wall.";
+            return false;
+        }
         reason="Room dimensions fit; staircase/landing reservation failed.";
         var landingRoom=Rect(0,0,stairRoomWidth,stepY);
         var reservations=new[]

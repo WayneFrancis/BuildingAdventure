@@ -4,6 +4,20 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.68 — Stair long edges anchored on exterior walls (development)
+
+- Fixed a remaining **0.40m gap** in the balanced L-shaped residence
+  generator: its auto-created staircase was centred 0.85m from the facade
+  despite having a width of only 0.9m. It now centres 0.45m from the wall.
+- Added a reusable geometric predicate checking that the **full long edge**
+  of a flight lies on a single actual exterior perimeter wall. A point of
+  contact or narrow end alone does not count.
+- New whole-building two-storey L residences reject any generation
+  fallback that leaves an off-wall staircase, then retry another layout.
+  Manually accepted staircases in regeneration remain fixed.
+- New tests cover all quarter-turns and mirrored orientations, multiple
+  seeds, and the exact 0.40m-gap regression.
+
 ## v0.67 — Front passage entrance, occasional rear door and shorter upper hall (development)
 
 - In compact L-shaped two-storey residences, the main exterior door now
