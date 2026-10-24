@@ -4,6 +4,24 @@
 plans. The goal is a hybrid architectural designer: generate a building from
 requirements, draw one by hand, or combine manual rooms with procedural design.
 
+## v0.70 — Align shared fireplaces with upper-storey walls (development)
+
+- In rectangular two-storey residences, when the upper Bathroom /
+  Landing wall is only a small distance from the ground Kitchen /
+  Living partition, slide the **upstairs hall as a unit** to line the
+  walls up. It keeps the hall the same width and retains the ground
+  room arrangement and all staircase reservations.
+- New chimney stacks now require a FULL edge of their masonry footprint
+  to sit alongside an actual upstairs wall (with up to 8cm allowance).
+  Checking only chimney-centre distance had incorrectly approved
+  nearly 40cm of gap in accepted `AI 2storygenresidence10.json`.
+- Keep a single shared chimney for two back-to-back ground-floor
+  fireplace faces whenever valid. Upper floors have a flue, **not an
+  additional fireplace**, unless an upstairs hearth is explicitly
+  defined.
+- Fixtures cover the uploaded 11.5×10m residence, the 3.6m and 3.975m
+  wall discrepancy, and many seeded rectangular house layouts.
+
 ## v0.69 — Convert unused upstairs passage ends into linen closets (development)
 
 - The compact two-storey L-shaped residence now partitions the blind end

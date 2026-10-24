@@ -9954,5 +9954,92 @@ Check("Stair wall alignment detects the previous balanced L-house gap", () =>
         "The full long side must coincide with the front perimeter.");
 });
 
+
+Check("Accepted residence10 chimney is no longer stranded in upstairs Bathroom", () =>
+{
+    // From AI 2storygenresidence10.json (11.5m x 10m):
+    // kitchen/living partition y=3.6, upper bath/landing y=3.975,
+    // chimney shaft x=3.85125..5.25125, y=2.88..3.58.
+    // Its 0.395m gap upstairs must not pass a wall-alignment check.
+    List<Point2> Rect(double x0,double y0,double x1,double y1)=>
+        [new(x0,y0),new(x1,y0),new(x1,y1),new(x0,y1)];
+    var original=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=Rect(0,0,11.5,10),
+        UpperFloors=[new StoreyDefinition
+        {
+            Perimeter=Rect(0,0,11.5,10),
+            Rooms=[
+                new RoomDefinition { Name="Bathroom",Type="Bathroom",
+                    Outline=Rect(0,0,11.5,3.975) },
+                new RoomDefinition { Name="Upper landing",Type="Hallway",
+                    Outline=Rect(0,3.975,11.5,5.325) },
+                new RoomDefinition { Name="Master Bedroom",Type="Bedroom",
+                    Outline=Rect(0,5.325,11.5,10) }
+            ]
+        }]
+    };
+    var savedChimney=new ChimneyDefinition
+    {
+        Centre=new Point2(4.55125,3.23),
+        Width=1.4,Depth=0.7,Exterior=false,HearthFloorIndex=0
+    };
+    Assert(!BuildingConnectivity.ChimneyShaftAgainstWall(
+        original,savedChimney,1),
+        "A chimney with 0.395m clearance from the upper partition " +
+        "must NOT count as wall mounted.");
+    var shifted=BuildingStoreys.Copy(original);
+    var upstairs=BuildingStoreys.GetFloor(shifted,1);
+    upstairs.Rooms[0].Outline=Rect(0,0,11.5,3.6);
+    upstairs.Rooms[1].Outline=Rect(0,3.6,11.5,5.325);
+    BuildingStoreys.SetFloor(shifted,1,upstairs);
+    Assert(BuildingStoreys.Validate(shifted,out var reason),reason);
+    Assert(BuildingConnectivity.ChimneyShaftAgainstWall(
+        shifted,savedChimney,1),
+        "Sliding the upstairs Bathroom/Landing partition to y=3.6 " +
+        "must mount the shared chimney directly alongside it.");
+    Assert(BuildingStoreys.GetFloor(original,1).Rooms[0].Outline
+        .Any(p=>Math.Abs(p.Y-3.975)<1e-6),
+        "Geometric corrections must not change the accepted source.");
+});
+
+Check("Rectangular house shared fireplaces use an aligned upstairs chimney", () =>
+{
+    var ring=new List<Point2>
+    {
+        new(0,0),new(11.5,0),new(11.5,10),new(0,10)
+    };
+    var source=new BuildingDocument
+    {
+        SchemaVersion=2,Perimeter=ring.ToList(),
+        UpperFloors=[new StoreyDefinition{Perimeter=ring.ToList()}]
+    };
+    int paired=0;
+    foreach(int seed in Enumerable.Range(1,65))
+    {
+        Assert(CompactRpgHousePlanner.TryGenerate(source,seed,
+            out var house,out var reason),
+            $"Rectangle chimney seed {seed}: {reason}");
+        Assert(BuildingStoreys.Validate(house,out reason),reason);
+        if(!BuildingConnectivity.TryAddChimney(house,out var heated))
+            continue;
+        Assert(BuildingStoreys.Validate(heated,out reason),reason);
+        foreach(var chimney in heated.Chimneys)
+            Assert(BuildingConnectivity.ChimneyShaftAgainstWall(
+                heated,chimney,1),
+                "The fireplace flue may not float in an upstairs room.");
+        if(heated.Chimneys.Single().OtherHearthCentre.HasValue)
+        {
+            paired++;
+            Assert(heated.Chimneys.Single().HearthRoomIds.Count==2,
+                "Kitchen/Living shared stack needs exactly two lower hearths.");
+        }
+        Assert(house.Chimneys.Count==0,"Generator may not mutate source.");
+    }
+    Assert(paired>0,
+        "At least one rectangular floorplan should retain two ground-floor " +
+        "hearths on a single wall-aligned chimney stack.");
+});
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

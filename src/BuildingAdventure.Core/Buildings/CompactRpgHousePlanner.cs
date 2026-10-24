@@ -131,6 +131,22 @@ public static class CompactRpgHousePlanner
             splitX < lobbyRight + 0.15)
             return false;
 
+        // When the Kitchen and Living room have a shared fireplace,
+        // its stack needs a parallel upper-storey wall beside it.
+        // Typically the corridor/Bathroom wall misses the ground-floor
+        // Kitchen/Living partition by only 20-55cm. Slide the upstairs
+        // corridor across that small offset (without widening it) so
+        // its Bathroom edge lines up with the shared hearth wall.
+        // Keep more distant partitions unchanged: moving an entire
+        // upstairs plan by >0.6m would compromise established rooms.
+        double upperLobbyLeft=lobbyLeft,upperLobbyRight=lobbyRight;
+        double upperWallShift=splitX-lobbyRight;
+        if(upperWallShift>0.05 && upperWallShift<=0.6)
+        {
+            upperLobbyLeft+=upperWallShift;
+            upperLobbyRight=splitX;
+        }
+
         Point2 World(double u, double v)
         {
             double across = variant.Mirror ? width - u : u;
@@ -175,13 +191,13 @@ public static class CompactRpgHousePlanner
         first.Rooms =
         [
             Room("Hallway","Upper landing",
-                Rect(lobbyLeft,0,lobbyRight,rearStart)),
-            Room("Bedroom","Bedroom 2",Rect(0,0,lobbyLeft,frontEnd)),
-            Room("Bedroom","Bedroom 3",Rect(lobbyRight,0,width,frontEnd)),
+                Rect(upperLobbyLeft,0,upperLobbyRight,rearStart)),
+            Room("Bedroom","Bedroom 2",Rect(0,0,upperLobbyLeft,frontEnd)),
+            Room("Bedroom","Bedroom 3",Rect(upperLobbyRight,0,width,frontEnd)),
             Room("Bedroom","Master Bedroom",
-                Rect(0,frontEnd,lobbyLeft,rearStart)),
+                Rect(0,frontEnd,upperLobbyLeft,rearStart)),
             Room("Bathroom","Bathroom",
-                Rect(lobbyRight,frontEnd,width,rearStart)),
+                Rect(upperLobbyRight,frontEnd,width,rearStart)),
             Room("Sitting room","Sitting room",
                 Rect(0,rearStart,width,depth))
         ];

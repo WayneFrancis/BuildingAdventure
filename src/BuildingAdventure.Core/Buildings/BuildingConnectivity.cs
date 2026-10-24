@@ -562,6 +562,35 @@ public static class BuildingConnectivity
     /// permits. Its fixed plan position carries up and down every floor
     /// whose perimeter covers the entire hearth footprint.
     /// </summary>
+    /// <summary>
+    /// A chimney stack is wall-mounted upstairs only when one FULL edge
+    /// of its rectangular masonry footprint is alongside a genuine wall.
+    /// A centre-to-wall check using half its longest dimension previously
+    /// accepted up to 0.4m of empty floor between a stack and a wall.
+    /// Existing saved chimneys are not moved by this generator check.
+    /// </summary>
+    public static bool ChimneyShaftAgainstWall(BuildingDocument building,
+        ChimneyDefinition chimney,int floorIndex)
+    {
+        if(!BuildingStoreys.HasFloor(building,floorIndex)) return false;
+        var shaft=BuildingStoreys.ChimneyFootprint(chimney);
+        var floor=BuildingStoreys.GetFloor(building,floorIndex);
+        const double tolerance=0.08; // allow the masonry's 2cm wall gap
+        foreach(var wall in FloorGeometry.BuildWalls(
+            floor.Perimeter,floor.Rooms))
+        for(int i=0;i<shaft.Count;i++)
+        {
+            var first=shaft[i];
+            var second=shaft[(i+1)%shaft.Count];
+            if(PolygonGeometry.ClosestPointOnSegment(first,
+                    wall.A,wall.B).DistanceTo(first)<=tolerance &&
+                PolygonGeometry.ClosestPointOnSegment(second,
+                    wall.A,wall.B).DistanceTo(second)<=tolerance)
+                return true;
+        }
+        return false;
+    }
+
     public static bool TryAddChimney(BuildingDocument building,
         out BuildingDocument updated, BuildingUse use = BuildingUse.Residence)
     {
@@ -692,11 +721,12 @@ public static class BuildingConnectivity
                 if (!FloorGeometry.IsWithinPolygon(
                     BuildingStoreys.ChimneyFootprint(chimney), floor.Perimeter))
                     continue;
-                bool nearWall = FloorGeometry.BuildWalls(floor.Perimeter, floor.Rooms)
-                    .Any(w => PolygonGeometry.ClosestPointOnSegment(
-                        chimney.Centre, w.A, w.B).DistanceTo(chimney.Centre) <=
-                        Math.Max(chimney.Width, chimney.Depth) / 2 + 0.1);
-                if (!nearWall) return false;
+                // The whole side of the vertical flue must abut a wall.
+                // Looking only at the centre and the longest dimension
+                // let the fireplace from residence10 float ~40cm into
+                // the upstairs Bathroom while still passing validation.
+                if(!ChimneyShaftAgainstWall(building,chimney,index))
+                    return false;
             }
             var trial = BuildingStoreys.Copy(building);
             trial.Chimneys.Add(chimney);
